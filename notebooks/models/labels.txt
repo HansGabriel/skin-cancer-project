@@ -1,3 +1,0 @@
-benign
-pre_cancerous
-malignant

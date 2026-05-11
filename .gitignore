@@ -8,6 +8,8 @@ models/*.h5
 **/.ipynb_checkpoints/
 __pycache__/
 *.pyc
+logs/*.sqlite
+logs/*.sqlite-journal
 
 # Cursor local metadata/state
 .cursor/
