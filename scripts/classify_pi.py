@@ -14,6 +14,10 @@ MODEL = "skin_classifier.tflite"
 LABELS_FILE = "labels.txt"
 IMAGE_SIZE = 224
 
+# Must match scripts/pi_server.py so CLI and server never drift on pixel format.
+PICAM_STILL_MAIN = {"size": (1024, 1024), "format": "RGB888"}
+
+# Keys must match exactly one line per row in labels.txt (3-class deployment contract).
 RECOMMENDATIONS = {
     "benign": {
         "icon": "🟢",
@@ -35,12 +39,16 @@ RECOMMENDATIONS = {
 
 def capture_rgb() -> np.ndarray:
     picam2 = Picamera2()
-    picam2.configure(picam2.create_still_configuration(main={"size": (1024, 1024)}))
-    picam2.start()
-    time.sleep(1.0)
-    image = picam2.capture_array()
-    picam2.stop()
-    return image
+    picam2.configure(picam2.create_still_configuration(main=PICAM_STILL_MAIN))
+    try:
+        picam2.start()
+        time.sleep(1.0)
+        return picam2.capture_array()
+    finally:
+        try:
+            picam2.stop()
+        except Exception:
+            pass
 
 
 def preprocess(image_rgb: np.ndarray, input_details: dict) -> np.ndarray:
@@ -74,6 +82,10 @@ def dequantize_output(output: np.ndarray, output_details: dict) -> np.ndarray:
 
 def main() -> None:
     labels = [line.strip() for line in open(LABELS_FILE, "r", encoding="utf-8") if line.strip()]
+    if set(labels) != set(RECOMMENDATIONS):
+        raise RuntimeError(
+            f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
+        )
 
     interpreter = tflite.Interpreter(model_path=MODEL)
     interpreter.allocate_tensors()

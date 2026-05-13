@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend import get_backend
-from backend.contracts import BackendKind, InferenceBackend, ScanResult
+from backend.contracts import BackendKind, ScanResult
+from backend.streamlit_resources import get_cached_backend
 
 
 def _model_path() -> str:
@@ -67,15 +67,6 @@ def list_sample_paths() -> list[tuple[str, Path]]:
     return items
 
 
-def make_backend(kind: BackendKind, pi_base_url: str) -> InferenceBackend:
-    return get_backend(
-        kind,
-        model_path=_model_path(),
-        labels_path=_labels_path(),
-        pi_base_url=pi_base_url,
-    )
-
-
 def main() -> None:
     st.set_page_config(page_title="DermaScan AI", page_icon="🧬", layout="wide")
     st.title("🧬 DermaScan AI — Skin lesion risk screening")
@@ -99,7 +90,12 @@ def main() -> None:
         pi_base = st.text_input("Pi base URL", value=_default_pi_url(), key="pi_base_url_input")
         st.caption("Env: `SKIN_MODEL_PATH`, `SKIN_LABELS_PATH`, `PI_BASE_URL`.")
 
-        backend = make_backend(kind, pi_base_url=pi_base.rstrip("/"))
+        backend = get_cached_backend(
+            kind,
+            _model_path(),
+            _labels_path(),
+            pi_base.rstrip("/"),
+        )
 
         if st.button("Check backend health", key="health_btn"):
             status = backend.health()
@@ -155,10 +151,19 @@ def main() -> None:
                             st.error(str(exc))
 
         else:
+            pi_upload = st.file_uploader(
+                "Optional: upload JPG/PNG to run on Pi (skips camera)",
+                type=["jpg", "jpeg", "png"],
+                key="pi_upload",
+            )
+            st.caption("Leave empty to capture from the Pi Camera Module.")
             if st.button("Run scan on Pi", type="primary", key="pi_run"):
                 with st.spinner("Waiting for Pi…"):
                     try:
-                        st.session_state["result"] = backend.scan()
+                        if pi_upload is not None:
+                            st.session_state["result"] = backend.scan(pi_upload.getvalue())
+                        else:
+                            st.session_state["result"] = backend.scan()
                     except Exception as exc:  # noqa: BLE001
                         st.error(str(exc))
 

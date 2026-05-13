@@ -41,10 +41,17 @@ class PiHttpBackend:
             return {"status": "error", "reason": "Invalid JSON from /health"}
 
     def scan(self, image_jpg_bytes: bytes | None = None) -> ScanResult:
-        del image_jpg_bytes  # capture happens on the Pi
+        """POST ``/scan``. If ``image_jpg_bytes`` is set, sends multipart ``image`` (Pi debug path)."""
         url = f"{self.base_url}/scan"
         try:
-            r = requests.post(url, timeout=self.timeout)
+            if image_jpg_bytes:
+                r = requests.post(
+                    url,
+                    files={"image": ("probe.jpg", image_jpg_bytes, "image/jpeg")},
+                    timeout=self.timeout,
+                )
+            else:
+                r = requests.post(url, timeout=self.timeout)
             r.raise_for_status()
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
@@ -56,10 +63,21 @@ class PiHttpBackend:
             ) from exc
         except requests.exceptions.HTTPError as exc:
             resp = exc.response
-            body = (resp.text if resp is not None else "")[:200]
             code = resp.status_code if resp is not None else "?"
-            raise RuntimeError(f"Pi returned HTTP {code}: {body}") from exc
+            reason = ""
+            if resp is not None and resp.text:
+                try:
+                    payload = resp.json()
+                    if isinstance(payload, dict) and payload.get("status") == "error":
+                        reason = str(payload.get("reason", "")).strip()
+                except json.JSONDecodeError:
+                    reason = (resp.text or "")[:200]
+            if not reason:
+                reason = (resp.text if resp is not None else "")[:200]
+            raise RuntimeError(f"Pi returned HTTP {code}: {reason}") from exc
         data = r.json()
+        if isinstance(data, dict) and data.get("status") == "error":
+            raise RuntimeError(str(data.get("reason", "Pi scan failed")))
         probs_raw = data.get("probs") or {}
         probs = {str(k): float(v) for k, v in probs_raw.items()}
         b64 = data.get("image") or ""

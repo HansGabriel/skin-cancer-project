@@ -34,7 +34,7 @@ class InferenceBackend(Protocol):
         """Return a small JSON-serializable status dict for the sidebar."""
 
     def scan(self, image_jpg_bytes: bytes | None = None) -> ScanResult:
-        """Run one scan. Pi ignores ``image_jpg_bytes``; mock/local require bytes."""
+        """Run one scan. Mock/local require bytes. Pi may accept ``image_jpg_bytes`` as multipart ``image`` (debug)."""
 
     def fetch_log(self) -> tuple[list[dict[str, Any]], str | None]:
         """Return ``(rows, warning)`` for history UI. ``warning`` explains missing /log etc."""

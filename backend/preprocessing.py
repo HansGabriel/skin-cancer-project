@@ -1,4 +1,12 @@
-"""Pure NumPy / OpenCV transforms for TFLite I/O (no TFLite import)."""
+"""Pure NumPy / OpenCV transforms for TFLite I/O (no TFLite import).
+
+Training (see ``notebooks/train_skin_classifier.ipynb``) feeds EfficientNetB0 with
+linear RGB values in ``[0, 255]`` (``uint8`` in ``tf.data``, then
+``keras.applications.efficientnet.preprocess_input``; on TF 2.21 this is effectively
+identity while the base model applies internal rescaling). TFLite inference here must
+match the **exported graph input** (float ``[0, 255]`` before per-tensor quantization).
+Do not add an extra ``(x / 127.5) - 1.0`` unless the trained/exported model expects it.
+"""
 
 from __future__ import annotations
 

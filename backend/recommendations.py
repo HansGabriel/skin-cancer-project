@@ -1,4 +1,7 @@
-"""Display strings keyed by collapsed diagnosis label (Streamlit / PC side)."""
+"""Display strings keyed by collapsed diagnosis label (Streamlit / PC side).
+
+Keys must match exactly one line per row in ``models/labels.txt`` (3-class deployment).
+"""
 
 from __future__ import annotations
 
