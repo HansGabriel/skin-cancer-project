@@ -1,9 +1,6 @@
 venv/
 datasets/
 !datasets/.gitkeep
-models/*.keras
-models/*.tflite
-models/*.h5
 .kaggle/
 **/.ipynb_checkpoints/
 __pycache__/
