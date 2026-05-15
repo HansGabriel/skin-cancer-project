@@ -116,3 +116,18 @@ Plan recommends **Python 3.11** and **TF 2.16.x** with **CUDA 12.3 + cuDNN 8.9**
 ## Summary line
 
 **HAM10000** + **TensorFlow/Keras EfficientNetB0** → train on **RTX 4060** → **TFLite** → **Pi 4 + Camera Module 2** + **`tflite-runtime`** → **Streamlit on PC** + **Flask on Pi** → verify **fully offline** LAN operation for field demos.
+
+---
+
+## Learned User Preferences
+
+- On macOS, prefer **inference-only** setup (Streamlit + `models/*.tflite` + `labels.txt`); do not default to full `requirements.txt` / notebook training on the Mac.
+- When fixing environment or dependency issues, give **copy-paste shell commands** first unless the user explicitly asks the agent to run installs.
+
+## Learned Workspace Facts
+
+- **Streamlit demo deps** live in `streamlit-requirements.txt` (TFLite via `ai-edge-litert`, OpenCV, etc.); full `requirements.txt` is for **GPU training on Windows/Linux** and includes **NVIDIA CUDA** wheels that fail or are irrelevant on Mac.
+- **Grad-CAM / 7-class Keras** need `tensorflow` and `tf-keras-vis` installed separately—they are **not** in `streamlit-requirements.txt`.
+- When **Settings → `SKIN_KERAS_PATH`** points to a valid `.keras` file, the scan path loads Keras and runs **Grad-CAM on CPU** (often much slower than TFLite-only); leave Keras path empty for fast screening runs.
+- **macOS Homebrew `python@3.12`** can break `venv` / `pip` with `pyexpat` / `libexpat` (`_XML_SetAllocTrackerActivationThreshold`); usual fix: `brew reinstall expat python@3.12`, `rm -rf venv`, recreate venv with **`python3.12`** (not system `python3`, which may be Apple 3.9), or use **python.org** 3.12.
+- **Ubuntu 3.12** is used for training; **Mac** is used for Streamlit demo—platform-specific Python/venv steps differ.
