@@ -11,3 +11,6 @@ logs/*.sqlite-journal
 # Cursor local metadata/state
 .cursor/
 .cursor/hooks/state/
+
+# Streamlit secrets (use .streamlit/secrets.toml.example as a template)
+.streamlit/secrets.toml

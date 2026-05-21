@@ -114,10 +114,23 @@ def segment(image_rgb: np.ndarray) -> np.ndarray:
     return best
 
 
+def _center_circle_mask(image_rgb: np.ndarray, radius_frac: float = 0.35) -> np.ndarray:
+    """Circular ROI fallback when contour segmentation fails."""
+    h, w = image_rgb.shape[:2]
+    cx, cy = w // 2, h // 2
+    r = int(min(h, w) * radius_frac)
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(mask, (cx, cy), r, 255, -1)
+    return mask
+
+
 def segment_safe(image_rgb: np.ndarray) -> np.ndarray | None:
-    """Return mask only if foreground fraction is plausible; else ``None``."""
+    """Return mask if plausible; else center-circle fallback (ABCDE never crashes)."""
     mask = segment(image_rgb)
     frac = _foreground_fraction(mask)
-    if frac < _FRAC_MIN or frac > _FRAC_MAX:
-        return None
-    return mask
+    if _FRAC_MIN <= frac <= _FRAC_MAX:
+        return mask
+    fallback = _center_circle_mask(image_rgb)
+    if _FRAC_MIN <= _foreground_fraction(fallback) <= _FRAC_MAX:
+        return fallback
+    return fallback

@@ -1,0 +1,13 @@
+# Slim runtime for Streamlit Community Cloud.
+# No CUDA, no full TensorFlow. Grad-CAM is intentionally unavailable on this
+# deployment (results_view.py renders a fallback). Classification, ABCDE,
+# E-Evolving, and risk scoring all run via the TFLite interpreter below.
+streamlit==1.57.0
+ai-edge-litert==2.1.4
+numpy>=1.26,<2.3
+pillow>=10.0
+opencv-python-headless>=4.10
+scikit-image>=0.24
+scikit-learn>=1.5
+pandas>=2.2
+requests>=2.32

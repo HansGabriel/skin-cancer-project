@@ -61,8 +61,8 @@ def test_compute_abcde_uniform_color() -> None:
     assert out["E"]["verdict"] == "needs history"
 
 
-def test_segment_safe_rejects_tiny() -> None:
+def test_segment_safe_fallback_mask() -> None:
     rgb = np.full((200, 200, 3), 200, dtype=np.uint8)
-    # no strong lesion — likely tiny or empty foreground
     m = segment_safe(rgb)
-    assert m is None or np.count_nonzero(m) >= 0
+    assert m is not None
+    assert np.count_nonzero(m) > 0

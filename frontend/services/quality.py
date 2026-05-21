@@ -1,4 +1,4 @@
-"""Capture quality checks (blur, exposure, skin fraction). Lesion area: use ``segmentation.segment_safe`` in pipeline."""
+"""Capture quality checks with structured reason codes."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from typing import TypedDict
 import cv2
 import numpy as np
 
-# Defaults tuned for dermoscopic / clinical photos (JPEG + resize often lowers Laplacian var).
-# Override with env: SKIN_QUALITY_BLUR_MIN, SKIN_QUALITY_V_MIN, SKIN_QUALITY_V_MAX, SKIN_QUALITY_SKIN_MIN
 _BLUR_MIN = float(os.environ.get("SKIN_QUALITY_BLUR_MIN", "35"))
 _V_MIN = float(os.environ.get("SKIN_QUALITY_V_MIN", "35"))
 _V_MAX = float(os.environ.get("SKIN_QUALITY_V_MAX", "220"))
@@ -19,6 +17,7 @@ _SKIN_MIN = float(os.environ.get("SKIN_QUALITY_SKIN_MIN", "0.15"))
 class QualityResult(TypedDict):
     ok: bool
     reasons: list[str]
+    reason_details: list[tuple[str, str, str]]
 
 
 def _laplacian_var(gray: np.ndarray) -> float:
@@ -26,9 +25,7 @@ def _laplacian_var(gray: np.ndarray) -> float:
 
 
 def _skin_fraction_hsv(image_rgb: np.ndarray) -> float:
-    """Rough skin-toned pixel fraction in HSV (heuristic ranges)."""
     hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-    # Two broad skin clusters in OpenCV H (0–179)
     lower1 = np.array([0, 30, 60], dtype=np.uint8)
     upper1 = np.array([25, 180, 255], dtype=np.uint8)
     lower2 = np.array([160, 30, 60], dtype=np.uint8)
@@ -40,20 +37,25 @@ def _skin_fraction_hsv(image_rgb: np.ndarray) -> float:
 
 
 def check_quality(image_rgb: np.ndarray) -> QualityResult:
-    """Pre-segment checks: Laplacian sharpness, mean V, skin coverage."""
     reasons: list[str] = []
+    details: list[tuple[str, str, str]] = []
     gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
-    lap = _laplacian_var(gray)
-    if lap < _BLUR_MIN:
-        reasons.append("Image too blurry — please refocus and try again.")
-
+    if _laplacian_var(gray) < _BLUR_MIN:
+        msg = "Image too blurry — please refocus and try again."
+        reasons.append(msg)
+        details.append(("blur", "🔍 Out of focus", "warning"))
     hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
     v_mean = float(hsv[:, :, 2].mean())
-    if v_mean < _V_MIN or v_mean > _V_MAX:
-        reasons.append("Lighting too dark or too bright — adjust illumination.")
-
-    skin_frac = _skin_fraction_hsv(image_rgb)
-    if skin_frac < _SKIN_MIN:
-        reasons.append("Not enough skin-toned area in frame — center the lesion on skin.")
-
-    return {"ok": len(reasons) == 0, "reasons": reasons}
+    if v_mean < _V_MIN:
+        msg = "Lighting too dark — adjust illumination."
+        reasons.append(msg)
+        details.append(("dark", "🔆 Too dark", "warning"))
+    elif v_mean > _V_MAX:
+        msg = "Lighting too bright — adjust illumination."
+        reasons.append(msg)
+        details.append(("bright", "🔆 Too bright", "warning"))
+    if _skin_fraction_hsv(image_rgb) < _SKIN_MIN:
+        msg = "Not enough skin in frame — center the lesion on skin."
+        reasons.append(msg)
+        details.append(("skin_frac", "📏 Lesion framing", "info"))
+    return {"ok": len(reasons) == 0, "reasons": reasons, "reason_details": details}
