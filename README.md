@@ -29,8 +29,10 @@ AI-assisted **screening** demo: EfficientNet-style classifier on PC, TensorFlow 
 5. Run unit tests (no GPU required):
 
    ```bash
-   python -m unittest discover -s tests -v
+   pytest tests -q
    ```
+
+   (`tests/conftest.py` adds `frontend/` to `PYTHONPATH`; use the project venv.)
 
 ## Raspberry Pi (inference + camera)
 
@@ -60,3 +62,13 @@ AI-assisted **screening** demo: EfficientNet-style classifier on PC, TensorFlow 
 | `frontend/app.py` | Streamlit UI |
 | `scripts/pi_server.py` | Flask API on the Pi |
 | `requirements.txt` | PC training + Streamlit (full pin set) |
+| `streamlit-requirements.txt` | Slim deps for Streamlit Community Cloud (no CUDA / no full TF) |
+| `requirements-pi.txt` | Raspberry Pi runtime only |
+
+## Deploy online (Streamlit Community Cloud)
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full recipe. In short: push
+the branch, point share.streamlit.io at `frontend/app.py` with
+`streamlit-requirements.txt`, and set a `[dermascan] passcode` secret. Grad-CAM
+is intentionally disabled on the hosted demo; classification + ABCDE +
+E-Evolving + risk scoring all run via the TFLite path.

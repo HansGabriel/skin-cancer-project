@@ -1,8 +1,8 @@
-"""ABCDE heuristic scores (A–D from image + mask; E needs history — stub)."""
+"""ABCDE heuristic scores (A–D from image + mask; E from case history via evolving.py)."""
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import NotRequired, TypedDict
 
 import cv2
 import numpy as np
@@ -18,6 +18,7 @@ class LetterResult(TypedDict):
     value: float | int | None
     tier: int
     verdict: str
+    detail: NotRequired[str]
 
 
 def _tier_from_float(x: float, lo: float, hi: float) -> int:
@@ -133,6 +134,40 @@ def colour_distinct_count(image_rgb: np.ndarray, mask: np.ndarray, k: int = 5) -
 
 def colour_score(image_rgb: np.ndarray, mask: np.ndarray, k: int = 5) -> int:
     return colour_distinct_count(image_rgb, mask, k=k)
+
+
+def lab_cluster_centers(image_rgb: np.ndarray, mask: np.ndarray, k: int = 5) -> np.ndarray:
+    """LAB cluster centroids inside the lesion mask (for E color drift)."""
+    sel = image_rgb[mask > 0]
+    if len(sel) < 1:
+        return np.zeros((0, 3), dtype=np.float32)
+    n_k = min(k, len(sel))
+    lab_px = cv2.cvtColor(sel.reshape(-1, 1, 3), cv2.COLOR_RGB2LAB).reshape(-1, 3).astype(np.float32)
+    km = MiniBatchKMeans(n_clusters=n_k, random_state=42, n_init=3, max_iter=100)
+    km.fit(lab_px)
+    return km.cluster_centers_.astype(np.float32)
+
+
+def mean_color_drift_delta_e(centers_a: np.ndarray, centers_b: np.ndarray) -> float:
+    """Mean ΔE after nearest-neighbor matching of LAB centers."""
+    if len(centers_a) == 0 or len(centers_b) == 0:
+        return 0.0
+    used: set[int] = set()
+    total = 0.0
+    count = 0
+    for a in centers_a:
+        best_j, best_d = -1, 1e9
+        for j, b in enumerate(centers_b):
+            if j in used:
+                continue
+            d = _delta_e_lab(a, b)
+            if d < best_d:
+                best_d, best_j = d, j
+        if best_j >= 0:
+            used.add(best_j)
+            total += best_d
+            count += 1
+    return float(total / max(count, 1))
 
 
 def diameter_mm(mask: np.ndarray, pixels_per_mm: float) -> float:
