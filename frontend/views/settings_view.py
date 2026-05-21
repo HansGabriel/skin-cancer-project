@@ -51,9 +51,15 @@ def render_settings_view(*, root: Path) -> None:
             st.session_state["pixels_per_mm_ui"] = 10.0
         st.number_input("pixels_per_mm", 0.1, 100.0, step=0.5, key="pixels_per_mm_ui")
         st.toggle("Block run when quality checks fail", key="strict_quality_gate")
-        st.session_state.setdefault("preprocess_enabled", True)
-        st.toggle("Color constancy + hair removal", key="preprocess_enabled")
-        st.toggle("Debug: show pre/post preprocessing on Results", key="preprocess_debug")
+        st.toggle(
+            "Enhance image for ABCDE only (color + hair removal)",
+            key="preprocess_enabled",
+            help="Improves asymmetry/border measurements. The CNN always receives the original photo.",
+        )
+        st.toggle(
+            "Debug: show original vs ABCDE-enhanced on Results",
+            key="preprocess_debug",
+        )
         kind = st.session_state.get("inference_backend_kind", "mock")
         tta_default = kind != "pi"
         if "tta_toggle" not in st.session_state:
