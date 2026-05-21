@@ -3,3 +3,5 @@ gatherUsageStats = false
 
 [server]
 headless = true
+maxUploadSize = 8
+enableXsrfProtection = true
