@@ -91,11 +91,13 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                 pl.get("gradcam_overlay_jpg"),
                 gradcam_caption="Grad-CAM unavailable — set SKIN_KERAS_PATH in Settings",
             )
-            if pl.get("rgb_before") is not None and pl.get("rgb") is not None:
-                with st.expander("Preprocessing debug (before / after)"):
+            if pl.get("rgb_before") is not None and pl.get("rgb_analysis") is not None:
+                with st.expander("Preprocessing debug (before / after — ABCDE path only)"):
                     c1, c2 = st.columns(2)
-                    c1.image(pl["rgb_before"], caption="Before", use_container_width=True)
-                    c2.image(pl["rgb"], caption="After", use_container_width=True)
+                    c1.image(pl["rgb_before"], caption="Original (CNN input)", width="stretch")
+                    c2.image(pl["rgb_analysis"], caption="Enhanced (ABCDE/segmentation)", width="stretch")
+            if pl.get("borderline_note"):
+                st.warning(pl["borderline_note"])
             render_abcde_row(pl.get("abcde"))
             render_three_class_probs(sr.probs)
             render_seven_class_expander(pl.get("seven_class_probs"), str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))

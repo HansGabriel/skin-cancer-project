@@ -1,16 +1,14 @@
-"""Orchestrate preprocess → quality → segmentation → TFLite → ABCDE → composite risk."""
+"""Orchestrate quality → TFLite (original image) → segmentation/ABCDE (optional enhance)."""
 
 from __future__ import annotations
 
 import os
-import time
 from typing import Any, NotRequired, TypedDict
 
+import cv2
 import numpy as np
 
 from backend.contracts import ScanResult
-import cv2
-
 from backend.tflite_shared import decode_image_bytes_to_rgb
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
@@ -43,6 +41,7 @@ class PipelineResult(TypedDict, total=False):
     gradcam_overlay_jpg: bytes | None
     gradcam_disclaimer: str | None
     rgb_before: NotRequired[np.ndarray]
+    rgb_analysis: NotRequired[np.ndarray]
     error: str
     quality_warnings: NotRequired[list[str]]
     vis_error: NotRequired[str]
@@ -50,9 +49,10 @@ class PipelineResult(TypedDict, total=False):
     inference_ms: NotRequired[int]
     model_path: NotRequired[str]
     tta_enabled: NotRequired[bool]
+    borderline_note: NotRequired[str]
 
 
-def _preprocess_enabled() -> bool:
+def _preprocess_for_abcde() -> bool:
     try:
         import streamlit as st
 
@@ -69,7 +69,35 @@ def _preprocess_debug() -> bool:
 
         return bool(st.session_state.get("preprocess_debug"))
     except Exception:  # noqa: BLE001
-        return False
+        pass
+    return False
+
+
+def _analysis_rgb(rgb: np.ndarray) -> np.ndarray:
+    """Enhancement for segmentation/ABCDE only — never fed to the TFLite classifier."""
+    if not _preprocess_for_abcde():
+        return rgb
+    return enhance_lesion_image(rgb)
+
+
+def _borderline_note(probs: dict[str, float], label: str) -> str | None:
+    """Flag near-tie predictions the UI should not over-trust."""
+    malignant = float(probs.get("malignant", 0.0))
+    benign = float(probs.get("benign", 0.0))
+    if label == "benign" and malignant >= 25.0:
+        return (
+            f"Borderline: CNN says {label} but malignant probability is still {malignant:.1f}%. "
+            "Treat as screening only — clinical ABCDE flags may warrant follow-up."
+        )
+    if label == "malignant" and benign >= 25.0:
+        return (
+            f"Borderline: CNN says {label} but benign probability is still {benign:.1f}%. "
+            "Treat as screening only."
+        )
+    ordered = sorted(probs.values(), reverse=True)
+    if len(ordered) >= 2 and (ordered[0] - ordered[1]) < 15.0:
+        return "Borderline: top two class probabilities are very close — interpret with caution."
+    return None
 
 
 def _trust_line(sr: ScanResult | None, *, model_path: str, tta: bool, quality_ok: bool) -> str:
@@ -77,7 +105,11 @@ def _trust_line(sr: ScanResult | None, *, model_path: str, tta: bool, quality_ok
     model_name = os.path.basename(model_path)
     q = "OK" if quality_ok else "WARN"
     tta_s = "on" if tta else "off"
-    return f"Inference: {ms/1000:.1f}s · Model: {model_name} · v{APP_VERSION} · Quality: {q} · TTA: {tta_s}"
+    pp = "on" if _preprocess_for_abcde() else "off"
+    return (
+        f"Inference: {ms/1000:.1f}s · Model: {model_name} · v{APP_VERSION} · "
+        f"Quality: {q} · TTA: {tta_s} · ABCDE enhance: {pp}"
+    )
 
 
 def run_pipeline(
@@ -87,20 +119,31 @@ def run_pipeline(
     pixels_per_mm: float,
     strict_quality: bool = True,
     case_id: str | None = None,
-    preprocess: bool = True,
+    preprocess: bool = True,  # noqa: ARG001 — kept for API compat; session/env controls ABCDE enhance
 ) -> PipelineResult:
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
-    out: PipelineResult = {}
 
-    def _finish(rgb, mask, scan_result, abcde, q, *, rgb_before: np.ndarray | None = None) -> PipelineResult:
-        abcde = apply_to_abcde(case_id, abcde, rgb=rgb, mask=mask)
+    def _finish(
+        rgb_display: np.ndarray,
+        rgb_for_abcde: np.ndarray,
+        mask,
+        scan_result: ScanResult,
+        abcde,
+        q,
+        *,
+        rgb_before: np.ndarray | None = None,
+        model_jpg: bytes,
+    ) -> PipelineResult:
+        abcde = apply_to_abcde(case_id, abcde, rgb=rgb_for_abcde, mask=mask)
         p_mal = float(scan_result.probs.get("malignant", 0.0))
         comp = composite_risk_score(p_mal, abcde)
+        note = _borderline_note(scan_result.probs, scan_result.label)
         result: PipelineResult = {
             "blocked": False,
             "quality": q,
-            "rgb": rgb,
+            "rgb": rgb_display,
+            "rgb_analysis": rgb_for_abcde,
             "mask": mask,
             "scan_result": scan_result,
             "abcde": abcde,
@@ -114,6 +157,8 @@ def run_pipeline(
             "tta_enabled": tta,
             "trust_line": _trust_line(scan_result, model_path=model_path, tta=tta, quality_ok=q.get("ok", True)),
         }
+        if note:
+            result["borderline_note"] = note
         if not q.get("ok"):
             result["quality_warnings"] = list(q.get("reasons", []))
         if rgb_before is not None:
@@ -122,28 +167,39 @@ def run_pipeline(
 
     if image_bytes is not None:
         try:
-            rgb = decode_image_bytes_to_rgb(image_bytes)
+            rgb_display = decode_image_bytes_to_rgb(image_bytes)
         except ValueError as exc:
             return {"blocked": True, "error": str(exc), "scan_result": None}
-        rgb_before: np.ndarray | None = None
-        if _preprocess_enabled():
-            if _preprocess_debug():
-                rgb_before = rgb.copy()
-            rgb = enhance_lesion_image(rgb)
-        q = check_quality(rgb)
-        out["quality"] = q
+
+        rgb_for_abcde = _analysis_rgb(rgb_display)
+        rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
+
+        q = check_quality(rgb_display)
         if not q["ok"] and strict_quality:
-            return {"blocked": True, "quality": q, "rgb": rgb, "scan_result": None}
-        if not q["ok"] and not strict_quality:
+            return {"blocked": True, "quality": q, "rgb": rgb_display, "scan_result": None}
+        out: PipelineResult = {"quality": q}
+        if not q["ok"]:
             out["quality_warnings"] = list(q["reasons"])
-        mask = segment_safe(rgb)
-        scan_bytes = _rgb_to_jpeg_bytes(rgb) if _preprocess_enabled() else image_bytes
+
+        mask = segment_safe(rgb_for_abcde)
+        # Classifier always sees the original capture (matches HAM10000 / training preprocessing).
+        model_jpg = image_bytes
         try:
-            scan_result = backend.scan(scan_bytes)
+            scan_result = backend.scan(model_jpg)
         except Exception as exc:  # noqa: BLE001
-            return {"blocked": False, "error": str(exc), "rgb": rgb, "mask": mask, "quality": q}
-        abcde = compute_abcde(rgb, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
-        return _finish(rgb, mask, scan_result, abcde, q, rgb_before=rgb_before)
+            return {"blocked": False, "error": str(exc), "rgb": rgb_display, "mask": mask, "quality": q}
+
+        abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
+        return _finish(
+            rgb_display,
+            rgb_for_abcde,
+            mask,
+            scan_result,
+            abcde,
+            q,
+            rgb_before=rgb_before,
+            model_jpg=model_jpg,
+        )
 
     try:
         scan_result = backend.scan(None)
@@ -152,18 +208,25 @@ def run_pipeline(
     if not scan_result.image_jpg_bytes:
         return {"blocked": False, "error": "Pi returned no image bytes.", "scan_result": scan_result}
     try:
-        rgb = decode_image_bytes_to_rgb(scan_result.image_jpg_bytes)
+        rgb_display = decode_image_bytes_to_rgb(scan_result.image_jpg_bytes)
     except ValueError as exc:
         return {"blocked": False, "error": str(exc), "scan_result": scan_result}
-    rgb_before_pi: np.ndarray | None = None
-    if _preprocess_enabled():
-        if _preprocess_debug():
-            rgb_before_pi = rgb.copy()
-        rgb = enhance_lesion_image(rgb)
-    q = check_quality(rgb)
-    mask = segment_safe(rgb)
-    abcde = compute_abcde(rgb, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
-    result = _finish(rgb, mask, scan_result, abcde, q, rgb_before=rgb_before_pi)
-    if not q["ok"]:
+
+    rgb_for_abcde = _analysis_rgb(rgb_display)
+    rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
+    q = check_quality(rgb_display)
+    mask = segment_safe(rgb_for_abcde)
+    abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
+    result = _finish(
+        rgb_display,
+        rgb_for_abcde,
+        mask,
+        scan_result,
+        abcde,
+        q,
+        rgb_before=rgb_before,
+        model_jpg=scan_result.image_jpg_bytes,
+    )
+    if not q.get("ok"):
         result["quality_warnings"] = list(q["reasons"])
     return result
