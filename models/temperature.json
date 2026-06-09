@@ -1,1 +1,6 @@
-{"T": 1.0, "fit_on": null, "note": "Run scripts/fit_temperature.py to calibrate"}
+{
+  "T": 1.5369100196927983,
+  "fit_on": "val",
+  "val_nll_before": 0.3163265287876129,
+  "val_nll_after": 0.2953679859638214
+}

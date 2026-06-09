@@ -1,0 +1,14 @@
+{
+  "screen_cancer_threshold": 0.10999999999999999,
+  "target_sensitivity": 0.9,
+  "val_sensitivity": 0.9010238907849829,
+  "val_specificity": 0.7725392886683209,
+  "labels": [
+    "benign",
+    "pre_cancerous",
+    "malignant"
+  ],
+  "precancer_idx": 1,
+  "malignant_idx": 2,
+  "decision": "flag cancerous if p(pre_cancerous)+p(malignant) >= screen_cancer_threshold"
+}
