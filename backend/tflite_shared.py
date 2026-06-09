@@ -16,11 +16,50 @@ from backend.contracts import ScanResult
 from backend.recommendations import RECOMMENDATIONS
 
 _TEMPERATURE: float | None = None
+_THRESHOLDS: dict | None = None
 
 
 def load_labels(path: str | Path) -> list[str]:
     text = Path(path).read_text(encoding="utf-8")
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _load_thresholds() -> dict:
+    """Sensitivity-first decision config from models/thresholds.json (see training Cell 10b).
+
+    Empty dict => fall back to plain argmax (backwards compatible).
+    """
+    global _THRESHOLDS
+    if _THRESHOLDS is not None:
+        return _THRESHOLDS
+    path = os.environ.get("SKIN_THRESHOLDS_JSON")
+    if not path:
+        root = Path(__file__).resolve().parent.parent
+        path = str(root / "models" / "thresholds.json")
+    p = Path(path)
+    _THRESHOLDS = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    return _THRESHOLDS
+
+
+def decide_index(probs: np.ndarray) -> int:
+    """Pick the class index. If thresholds.json defines a cancer-screen threshold, flag the
+    case as cancerous when p(pre_cancerous)+p(malignant) clears it (sensitivity-first), then
+    report whichever cancer class is more probable; otherwise pick the best non-cancer class.
+    Falls back to argmax when no threshold config is present.
+    """
+    th = _load_thresholds()
+    thr = th.get("screen_cancer_threshold")
+    pre_i = th.get("precancer_idx")
+    mal_i = th.get("malignant_idx")
+    if thr is None or pre_i is None or mal_i is None:
+        return int(np.argmax(probs))
+    if max(pre_i, mal_i) >= len(probs):
+        return int(np.argmax(probs))
+    p_cancer = float(probs[pre_i]) + float(probs[mal_i])
+    if p_cancer >= float(thr):
+        return mal_i if probs[mal_i] >= probs[pre_i] else pre_i
+    masked = [p if i not in (pre_i, mal_i) else -1.0 for i, p in enumerate(probs)]
+    return int(np.argmax(masked))
 
 
 def _load_temperature() -> float:
@@ -108,7 +147,7 @@ def compose_scan_result(
     inference_ms: int,
     backend_id: str,
 ) -> ScanResult:
-    idx = int(np.argmax(probs))
+    idx = decide_index(probs)
     label = labels[idx]
     confidence = float(probs[idx]) * 100.0
     prob_dict = {labels[i]: float(probs[i]) * 100.0 for i in range(len(labels))}

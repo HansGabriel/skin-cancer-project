@@ -18,6 +18,7 @@ from picamera2 import Picamera2
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "skin_classifier.tflite"
 LABELS_PATH = BASE_DIR / "labels.txt"
+THRESHOLDS_PATH = BASE_DIR / "thresholds.json"
 DB_PATH = BASE_DIR / "pi_scans.sqlite"
 IMAGE_SIZE = 224
 
@@ -47,6 +48,28 @@ RECOMMENDATIONS = {
 def load_labels(path: Path) -> list[str]:
     with path.open("r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
+
+
+def load_thresholds(path: Path) -> dict:
+    """Optional sensitivity-first decision config (training Cell 10b). Missing => argmax."""
+    if not path.is_file():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def decide_index(probs: np.ndarray, thresholds: dict) -> int:
+    """Mirror of backend.tflite_shared.decide_index: flag cancerous when
+    p(pre_cancerous)+p(malignant) clears the screen threshold (sensitivity-first)."""
+    thr = thresholds.get("screen_cancer_threshold")
+    pre_i = thresholds.get("precancer_idx")
+    mal_i = thresholds.get("malignant_idx")
+    if thr is None or pre_i is None or mal_i is None or max(pre_i, mal_i) >= len(probs):
+        return int(np.argmax(probs))
+    if float(probs[pre_i]) + float(probs[mal_i]) >= float(thr):
+        return mal_i if probs[mal_i] >= probs[pre_i] else pre_i
+    masked = [p if i not in (pre_i, mal_i) else -1.0 for i, p in enumerate(probs)]
+    return int(np.argmax(masked))
 
 
 def preprocess(image_rgb: np.ndarray, input_details: dict) -> np.ndarray:
@@ -120,7 +143,7 @@ def run_scan_from_rgb(
     inference_ms = int((time.perf_counter() - t0) * 1000)
 
     probs = dequantize_output(output, output_details)
-    pred_idx = int(np.argmax(probs))
+    pred_idx = decide_index(probs, thresholds)
     pred_label = labels[pred_idx]
     confidence = float(probs[pred_idx]) * 100.0
     recommendation = RECOMMENDATIONS[pred_label]
@@ -171,6 +194,7 @@ def init_db() -> None:
 init_db()
 
 labels = load_labels(LABELS_PATH)
+thresholds = load_thresholds(THRESHOLDS_PATH)
 if set(labels) != set(RECOMMENDATIONS):
     raise RuntimeError(
         f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
