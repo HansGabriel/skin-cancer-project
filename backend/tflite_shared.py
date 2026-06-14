@@ -1,4 +1,4 @@
-"""TFLite interpreter wiring with optional temperature scaling and TTA."""
+"""TFLite interpreter wiring with sensitivity-first decision logic and TTA."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from backend import preprocessing
 from backend.contracts import ScanResult
 from backend.recommendations import RECOMMENDATIONS
 
-_TEMPERATURE: float | None = None
 _THRESHOLDS: dict | None = None
 
 
@@ -62,28 +61,9 @@ def decide_index(probs: np.ndarray) -> int:
     return int(np.argmax(masked))
 
 
-def _load_temperature() -> float:
-    global _TEMPERATURE
-    if _TEMPERATURE is not None:
-        return _TEMPERATURE
-    path = os.environ.get("SKIN_TEMPERATURE_JSON")
-    if not path:
-        root = Path(__file__).resolve().parent.parent
-        path = str(root / "models" / "temperature.json")
-    p = Path(path)
-    if p.is_file():
-        data = json.loads(p.read_text(encoding="utf-8"))
-        _TEMPERATURE = float(data.get("T", 1.0))
-    else:
-        _TEMPERATURE = 1.0
-    return _TEMPERATURE
-
-
 def _softmax(logits: np.ndarray) -> np.ndarray:
-    x = logits.astype(np.float64)
-    if _load_temperature() != 1.0:
-        x = x / _load_temperature()
-    x = x - np.max(x)
+    """Fallback softmax for models that output raw logits (not softmax)."""
+    x = logits.astype(np.float64) - np.max(logits)
     e = np.exp(x)
     return (e / np.sum(e)).astype(np.float32)
 

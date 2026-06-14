@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Fit temperature scaling scalar T on validation logits (no retrain)."""
+"""Fit temperature scaling scalar T on validation logits (no retrain).
+
+NOTE: Temperature scaling is NOT applied at inference — the deployed model
+outputs softmax probabilities and the decision threshold in thresholds.json
+was tuned on uncalibrated probs, so T has no effect on decisions.  This
+script is retained for reference / future use if a logit-output model is
+adopted.  Do not run it as part of the normal training pipeline.
+"""
 
 from __future__ import annotations
 
