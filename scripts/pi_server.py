@@ -16,9 +16,11 @@ from flask import Flask, jsonify, request
 from picamera2 import Picamera2
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "skin_classifier.tflite"
-LABELS_PATH = BASE_DIR / "labels.txt"
-THRESHOLDS_PATH = BASE_DIR / "thresholds.json"
+# Override with env vars for Pi deployment (e.g. SKIN_MODEL=skin_classifier_int8.tflite for
+# latency-optimised int8 variant once latency has been benchmarked on hardware).
+MODEL_PATH = BASE_DIR / os.environ.get("SKIN_MODEL", "skin_classifier.tflite")
+LABELS_PATH = BASE_DIR / os.environ.get("SKIN_LABELS", "labels.txt")
+THRESHOLDS_PATH = BASE_DIR / os.environ.get("SKIN_THRESHOLDS", "thresholds.json")
 DB_PATH = BASE_DIR / "pi_scans.sqlite"
 IMAGE_SIZE = 224
 
