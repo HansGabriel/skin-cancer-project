@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import streamlit as st
 
 from services.gradcam import enrich_result_with_vis
 from services.pipeline import run_pipeline
+
+logger = logging.getLogger("dermascan.scan")
 
 
 @st.cache_resource
@@ -26,6 +29,12 @@ def finalize_pipeline_result(pl: dict, keras_path: str) -> None:
 
 
 def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None) -> dict:
+    backend_id = getattr(backend, "backend_id", "?")
+    logger.info(
+        "starting scan backend=%s upload=%s",
+        backend_id,
+        image_bytes is not None,
+    )
     pl = run_pipeline(
         backend,
         image_bytes,

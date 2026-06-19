@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, NotRequired, TypedDict
 
@@ -18,6 +19,13 @@ from services.risk import composite_risk_score, risk_band
 from services.segmentation import segment_safe
 
 APP_VERSION = "0.4.0"
+logger = logging.getLogger("dermascan.pipeline")
+
+
+def _log_pi_error(backend, message: str) -> None:
+    if getattr(backend, "backend_id", None) != "pi":
+        return
+    logger.error("Pi scan failed: %s", message)
 
 
 def _rgb_to_jpeg_bytes(rgb: np.ndarray) -> bytes:
@@ -187,7 +195,9 @@ def run_pipeline(
         try:
             scan_result = backend.scan(model_jpg)
         except Exception as exc:  # noqa: BLE001
-            return {"blocked": False, "error": str(exc), "rgb": rgb_display, "mask": mask, "quality": q}
+            msg = str(exc)
+            _log_pi_error(backend, msg)
+            return {"blocked": False, "error": msg, "rgb": rgb_display, "mask": mask, "quality": q}
 
         abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
         return _finish(
@@ -204,13 +214,19 @@ def run_pipeline(
     try:
         scan_result = backend.scan(None)
     except Exception as exc:  # noqa: BLE001
-        return {"blocked": False, "error": str(exc), "scan_result": None}
+        msg = str(exc)
+        _log_pi_error(backend, msg)
+        return {"blocked": False, "error": msg, "scan_result": None}
     if not scan_result.image_jpg_bytes:
-        return {"blocked": False, "error": "Pi returned no image bytes.", "scan_result": scan_result}
+        msg = "Pi returned no image bytes."
+        _log_pi_error(backend, msg)
+        return {"blocked": False, "error": msg, "scan_result": scan_result}
     try:
         rgb_display = decode_image_bytes_to_rgb(scan_result.image_jpg_bytes)
     except ValueError as exc:
-        return {"blocked": False, "error": str(exc), "scan_result": scan_result}
+        msg = str(exc)
+        _log_pi_error(backend, msg)
+        return {"blocked": False, "error": msg, "scan_result": scan_result}
 
     rgb_for_abcde = _analysis_rgb(rgb_display)
     rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None

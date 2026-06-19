@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
@@ -18,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(FRONTEND))
 
 from backend.contracts import BackendKind
+from logging_config import configure_logging
 from navigation import current_route, init_navigation, navigate
 from services.auth import enforce_passcode_gate
 from services.inference import get_inference_backend
@@ -64,6 +66,7 @@ def _init_session() -> None:
 
 
 def main() -> None:
+    configure_logging()
     st.set_page_config(
         page_title="DermaScan AI",
         page_icon="🧬",
@@ -84,7 +87,19 @@ def main() -> None:
         if st.button("Settings", key="side_settings"):
             navigate("settings")
         if st.button("Health check", key="health_btn"):
-            st.write(backend.health())
+            health = backend.health()
+            log = logging.getLogger("dermascan.app")
+            if health.get("status") == "error":
+                reason = health.get("reason", "unknown")
+                log.error("Health check failed: %s", reason)
+                st.error(reason)
+            else:
+                log.info(
+                    "Health check ok backend=%s model=%s",
+                    getattr(backend, "backend_id", kind),
+                    health.get("model", "?"),
+                )
+                st.success(f"OK — model: {health.get('model', '?')}")
 
     route = current_route()
     if route == "home":
