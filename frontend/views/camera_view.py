@@ -16,6 +16,37 @@ from views.scan_view import list_sample_paths
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB — matches .streamlit/config.toml maxUploadSize
 
+try:
+    from picamera2 import Picamera2
+    _PICAMERA2_AVAILABLE = True
+except ImportError:
+    _PICAMERA2_AVAILABLE = False
+
+
+def _capture_picamera2() -> bytes | None:
+    """Capture a JPEG from the Pi Camera Module 2 and return bytes."""
+    import time
+    import cv2
+    import numpy as np
+    try:
+        cam = Picamera2()
+        cam.configure(cam.create_still_configuration(main={"size": (1024, 1024), "format": "RGB888"}))
+        cam.start()
+        time.sleep(1.0)
+        rgb = cam.capture_array()
+        try:
+            cam.stop()
+        except Exception:
+            pass
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        ok, buf = cv2.imencode(".jpg", bgr)
+        if not ok:
+            return None
+        return buf.tobytes()
+    except Exception as exc:
+        st.error(f"Camera capture failed: {exc}")
+        return None
+
 
 def _sanitize_upload(raw: bytes) -> bytes | None:
     """Re-encode user-supplied image bytes to JPEG, stripping EXIF and other metadata."""
@@ -89,19 +120,35 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
 
         with viewfinder_slot(shutter=scanning):
             if kind == "pi":
-                st.info("Press START SCAN to capture from the Pi camera over the network.")
-                pu = st.file_uploader(
-                    "Or send a test image to the Pi",
-                    type=["jpg", "jpeg", "png"],
-                    key="pi_upload",
-                    label_visibility="collapsed",
-                )
-                if pu is not None:
-                    cleaned = _accept_upload(pu)
-                    if cleaned is not None:
-                        image_bytes = cleaned
-                        st.session_state["capture_image_bytes"] = cleaned
-                        st.image(cleaned, width="stretch")
+                if _PICAMERA2_AVAILABLE:
+                    captured = st.session_state.get("capture_image_bytes")
+                    if captured:
+                        st.image(captured, width="stretch")
+                        if st.button("Retake", key="pi_retake"):
+                            st.session_state.pop("capture_image_bytes", None)
+                            st.rerun()
+                    else:
+                        if st.button("Take Photo", key="pi_capture"):
+                            with st.spinner("Capturing…"):
+                                shot = _capture_picamera2()
+                            if shot is not None:
+                                st.session_state["capture_image_bytes"] = shot
+                                image_bytes = shot
+                                st.rerun()
+                else:
+                    st.info("Press START SCAN to capture from the Pi camera over the network.")
+                    pu = st.file_uploader(
+                        "Or send a test image to the Pi",
+                        type=["jpg", "jpeg", "png"],
+                        key="pi_upload",
+                        label_visibility="collapsed",
+                    )
+                    if pu is not None:
+                        cleaned = _accept_upload(pu)
+                        if cleaned is not None:
+                            image_bytes = cleaned
+                            st.session_state["capture_image_bytes"] = cleaned
+                            st.image(cleaned, width="stretch")
             elif kind in ("mock", "local"):
                 image_bytes = _persist_capture(camera_key="local_camera", upload_key="cam_upload")
                 if kind == "mock":
