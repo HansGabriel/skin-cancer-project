@@ -1,8 +1,14 @@
-# Raspberry Pi runtime only. Install on the Pi inside a venv.
-# Picamera2 is best installed via apt (python3-picamera2); the line below is
-# a fallback for environments where pip wheels are available.
-tflite-runtime
-numpy
-opencv-python-headless
-flask
-picamera2
+# Raspberry Pi runtime. Install inside a venv created with --system-site-packages
+# so that apt-installed picamera2 and libcamera are accessible.
+#
+# Setup:
+#   python3 -m venv --system-site-packages venv
+#   source venv/bin/activate
+#   pip install -r requirements-pi.txt
+ai-edge-litert==2.1.5
+numpy==2.2.4
+opencv-python-headless==4.13.0.92
+Flask==3.1.1
+flatbuffers==25.12.19
+protobuf==7.35.1
+backports.strenum==1.2.8
