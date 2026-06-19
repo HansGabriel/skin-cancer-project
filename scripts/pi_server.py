@@ -9,10 +9,20 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import os
+
 import cv2
 import numpy as np
-import tflite_runtime.interpreter as tflite
 from flask import Flask, jsonify, request
+
+try:
+    from ai_edge_litert.interpreter import Interpreter as _Interpreter
+    def _make_interpreter(model_path: str):
+        return _Interpreter(model_path=model_path)
+except ImportError:
+    import tflite_runtime.interpreter as tflite
+    def _make_interpreter(model_path: str):
+        return tflite.Interpreter(model_path=model_path)
 from picamera2 import Picamera2
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -202,7 +212,7 @@ if set(labels) != set(RECOMMENDATIONS):
         f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
     )
 
-interpreter = tflite.Interpreter(model_path=str(MODEL_PATH))
+interpreter = _make_interpreter(str(MODEL_PATH))
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()[0]
 output_details = interpreter.get_output_details()[0]
