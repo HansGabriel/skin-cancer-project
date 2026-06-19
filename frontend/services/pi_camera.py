@@ -162,10 +162,12 @@ class _PiCamera:
             # Warmup: discard a few frames so AE/AWB have fully settled at capture time.
             for _ in range(_WARMUP_FRAMES):
                 self._cam.capture_array("main")
-            rgb = self._cam.capture_array("main")
+            frame = self._cam.capture_array("main")
 
-        rgb = self._center_crop(rgb, _CROP_SIZE)
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        # picamera2's "RGB888" format actually delivers BGR byte order, which is
+        # exactly what cv2.imencode expects — do NOT swap channels here or the
+        # red/blue channels invert and the image turns blue.
+        bgr = self._center_crop(frame, _CROP_SIZE)
         # Mild sharpening + auto contrast helps the fixed-focus, sometimes-soft IMX219.
         bgr = self._enhance(bgr)
         ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])

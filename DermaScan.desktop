@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=DermaScan
+Comment=Launch the DermaScan skin lesion demo
+Exec=/home/hansdaduya/Documents/skin-cancer-project/launch_kiosk.sh
+Icon=accessories-camera
+Terminal=false
+Categories=Education;Science;
