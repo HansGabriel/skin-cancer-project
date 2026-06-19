@@ -27,17 +27,12 @@ def _capture_picamera2() -> bytes | None:
     """Capture a JPEG from the Pi Camera Module 2 and return bytes."""
     import time
     import cv2
-    import numpy as np
     try:
-        cam = Picamera2()
-        cam.configure(cam.create_still_configuration(main={"size": (1024, 1024), "format": "RGB888"}))
-        cam.start()
-        time.sleep(1.0)
-        rgb = cam.capture_array()
-        try:
-            cam.stop()
-        except Exception:
-            pass
+        with Picamera2() as cam:
+            cam.configure(cam.create_still_configuration(main={"size": (1024, 1024), "format": "RGB888"}))
+            cam.start()
+            time.sleep(1.5)
+            rgb = cam.capture_array()
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         ok, buf = cv2.imencode(".jpg", bgr)
         if not ok:
