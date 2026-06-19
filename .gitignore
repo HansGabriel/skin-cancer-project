@@ -8,6 +8,13 @@ __pycache__/
 logs/*.sqlite
 logs/*.sqlite-journal
 
+# Pi server runtime files (symlinks + scan db)
+scripts/*.sqlite
+scripts/*.sqlite-journal
+scripts/skin_classifier.tflite
+scripts/labels.txt
+scripts/thresholds.json
+
 # Cursor local metadata/state
 .cursor/
 .cursor/hooks/state/
