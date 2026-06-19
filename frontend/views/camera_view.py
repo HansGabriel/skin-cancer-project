@@ -110,7 +110,13 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
         samples: list = []
         scanning = st.session_state.get("_cam_scanning", False)
 
-        if kind == "pi":
+        # Use the Pi hardware camera (picamera2) whenever it's importable — this runs on the
+        # Pi itself, where the browser cannot reach the CSI camera. Independent of backend kind.
+        use_hw_camera = _PICAMERA2_AVAILABLE and kind in ("pi", "local")
+
+        if use_hw_camera:
+            st.caption("Pi Camera Module — tap Take Photo to capture.")
+        elif kind == "pi":
             st.caption("Pi camera — inference runs on the Raspberry Pi.")
         else:
             st.caption(
@@ -119,36 +125,47 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
             )
 
         with viewfinder_slot(shutter=scanning):
-            if kind == "pi":
-                if _PICAMERA2_AVAILABLE:
-                    captured = st.session_state.get("capture_image_bytes")
-                    if captured:
-                        st.image(captured, width="stretch")
-                        if st.button("Retake", key="pi_retake"):
-                            st.session_state.pop("capture_image_bytes", None)
-                            st.rerun()
-                    else:
-                        if st.button("Take Photo", key="pi_capture"):
-                            with st.spinner("Capturing…"):
-                                shot = _capture_picamera2()
-                            if shot is not None:
-                                st.session_state["capture_image_bytes"] = shot
-                                image_bytes = shot
-                                st.rerun()
+            if use_hw_camera:
+                captured = st.session_state.get("capture_image_bytes")
+                if captured:
+                    image_bytes = captured
+                    st.image(captured, width="stretch")
+                    if st.button("Retake", key="pi_retake"):
+                        st.session_state.pop("capture_image_bytes", None)
+                        st.rerun()
                 else:
-                    st.info("Press START SCAN to capture from the Pi camera over the network.")
-                    pu = st.file_uploader(
-                        "Or send a test image to the Pi",
+                    if st.button("Take Photo", key="pi_capture"):
+                        with st.spinner("Capturing…"):
+                            shot = _capture_picamera2()
+                        if shot is not None:
+                            st.session_state["capture_image_bytes"] = shot
+                            st.rerun()
+                    up = st.file_uploader(
+                        "Or upload a photo",
                         type=["jpg", "jpeg", "png"],
-                        key="pi_upload",
+                        key="hw_upload",
                         label_visibility="collapsed",
                     )
-                    if pu is not None:
-                        cleaned = _accept_upload(pu)
+                    if up is not None:
+                        cleaned = _accept_upload(up)
                         if cleaned is not None:
                             image_bytes = cleaned
                             st.session_state["capture_image_bytes"] = cleaned
                             st.image(cleaned, width="stretch")
+            elif kind == "pi":
+                st.info("Press START SCAN to capture from the Pi camera over the network.")
+                pu = st.file_uploader(
+                    "Or send a test image to the Pi",
+                    type=["jpg", "jpeg", "png"],
+                    key="pi_upload",
+                    label_visibility="collapsed",
+                )
+                if pu is not None:
+                    cleaned = _accept_upload(pu)
+                    if cleaned is not None:
+                        image_bytes = cleaned
+                        st.session_state["capture_image_bytes"] = cleaned
+                        st.image(cleaned, width="stretch")
             elif kind in ("mock", "local"):
                 image_bytes = _persist_capture(camera_key="local_camera", upload_key="cam_upload")
                 if kind == "mock":
@@ -167,7 +184,9 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                 p = dict(samples).get(pick) if pick else None
                 if p:
                     image_bytes = p.read_bytes()
-            if kind in ("mock", "local") and image_bytes is None:
+            if use_hw_camera and image_bytes is None:
+                st.error("Tap Take Photo to capture from the Pi camera first.")
+            elif kind in ("mock", "local") and image_bytes is None:
                 st.error("Take a photo with the camera, upload an image, or pick a sample.")
             elif kind == "pi" and image_bytes is None:
                 pass  # Pi capture without upload
@@ -176,7 +195,7 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                 with st.spinner("Analyzing…"):
                     pl = run_scan_and_store(
                         backend,
-                        image_bytes if kind != "pi" or image_bytes else None,
+                        image_bytes if use_hw_camera or kind != "pi" or image_bytes else None,
                         pixels_per_mm=pixels,
                         strict_quality=strict_q,
                         keras_path=keras,
