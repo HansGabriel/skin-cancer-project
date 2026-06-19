@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import streamlit as st
 
 from components.app_bar import render_app_bar, render_disclaimer_footer
@@ -12,10 +15,26 @@ from components.viewfinder import render_viewfinder_placeholder
 from navigation import navigate
 from services.storage import get_storage
 
+# Kiosk exit: when running under launch_kiosk.sh, SKIN_KIOSK=1 is set. The Exit
+# button writes a flag file the launcher watches, then closes the browser cleanly.
+_KIOSK_QUIT_FLAG = Path("/tmp/dermascan_quit")
+
+
+def _render_kiosk_exit() -> None:
+    if os.environ.get("SKIN_KIOSK") != "1":
+        return
+    if st.button("✕ Exit", key="kiosk_exit", help="Close the DermaScan app"):
+        try:
+            _KIOSK_QUIT_FLAG.write_text("quit")
+        except OSError:
+            pass
+        st.stop()
+
 
 def render_home_view() -> None:
     with mobile_frame():
         render_app_bar()
+        _render_kiosk_exit()
         st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
         render_viewfinder_placeholder()
         if render_primary_button("SCAN LESION", key="home_scan"):
