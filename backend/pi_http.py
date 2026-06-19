@@ -105,8 +105,10 @@ class PiHttpBackend:
         probs = {str(k): float(v) for k, v in probs_raw.items()}
         b64 = data.get("image") or ""
         try:
-            image_jpg_bytes_out = base64.b64decode(b64, validate=False) if b64 else b""
-        except (ValueError, TypeError):
+            # validate=True rejects malformed payloads instead of silently storing garbage.
+            image_jpg_bytes_out = base64.b64decode(b64, validate=True) if b64 else b""
+        except (ValueError, TypeError) as exc:
+            logger.warning("POST /scan returned a malformed image payload: %s", exc)
             image_jpg_bytes_out = b""
         label = str(data.get("label", ""))
         confidence = float(data.get("confidence", 0.0))

@@ -17,11 +17,13 @@ pkill -f "streamlit run" 2>/dev/null
 pkill surf 2>/dev/null
 sleep 1
 
-# Quality gates relaxed (default brightness threshold rejects real photos).
-export SKIN_QUALITY_BLUR_MIN=0
-export SKIN_QUALITY_V_MIN=0
-export SKIN_QUALITY_V_MAX=254
-export SKIN_QUALITY_SKIN_MIN=0
+# Quality gates: relaxed enough for real close-up camera shots, but still strict
+# enough to reject an all-black/blank/blown-out frame. Bump toward the defaults
+# (35 / 35 / 220 / 0.15) if too many bad photos slip through during testing.
+export SKIN_QUALITY_BLUR_MIN=8
+export SKIN_QUALITY_V_MIN=15
+export SKIN_QUALITY_V_MAX=245
+export SKIN_QUALITY_SKIN_MIN=0.03
 
 # Tell the app it's in kiosk mode so it shows the on-screen Exit button.
 export SKIN_KIOSK=1

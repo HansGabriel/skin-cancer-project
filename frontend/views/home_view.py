@@ -35,7 +35,7 @@ def render_home_view() -> None:
     with mobile_frame():
         render_app_bar()
         _render_kiosk_exit()
-        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         render_viewfinder_placeholder()
         if render_primary_button("SCAN LESION", key="home_scan"):
             navigate("camera")

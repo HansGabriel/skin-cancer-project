@@ -12,7 +12,7 @@ from components.primary_button import render_back_link, render_primary_button
 from components.viewfinder import viewfinder_slot
 from navigation import navigate
 from services.scan_flow import run_scan_and_store
-from views.scan_view import list_sample_paths
+from services.samples import list_sample_paths
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB — matches .streamlit/config.toml maxUploadSize
 

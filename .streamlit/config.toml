@@ -5,3 +5,10 @@ gatherUsageStats = false
 headless = true
 maxUploadSize = 8
 enableXsrfProtection = true
+
+[theme]
+base = "light"
+primaryColor = "#6C4AB6"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6FB"
+textColor = "#14181F"

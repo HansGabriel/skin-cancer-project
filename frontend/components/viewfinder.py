@@ -7,7 +7,7 @@ from typing import Generator
 
 import streamlit as st
 
-_BRACKET = '<svg width="24" height="24"><path d="M4 8V4H8" stroke="#B58CF0" stroke-width="2.5" fill="none"/></svg>'
+_BRACKET = '<svg width="24" height="24"><path d="M4 8V4H8" stroke="#6C4AB6" stroke-width="2.5" fill="none"/></svg>'
 _CORNERS = f"""<div style="position:absolute;inset:0;pointer-events:none;z-index:2;">
 <div style="position:absolute;top:8px;left:8px">{_BRACKET}</div>
 <div style="position:absolute;top:8px;right:8px;transform:rotate(90deg)">{_BRACKET}</div>
@@ -15,7 +15,7 @@ _CORNERS = f"""<div style="position:absolute;inset:0;pointer-events:none;z-index
 <div style="position:absolute;bottom:8px;left:8px;transform:rotate(270deg)">{_BRACKET}</div></div>"""
 _CROSSHAIR = (
     '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;'
-    'pointer-events:none;opacity:.25"><div style="width:40%;height:1px;background:#B58CF0"></div></div>'
+    'pointer-events:none;opacity:.3"><div style="width:40%;height:1px;background:#6C4AB6"></div></div>'
 )
 
 

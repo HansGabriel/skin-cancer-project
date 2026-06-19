@@ -13,9 +13,12 @@ the camera_view falls back to the browser webcam / upload flow.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+_log = logging.getLogger("dermascan.pi_camera")
 
 try:
     import cv2
@@ -122,6 +125,7 @@ class _PiCamera:
     def _stream_loop(self) -> None:
         """Continuously refresh the latest preview JPEG from the lores stream."""
         assert self._cam is not None
+        consecutive_failures = 0
         while not self._stop.is_set():
             try:
                 # Capture the lores (preview) stream. YUV420 planar -> RGB; fall back to
@@ -140,7 +144,17 @@ class _PiCamera:
                 ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 if ok:
                     self._latest_jpeg = buf.tobytes()
-            except Exception:
+                consecutive_failures = 0
+            except Exception as exc:  # noqa: BLE001 — preview must not crash the thread
+                consecutive_failures += 1
+                # Log the first failure and then only periodically, so a persistently
+                # broken camera surfaces in the terminal without spamming it.
+                if consecutive_failures == 1 or consecutive_failures % 50 == 0:
+                    _log.warning(
+                        "Preview capture failed (%d in a row): %s",
+                        consecutive_failures,
+                        exc,
+                    )
                 time.sleep(0.1)
             time.sleep(0.04)
 
@@ -209,8 +223,8 @@ class _PiCamera:
                 try:
                     self._cam.stop()
                     self._cam.close()
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 — shutdown is best-effort
+                    _log.warning("Error closing camera: %s", exc)
                 self._cam = None
 
 

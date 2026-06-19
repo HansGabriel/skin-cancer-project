@@ -86,11 +86,15 @@ def _sha256_file(path: str | None) -> str | None:
     p = Path(path) if path else None
     if not p or not p.is_file():
         return None
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    # Provenance metadata only — never let a transient read error sink save_scan.
+    try:
+        h = hashlib.sha256()
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
 
 
 class Storage:
