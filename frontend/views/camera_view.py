@@ -16,31 +16,33 @@ from views.scan_view import list_sample_paths
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB — matches .streamlit/config.toml maxUploadSize
 
-try:
-    from picamera2 import Picamera2
-    _PICAMERA2_AVAILABLE = True
-except ImportError:
-    _PICAMERA2_AVAILABLE = False
+from services import pi_camera
+
+_PICAMERA2_AVAILABLE = pi_camera.AVAILABLE
 
 
 def _capture_picamera2() -> bytes | None:
-    """Capture a JPEG from the Pi Camera Module 2 and return bytes."""
-    import time
-    import cv2
+    """Capture a settled, center-cropped JPEG from the shared Pi camera."""
+    cam = pi_camera.get_camera()
+    if cam is None:
+        return None
     try:
-        with Picamera2() as cam:
-            cam.configure(cam.create_still_configuration(main={"size": (1024, 1024), "format": "RGB888"}))
-            cam.start()
-            time.sleep(1.5)
-            rgb = cam.capture_array()
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        ok, buf = cv2.imencode(".jpg", bgr)
-        if not ok:
-            return None
-        return buf.tobytes()
-    except Exception as exc:
+        return cam.capture_still_jpeg()
+    except Exception as exc:  # noqa: BLE001 — surfaced to user
         st.error(f"Camera capture failed: {exc}")
         return None
+
+
+def _render_live_preview() -> None:
+    """Embed the live MJPEG preview so the user can frame the shot before capture."""
+    cam = pi_camera.get_camera()
+    if cam is None:
+        return
+    st.markdown(
+        f'<img src="{pi_camera.preview_url()}" '
+        'style="width:100%;border-radius:12px;display:block;" alt="live preview" />',
+        unsafe_allow_html=True,
+    )
 
 
 def _sanitize_upload(raw: bytes) -> bytes | None:
@@ -129,6 +131,7 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                         st.session_state.pop("capture_image_bytes", None)
                         st.rerun()
                 else:
+                    _render_live_preview()
                     if st.button("Take Photo", key="pi_capture"):
                         with st.spinner("Capturing…"):
                             shot = _capture_picamera2()
