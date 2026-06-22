@@ -16,11 +16,53 @@ from backend.contracts import ScanResult
 from backend.recommendations import RECOMMENDATIONS
 
 _THRESHOLDS: dict | None = None
+_TEMPERATURE: float | None = None
 
 
 def load_labels(path: str | Path) -> list[str]:
     text = Path(path).read_text(encoding="utf-8")
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _load_temperature() -> float:
+    """Calibration temperature T from models/temperature.json (1.0 => no calibration).
+
+    Fitted on the validation set during training. Used only to make the *displayed*
+    confidence honest — NOT to make the cancer-screen decision, which stays on the
+    raw probabilities so the validated 90% sensitivity threshold is preserved.
+    """
+    global _TEMPERATURE
+    if _TEMPERATURE is not None:
+        return _TEMPERATURE
+    path = os.environ.get("SKIN_TEMPERATURE_JSON")
+    if not path:
+        root = Path(__file__).resolve().parent.parent
+        path = str(root / "models" / "temperature.json")
+    p = Path(path)
+    try:
+        T = float(json.loads(p.read_text(encoding="utf-8")).get("T", 1.0)) if p.is_file() else 1.0
+    except (ValueError, OSError, KeyError):
+        T = 1.0
+    # Guard against bad/degenerate values that would distort probabilities.
+    _TEMPERATURE = T if T and T > 0 else 1.0
+    return _TEMPERATURE
+
+
+def apply_temperature(probs: np.ndarray, temperature: float | None = None) -> np.ndarray:
+    """Re-calibrate softmax probabilities with temperature T.
+
+    The exported TFLite model emits softmax probs (true logits are gone), so we
+    recover pseudo-logits via log(p), divide by T, and re-softmax. This is the
+    standard post-hoc way to temperature-scale probabilities and is exactly
+    softmax(log(p) / T). T>1 softens overconfident predictions toward honesty.
+    """
+    if temperature is None:
+        temperature = _load_temperature()
+    if temperature == 1.0:
+        return probs.astype(np.float32)
+    eps = 1e-12
+    pseudo_logits = np.log(np.clip(probs.astype(np.float64), eps, 1.0))
+    return _softmax(pseudo_logits / float(temperature))
 
 
 def _load_thresholds() -> dict:
@@ -127,10 +169,15 @@ def compose_scan_result(
     inference_ms: int,
     backend_id: str,
 ) -> ScanResult:
+    # Decide the class on the RAW probabilities so the validated, sensitivity-first
+    # cancer-screen threshold (fit on raw softmax) is preserved.
     idx = decide_index(probs)
     label = labels[idx]
-    confidence = float(probs[idx]) * 100.0
-    prob_dict = {labels[i]: float(probs[i]) * 100.0 for i in range(len(labels))}
+    # Report confidence / per-class probabilities on the TEMPERATURE-CALIBRATED
+    # probabilities so the numbers shown to the user aren't overconfident.
+    cal = apply_temperature(probs)
+    confidence = float(cal[idx]) * 100.0
+    prob_dict = {labels[i]: float(cal[i]) * 100.0 for i in range(len(labels))}
     rec = RECOMMENDATIONS[label]
     ts = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     return ScanResult(

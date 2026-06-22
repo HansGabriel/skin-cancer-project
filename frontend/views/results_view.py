@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -8,15 +9,22 @@ import streamlit as st
 from backend.contracts import ScanResult
 from components.abcde_row import render_abcde_row
 from components.app_bar import render_disclaimer_footer
-from components.detection_headline import render_detection_headline
 from components.image_compare import render_image_compare
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
 from components.prob_bars import render_seven_class_expander, render_three_class_probs
 from components.recommendation_card import render_recommendation_card
-from components.urgency_pill import render_urgency_from_band
+from components.risk_ring import render_risk_ring
 from navigation import navigate
 from services.storage import get_storage
+
+# Below this calibrated top-class confidence (%), the model isn't sure enough to
+# stand behind a single label — show an "inconclusive" banner instead of pretending.
+# Tunable via env so it can be adjusted without a code change.
+try:
+    _INCONCLUSIVE_BELOW = float(os.environ.get("SKIN_INCONCLUSIVE_BELOW", "45"))
+except ValueError:
+    _INCONCLUSIVE_BELOW = 45.0
 
 
 @st.dialog("Save to case")
@@ -76,10 +84,16 @@ def render_results_view(*, root: Path, model_path: str) -> None:
         if pl.get("error") and not pl.get("scan_result"):
             st.error(pl["error"])
             return
-        render_urgency_from_band(str(pl.get("risk_band", "low")))
         sr = pl.get("scan_result")
         if isinstance(sr, ScanResult):
-            render_detection_headline(sr.label, float(sr.confidence))
+            render_risk_ring(sr.label, float(sr.confidence), str(pl.get("risk_band", "low")))
+            # Honest "neither / not sure" output: if even the calibrated top class is
+            # weak, tell the user it's inconclusive rather than over-trusting the label.
+            if float(sr.confidence) < _INCONCLUSIVE_BELOW:
+                st.warning(
+                    "⚠ Inconclusive — the model is not confident about this result. "
+                    "Retake with better lighting/focus, or consult a health professional."
+                )
             t_path = Path(model_path).resolve().parent / "temperature.json"
             if not t_path.is_file():
                 t_path = root / "models" / "temperature.json"
@@ -101,7 +115,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:
             render_abcde_row(pl.get("abcde"))
             render_three_class_probs(sr.probs)
             render_seven_class_expander(pl.get("seven_class_probs"), str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))
-            render_recommendation_card(sr.action)
+            render_recommendation_card(sr.action, str(pl.get("risk_band", "low")))
         qd = pl.get("quality", {}).get("reason_details", [])
         for _code, label, _sev in qd:
             st.warning(label)

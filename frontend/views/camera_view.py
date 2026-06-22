@@ -132,7 +132,7 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                         st.rerun()
                 else:
                     _render_live_preview()
-                    if st.button("Take Photo", key="pi_capture"):
+                    if st.button("📷  Take Photo", key="pi_capture", use_container_width=True):
                         with st.spinner("Capturing…"):
                             shot = _capture_picamera2()
                         if shot is not None:

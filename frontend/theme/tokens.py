@@ -16,10 +16,21 @@ class Tokens:
     text_muted: str = "#5A6273"
     violet: str = "#6C4AB6"  # darkened so it reads on white
     violet_strong: str = "#4A2F86"
+    teal: str = "#0EA5A4"  # medical secondary accent
+    teal_strong: str = "#0B7E7D"
     success: str = "#15803D"
     warning: str = "#B45309"
     urgent: str = "#DC2626"
     info: str = "#2563EB"
+    # Soft tints for card fills behind risk content (not the saturated badge colors).
+    success_tint: str = "#E7F6EC"
+    warning_tint: str = "#FDF3E4"
+    urgent_tint: str = "#FCEBEA"
+    info_tint: str = "#E8F0FE"
+    violet_tint: str = "#F0EBFA"
+    # Elevation — consistent depth instead of flat 1px borders.
+    shadow_sm: str = "0 1px 3px rgba(20,24,31,.06), 0 1px 2px rgba(20,24,31,.04)"
+    shadow_md: str = "0 6px 18px rgba(20,24,31,.10), 0 2px 6px rgba(20,24,31,.06)"
     radius_xs: int = 8
     radius_sm: int = 12
     radius_md: int = 16

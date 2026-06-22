@@ -35,12 +35,17 @@ def render_home_view() -> None:
     with mobile_frame():
         render_app_bar()
         _render_kiosk_exit()
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            '<div style="text-align:center;margin:4px 0 10px">'
+            '<div style="font-size:14px;color:#5A6273">Point the camera at a skin lesion '
+            'and tap scan.</div></div>',
+            unsafe_allow_html=True,
+        )
         render_viewfinder_placeholder()
-        if render_primary_button("SCAN LESION", key="home_scan"):
+        if render_primary_button("📷  SCAN LESION", key="home_scan"):
             navigate("camera")
         render_disclaimer_footer()
-        st.markdown("### History")
+        st.markdown('<p class="ds-section-title" style="margin-top:8px">History</p>', unsafe_allow_html=True)
         st.text_input("Search", placeholder="🔍", key="home_search", label_visibility="collapsed")
         store = get_storage()
         folders = store.list_folders()

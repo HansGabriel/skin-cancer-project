@@ -41,7 +41,9 @@ _CROP_SIZE = 1024  # center square pulled from the still and sent on for analysi
 _PREVIEW_SIZE = (640, 480)  # lores stream for the live feed
 
 # Number of frames to discard so auto-exposure / auto-white-balance settle.
-_WARMUP_FRAMES = 8
+# The camera runs continuously (the live preview proves AE/AWB are already settled),
+# so only a couple of fresh frames are needed — 8 added ~1-2s of dead time per shot.
+_WARMUP_FRAMES = 2
 
 
 class _PiCamera:
