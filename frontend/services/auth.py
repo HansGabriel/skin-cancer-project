@@ -33,6 +33,18 @@ def enforce_passcode_gate() -> None:
 
     st.markdown("### DermaScan AI")
     st.caption("Enter the access passcode to continue.")
+    if os.environ.get("SKIN_KIOSK") == "1":
+        # Keyboard-less kiosk: on-screen keypad instead of a text input.
+        from components.keypad import render_numeric_keypad
+
+        entered = render_numeric_keypad(key="_auth_keypad")
+        if entered is not None:
+            if hmac.compare_digest(entered, expected):
+                st.session_state["_auth_ok"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect passcode.")
+        st.stop()
     entered = st.text_input("Passcode", type="password", key="_auth_passcode_input")
     if st.button("Unlock", key="_auth_unlock"):
         if hmac.compare_digest(entered or "", expected):

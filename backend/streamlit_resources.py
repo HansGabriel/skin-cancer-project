@@ -29,9 +29,16 @@ def _interpreter_class():
 
 @st.cache_resource
 def get_tflite_interpreter(model_path: str):
-    """Load and allocate TFLite interpreter once per ``model_path`` (rerun-safe)."""
+    """Load and allocate TFLite interpreter once per ``model_path`` (rerun-safe).
+
+    ``SKIN_NUM_THREADS`` (default 4) sets CPU threads — the Pi 4 has 4 cores and
+    XNNPACK is enabled by default in tflite-runtime / ai-edge-litert.
+    """
+    import os
+
     Interpreter = _interpreter_class()
-    interpreter = Interpreter(model_path=model_path)
+    num_threads = int(os.environ.get("SKIN_NUM_THREADS", "4"))
+    interpreter = Interpreter(model_path=model_path, num_threads=num_threads)
     interpreter.allocate_tensors()
     return interpreter
 

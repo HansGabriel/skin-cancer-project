@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import streamlit as st
 
@@ -15,26 +14,12 @@ from components.viewfinder import render_viewfinder_placeholder
 from navigation import navigate
 from services.storage import get_storage
 
-# Kiosk exit: when running under launch_kiosk.sh, SKIN_KIOSK=1 is set. The Exit
-# button writes a flag file the launcher watches, then closes the browser cleanly.
-_KIOSK_QUIT_FLAG = Path("/tmp/dermascan_quit")
-
-
-def _render_kiosk_exit() -> None:
-    if os.environ.get("SKIN_KIOSK") != "1":
-        return
-    if st.button("✕ Exit", key="kiosk_exit", help="Close the DermaScan app"):
-        try:
-            _KIOSK_QUIT_FLAG.write_text("quit")
-        except OSError:
-            pass
-        st.stop()
+# Kiosk exit moved to Settings (reachable everywhere via the bottom nav).
 
 
 def render_home_view() -> None:
     with mobile_frame():
         render_app_bar()
-        _render_kiosk_exit()
         st.markdown(
             '<div style="text-align:center;margin:4px 0 10px">'
             '<div style="font-size:14px;color:#5A6273">Point the camera at a skin lesion '
@@ -46,7 +31,9 @@ def render_home_view() -> None:
             navigate("camera")
         render_disclaimer_footer()
         st.markdown('<p class="ds-section-title" style="margin-top:8px">History</p>', unsafe_allow_html=True)
-        st.text_input("Search", placeholder="🔍", key="home_search", label_visibility="collapsed")
+        # No physical/on-screen keyboard on the kiosk — hide the search box there.
+        if os.environ.get("SKIN_KIOSK") != "1":
+            st.text_input("Search", placeholder="🔍", key="home_search", label_visibility="collapsed")
         store = get_storage()
         folders = store.list_folders()
         q = (st.session_state.get("home_search") or "").strip().lower()

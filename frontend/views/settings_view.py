@@ -60,6 +60,25 @@ def render_settings_view(*, root: Path) -> None:
             "Debug: show original vs ABCDE-enhanced on Results",
             key="preprocess_debug",
         )
+        st.divider()
+        # Gemma reword layer (Ollama). Retrieval answers work verbatim without it.
+        from backend.assistant import OLLAMA_MODEL, OllamaRephraser
+
+        if "assistant_gemma_enabled" not in st.session_state:
+            st.session_state["assistant_gemma_enabled"] = OllamaRephraser().health()["status"] == "ok"
+        st.toggle(
+            "AI wording (Gemma via Ollama)",
+            key="assistant_gemma_enabled",
+            help="Rewords the doctor-reviewed answers conversationally. Answers stay vetted either way.",
+        )
+        if st.session_state["assistant_gemma_enabled"]:
+            h = OllamaRephraser().health()
+            if h["status"] == "ok":
+                st.caption(f"🟢 {OLLAMA_MODEL} ready")
+            elif h["status"] == "missing_model":
+                st.caption(f"🟡 Ollama running but {OLLAMA_MODEL} not pulled — verbatim answers")
+            else:
+                st.caption("⚪ Ollama not running — verbatim answers")
         kind = st.session_state.get("inference_backend_kind", "mock")
         tta_default = kind != "pi"
         if "tta_toggle" not in st.session_state:
@@ -74,7 +93,21 @@ def render_settings_view(*, root: Path) -> None:
             st.caption("Pi backend: TTA increases latency on the device.")
         st.caption(f"Data: `{data_dir()}` · Env: DERMASCAN_DATA_DIR, SKIN_MODEL_PATH")
         st.divider()
-        if st.text_input('Type DELETE to reset') == "DELETE" and st.button("Reset all data"):
+        if os.environ.get("SKIN_KIOSK") == "1":
+            # Kiosk: Exit lives here (reachable from every screen via bottom nav).
+            # No free-text confirm on the keyboard-less kiosk — two-tap reset instead.
+            if st.button("✕ Exit DermaScan", key="kiosk_exit"):
+                try:
+                    Path("/tmp/dermascan_quit").write_text("quit")
+                except OSError:
+                    pass
+                st.stop()
+            if st.checkbox("I want to reset all data", key="reset_confirm") and st.button("Reset all data"):
+                store.reset_all()
+                st.session_state.pop("last_result", None)
+                st.success("Reset complete.")
+                st.rerun()
+        elif st.text_input('Type DELETE to reset') == "DELETE" and st.button("Reset all data"):
             store.reset_all()
             st.session_state.pop("last_result", None)
             st.success("Reset complete.")

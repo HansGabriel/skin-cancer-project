@@ -79,8 +79,27 @@ screen is populated for visitors.
 These are tracked in the parent Notion v2 plan and were intentionally not
 shipped with the first online deployment:
 
-- B.1 Fit `models/temperature.json` via `scripts/fit_temperature.py` (currently `T=1.0` placeholder).
-- B.2 Wire test-time augmentation in `backend/tflite_shared.py`.
-- B.5 Add runtime `SKIN_MODEL_PATH` switch for the INT8-only re-export.
+- ~~B.1 Fit `models/temperature.json`~~ **Done** — T=1.54 fitted and applied to *displayed* confidence only (`backend/tflite_shared.apply_temperature`); decisions stay on raw probs since the 0.11 threshold was tuned uncalibrated.
+- ~~B.2 Wire test-time augmentation~~ **Done** — 4-view TTA in `backend/tflite_shared.run_inference_on_rgb` (`SKIN_TTA`, off on Pi).
+- B.5 INT8 re-export: `scripts/export_tflite_int8.py` must add a `representative_dataset` (currently missing — the "int8" file is dynamic-range only). Re-export, check `scripts/eval_threshold.py --model models/skin_classifier_int8.tflite` parity (screening sensitivity within 1 pt of float), benchmark on the Pi, then switch via the existing `SKIN_MODEL` env in `scripts/pi_server.py`.
 - Tier-2: implement `frontend/services/uncertainty.py` (MC-Dropout) and `frontend/services/skintone.py` (Fitzpatrick/ITA).
 - Tier-3: implement `frontend/services/report.py` (PDF export).
+
+---
+
+## 7" touchscreen kiosk (MVP 2)
+
+Target panel: **7" 1024x600 HDMI IPS, 5-point capacitive touch, drive-free**
+(touch is a USB HID device — plug HDMI + USB, no driver install).
+
+- `launch_kiosk.sh` exports `SKIN_DISPLAY=7in` (larger type/touch targets),
+  `SKIN_NUM_THREADS=4`, and opens surf at zoom **1.0** on a local splash page
+  that redirects itself once Streamlit answers.
+- **No signal on the panel?** Add the panel's timing to `/boot/firmware/config.txt`:
+  `hdmi_cvt=1024 600 60 6 0 0 0` plus `hdmi_group=2` and `hdmi_mode=87`, then reboot.
+- **Typing is designed out on the kiosk** (`SKIN_KIOSK=1`): numeric on-screen
+  keypad for the passcode, preset chips for save-to-case, search hidden, and the
+  assistant uses tappable suggested questions. If free-text entry is ever needed,
+  install a system on-screen keyboard as an optional extra:
+  `sudo apt install wvkbd` and bind `wvkbd-mobintl` to a hot corner/gesture —
+  not required for any core flow.

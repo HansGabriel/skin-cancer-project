@@ -1,12 +1,22 @@
-"""Inject global DermaScan theme CSS into Streamlit."""
+"""Inject global DermaScan theme CSS into Streamlit.
+
+Profile-aware via theme.tokens (SKIN_DISPLAY env): ``desktop`` keeps MVP 1
+values; ``7in`` targets the 1024x600/800x480 touchscreen at surf zoom 1.0.
+"""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import streamlit as st
 
 from theme.tokens import TOKENS as T
+
+_IS_7IN = os.environ.get("SKIN_DISPLAY", "desktop").strip().lower() == "7in"
+# Column-stacking breakpoint: desktop keeps 560 (phones stack); on the 7" panel
+# (>=800px viewport) drop to 480 so nothing ever stacks on the kiosk itself.
+_STACK_BP = 480 if _IS_7IN else 560
 
 _FONTS_DIR = Path(__file__).resolve().parent / "fonts"
 _HAS_PJS = (_FONTS_DIR / "PlusJakartaSans-Regular.woff2").is_file()
@@ -29,7 +39,7 @@ def inject_global_css() -> None:
 [data-testid="stAppViewContainer"],.stApp{{background:{T.bg}!important;color:{T.text}!important;font-family:{_FONT_STACK}!important;font-size:{T.font_base}px;}}
 [data-testid="stSidebar"]{{background:{T.bg_elev}!important;border-right:1px solid {T.outline}!important;}}
 /* Bigger, readable tap targets on the LCD. Secondary buttons are white-on-outline. */
-.stButton>button{{border-radius:999px!important;background:#fff!important;color:{T.text}!important;border:1px solid {T.outline}!important;min-height:48px!important;font-size:{T.font_base}px!important;font-weight:600!important;padding:12px 18px!important;box-shadow:{T.shadow_sm}!important;transition:transform .08s ease,box-shadow .15s ease!important;}}
+.stButton>button{{border-radius:999px!important;background:#fff!important;color:{T.text}!important;border:1px solid {T.outline}!important;min-height:{T.touch_min}px!important;font-size:{T.font_base}px!important;font-weight:600!important;padding:12px 18px!important;box-shadow:{T.shadow_sm}!important;transition:transform .08s ease,box-shadow .15s ease!important;}}
 .stButton>button:hover{{border-color:{T.violet}!important;box-shadow:{T.shadow_md}!important;}}
 .stButton>button:active{{transform:translateY(1px)!important;}}
 .stButton>button[kind="primary"]{{background:linear-gradient(180deg,{T.violet},{T.violet_strong})!important;color:#fff!important;border:none!important;box-shadow:0 6px 18px rgba(108,74,182,.30)!important;}}
@@ -74,20 +84,20 @@ def inject_global_css() -> None:
 .ds-advice svg{{flex:0 0 auto;margin-top:2px;}}
 /* ABCDE tier dot. */
 .ds-tier-dot{{width:10px;height:10px;border-radius:999px;display:inline-block;margin-right:4px;vertical-align:middle;}}
-/* --- Responsive: auto-adapt LCD vs desktop --- */
-@media (max-width:560px){{
+/* --- Responsive: narrow windows stack columns; wide keeps the framed column --- */
+@media (max-width:{_STACK_BP}px){{
   .stApp{{font-size:18px!important;}}
   .ds-mobile-frame{{max-width:100%;padding:0 8px 16px;}}
-  .stButton>button{{min-height:52px!important;font-size:18px!important;}}
-  /* Stack Streamlit's horizontal columns so 4/5-col grids don't crush on the LCD. */
+  .stButton>button{{min-height:{max(T.touch_min, 52)}px!important;font-size:18px!important;}}
+  /* Stack Streamlit's horizontal columns so 4/5-col grids don't crush. */
   [data-testid="stHorizontalBlock"]{{flex-direction:column!important;}}
   [data-testid="stHorizontalBlock"]>div{{width:100%!important;}}
   .ds-app-bar-time{{font-size:13px;}}
   .ds-ring{{width:150px;height:150px;}}
   .ds-ring-inner{{width:116px;height:116px;}}
 }}
-@media (min-width:561px){{
-  .stApp{{font-size:16px;}}
+@media (min-width:{_STACK_BP + 1}px){{
+  .stApp{{font-size:{T.font_base if _IS_7IN else 16}px;}}
   .ds-mobile-frame{{max-width:{T.mobile_width}px;}}
 }}
 </style>""",

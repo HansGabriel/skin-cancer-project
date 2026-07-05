@@ -15,14 +15,16 @@ import cv2
 import numpy as np
 from flask import Flask, jsonify, request
 
+# SKIN_NUM_THREADS (default 4): the Pi 4 has 4 cores; XNNPACK is on by default.
+_NUM_THREADS = int(os.environ.get("SKIN_NUM_THREADS", "4"))
 try:
     from ai_edge_litert.interpreter import Interpreter as _Interpreter
     def _make_interpreter(model_path: str):
-        return _Interpreter(model_path=model_path)
+        return _Interpreter(model_path=model_path, num_threads=_NUM_THREADS)
 except ImportError:
     import tflite_runtime.interpreter as tflite
     def _make_interpreter(model_path: str):
-        return tflite.Interpreter(model_path=model_path)
+        return tflite.Interpreter(model_path=model_path, num_threads=_NUM_THREADS)
 from picamera2 import Picamera2
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -31,6 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / os.environ.get("SKIN_MODEL", "skin_classifier.tflite")
 LABELS_PATH = BASE_DIR / os.environ.get("SKIN_LABELS", "labels.txt")
 THRESHOLDS_PATH = BASE_DIR / os.environ.get("SKIN_THRESHOLDS", "thresholds.json")
+TEMPERATURE_PATH = BASE_DIR / os.environ.get("SKIN_TEMPERATURE", "temperature.json")
 DB_PATH = BASE_DIR / "pi_scans.sqlite"
 IMAGE_SIZE = 224
 
@@ -68,6 +71,26 @@ def load_thresholds(path: Path) -> dict:
         return {}
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_temperature(path: Path) -> float:
+    """Calibration T from temperature.json. Missing/invalid => 1.0 (no calibration)."""
+    if not path.is_file():
+        return 1.0
+    try:
+        t = float(json.loads(path.read_text(encoding="utf-8")).get("T", 1.0))
+    except (ValueError, TypeError):
+        return 1.0
+    return t if t > 0 else 1.0
+
+
+def apply_temperature(probs: np.ndarray, temperature: float) -> np.ndarray:
+    """Mirror of backend.tflite_shared.apply_temperature: p_i^(1/T) renormalised.
+    Applied to DISPLAYED probs only — decide_index always runs on raw probs."""
+    if temperature == 1.0:
+        return probs
+    scaled = np.power(np.clip(probs.astype(np.float64), 1e-12, 1.0), 1.0 / temperature)
+    return (scaled / scaled.sum()).astype(np.float32)
 
 
 def decide_index(probs: np.ndarray, thresholds: dict) -> int:
@@ -114,18 +137,29 @@ def dequantize_output(output: np.ndarray, output_details: dict) -> np.ndarray:
     return output.astype(np.float32)
 
 
-def capture_rgb() -> np.ndarray:
-    cam = Picamera2()
-    cam.configure(cam.create_still_configuration(main=PICAM_STILL_MAIN))
-    try:
+# Persistent camera: opened lazily on the first /scan and kept running so later
+# scans skip the ~1s re-init/warmup. NOTE: pi_server and the kiosk Streamlit app
+# (services/pi_camera.py) cannot run at the same time — one camera owner only.
+_CAMERA = None
+_CAMERA_LOCK = __import__("threading").Lock()
+_WARMUP_FRAMES = 8
+
+
+def _get_camera():
+    global _CAMERA
+    if _CAMERA is None:
+        cam = Picamera2()
+        cam.configure(cam.create_still_configuration(main=PICAM_STILL_MAIN))
         cam.start()
-        time.sleep(1.0)
-        return cam.capture_array()
-    finally:
-        try:
-            cam.stop()
-        except Exception:
-            pass
+        for _ in range(_WARMUP_FRAMES):  # let AE/AWB settle instead of sleep(1.0)
+            cam.capture_array()
+        _CAMERA = cam
+    return _CAMERA
+
+
+def capture_rgb() -> np.ndarray:
+    with _CAMERA_LOCK:
+        return _get_camera().capture_array()
 
 
 def decode_upload_to_rgb(file_storage) -> np.ndarray:
@@ -155,11 +189,13 @@ def run_scan_from_rgb(
     inference_ms = int((time.perf_counter() - t0) * 1000)
 
     probs = dequantize_output(output, output_details)
+    # Decide on RAW probs (threshold tuned uncalibrated); calibrate display only.
     pred_idx = decide_index(probs, thresholds)
+    display_probs = apply_temperature(probs, temperature)
     pred_label = labels[pred_idx]
-    confidence = float(probs[pred_idx]) * 100.0
+    confidence = float(display_probs[pred_idx]) * 100.0
     recommendation = RECOMMENDATIONS[pred_label]
-    probs_pct = {labels[i]: float(probs[i]) * 100.0 for i in range(len(labels))}
+    probs_pct = {labels[i]: float(display_probs[i]) * 100.0 for i in range(len(labels))}
 
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
     ok, encoded = cv2.imencode(".jpg", image_bgr)
@@ -207,6 +243,7 @@ init_db()
 
 labels = load_labels(LABELS_PATH)
 thresholds = load_thresholds(THRESHOLDS_PATH)
+temperature = load_temperature(TEMPERATURE_PATH)
 if set(labels) != set(RECOMMENDATIONS):
     raise RuntimeError(
         f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
@@ -218,6 +255,10 @@ input_details = interpreter.get_input_details()[0]
 output_details = interpreter.get_output_details()[0]
 
 app = Flask(__name__)
+print(
+    "NOTE: pi_server holds the camera open after the first /scan. Do not run the "
+    "kiosk Streamlit app (which also owns the camera) at the same time."
+)
 
 
 @app.get("/health")

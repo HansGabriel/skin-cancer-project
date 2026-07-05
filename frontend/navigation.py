@@ -6,8 +6,8 @@ from typing import Literal
 
 import streamlit as st
 
-Route = Literal["home", "camera", "results", "history", "folder", "case", "settings"]
-ROUTES: tuple[Route, ...] = ("home", "camera", "results", "history", "folder", "case", "settings")
+Route = Literal["home", "camera", "results", "history", "folder", "case", "settings", "assistant"]
+ROUTES: tuple[Route, ...] = ("home", "camera", "results", "history", "folder", "case", "settings", "assistant")
 
 
 def init_navigation() -> None:

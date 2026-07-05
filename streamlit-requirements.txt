@@ -3,7 +3,7 @@
 # deployment (results_view.py renders a fallback). Classification, ABCDE,
 # E-Evolving, and risk scoring all run via the TFLite interpreter below.
 streamlit==1.57.0
-ai-edge-litert==2.1.4
+ai-edge-litert==2.1.5
 numpy>=1.26,<2.3
 pillow>=10.0
 opencv-python-headless>=4.10

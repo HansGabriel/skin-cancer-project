@@ -5,9 +5,11 @@
 
 set -u
 
-PROJECT_DIR="$HOME/Documents/skin-cancer-project"
+# Resolve the project from wherever this script lives (no hardcoded path).
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV="$PROJECT_DIR/venv"
 URL="http://127.0.0.1:8501"
+SPLASH="file://$PROJECT_DIR/frontend/static/splash.html"
 LOG="/tmp/dermascan_kiosk.log"
 
 cd "$PROJECT_DIR" || exit 1
@@ -28,6 +30,12 @@ export SKIN_QUALITY_SKIN_MIN=0.03
 # Tell the app it's in kiosk mode so it shows the on-screen Exit button.
 export SKIN_KIOSK=1
 
+# Use all 4 Pi cores for TFLite inference.
+export SKIN_NUM_THREADS=4
+
+# 7" touchscreen profile (1024x600 HDMI IPS): wider frame, larger type/touch targets.
+export SKIN_DISPLAY=7in
+
 # Clear any stale quit flag from a previous session.
 QUIT_FLAG="/tmp/dermascan_quit"
 rm -f "$QUIT_FLAG"
@@ -37,19 +45,20 @@ source "$VENV/bin/activate"
 nohup streamlit run frontend/app.py >"$LOG" 2>&1 &
 STREAMLIT_PID=$!
 
-# Wait (up to ~40s) for Streamlit to answer before opening the browser.
+# Open surf immediately on the local splash page — it polls Streamlit and
+# redirects itself once the app answers (no blank screen during boot).
+# SURF_ZOOM 1.0 suits the 7" 1024x600 panel; tweak (0.9 / 1.1) if needed.
+SURF_ZOOM="${SURF_ZOOM:-1.0}"
+DISPLAY=:0 surf -F -z "$SURF_ZOOM" "$SPLASH" &
+SURF_PID=$!
+
+# Watchdog only: give Streamlit up to ~40s; log if it never comes up.
 for _ in $(seq 1 40); do
     if curl -s -o /dev/null "$URL"; then
         break
     fi
     sleep 1
 done
-
-# Open surf fullscreen on the LCD, zoomed out to fit the 480x320 screen.
-# Adjust SURF_ZOOM (e.g. 0.5, 0.6, 0.7) if it's too big or too small.
-SURF_ZOOM="${SURF_ZOOM:-0.5}"
-DISPLAY=:0 surf -F -z "$SURF_ZOOM" "$URL" &
-SURF_PID=$!
 
 # Watch for the on-screen Exit button's quit flag; close surf when it appears.
 # Also exit the loop if surf is closed manually (Ctrl+W / Alt+F4).

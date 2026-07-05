@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DermaScan — starting…</title>
+<style>
+  html,body{height:100%;margin:0;background:#FFFFFF;color:#14181F;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+    display:flex;align-items:center;justify-content:center;}
+  .wrap{text-align:center;}
+  .logo{font-size:56px;}
+  h1{font-size:30px;margin:12px 0 4px;}
+  p{color:#5A6273;font-size:17px;margin:4px 0;}
+  .dots::after{content:"";animation:d 1.5s steps(4,end) infinite;}
+  @keyframes d{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  .bar{width:220px;height:6px;background:#EDEFF6;border-radius:999px;margin:20px auto 0;overflow:hidden;}
+  .fill{width:35%;height:100%;background:linear-gradient(90deg,#6C4AB6,#4A2F86);
+    border-radius:999px;animation:slide 1.4s ease-in-out infinite;}
+  @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">🧬</div>
+  <h1>DermaScan AI</h1>
+  <p>Starting up<span class="dots"></span></p>
+  <div class="bar"><div class="fill"></div></div>
+  <p style="font-size:13px;margin-top:24px">Screening aid — not a diagnosis</p>
+</div>
+<script>
+  const URL = "http://127.0.0.1:8501";
+  async function poll() {
+    try {
+      await fetch(URL, {mode: "no-cors"});
+      window.location = URL;   // Streamlit is up — hand over
+    } catch (e) {
+      setTimeout(poll, 1000);
+    }
+  }
+  setTimeout(poll, 1000);
+</script>
+</body>
+</html>

@@ -28,13 +28,13 @@ def render_abcde_row(abcde: dict[str, Any] | None) -> None:
         else:
             pill, bg, fg = _TIER.get(int(d.get("tier", 0)), ("—", T.outline, T.text))
         detail = d.get("detail", "")
-        cap = f'<div style="font-size:9px;color:{T.text_muted};margin-top:4px">{detail}</div>' if detail else ""
+        cap = f'<div style="font-size:{T.font_2xs}px;color:{T.text_muted};margin-top:4px">{detail}</div>' if detail else ""
         chips.append(
             f'<div style="flex:1;min-width:64px;background:#fff;border:1px solid {T.outline};'
             f'border-radius:12px;padding:10px;text-align:center;box-shadow:{T.shadow_sm}">'
-            f'<div style="font-size:10px;color:{T.text_muted}">{_LABELS[letter]}</div>'
-            f'<div style="font-size:18px;font-weight:700">{vstr}</div>'
-            f'<span style="font-size:9px;padding:2px 6px;border-radius:999px;background:{bg};color:{fg}">'
+            f'<div style="font-size:{T.chip_font}px;color:{T.text_muted}">{_LABELS[letter]}</div>'
+            f'<div style="font-size:{T.stat_font}px;font-weight:700">{vstr}</div>'
+            f'<span style="font-size:{T.font_2xs}px;padding:2px 6px;border-radius:999px;background:{bg};color:{fg}">'
             f'<span class="ds-tier-dot" style="background:{fg};opacity:.7"></span>{pill}</span>'
             f"{cap}</div>"
         )

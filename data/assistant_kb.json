@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "fallback_answer": "I can only answer common questions about this screening result. For anything about your specific health, please ask a health professional.",
+  "entries": [
+    {
+      "id": "benign_meaning",
+      "result_band": "benign",
+      "questions": [
+        "What does benign mean?",
+        "What does my result mean?",
+        "Is my result okay?",
+        "Am I safe?",
+        "What does low concern mean?"
+      ],
+      "answer": "The scan did not find features typical of skin cancer in this image. This is reassuring, but this device is a screening aid, not a diagnosis. No immediate action needed. Continue regular self-checks.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "benign_still_see_doctor",
+      "result_band": "benign",
+      "questions": [
+        "Do I still need to see a doctor?",
+        "Should I get this checked anyway?",
+        "Can I ignore this spot now?"
+      ],
+      "answer": "Not urgently based on this screening. But see a health professional if the spot changes in size, colour, or shape, or if it starts to itch or bleed.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "benign_can_it_be_wrong",
+      "result_band": "benign",
+      "questions": [
+        "Can the result be wrong?",
+        "How accurate is this?",
+        "Could it have missed something?"
+      ],
+      "answer": "Yes, no screening tool is perfect. This device is tuned to catch as many concerning lesions as possible, but it can still miss some. If you are worried about a spot, or it changes over time, have it checked by a professional even after a low-concern result.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "precancer_meaning",
+      "result_band": "pre_cancerous",
+      "questions": [
+        "What does pre-cancerous mean?",
+        "What does my result mean?",
+        "What is a pre-cancerous lesion?"
+      ],
+      "answer": "The image shows features that could develop into skin cancer over time if left unchecked. It is not cancer now, but it should be looked at by a specialist. Schedule a dermatology consultation within 1 month.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "precancer_is_it_cancer",
+      "result_band": "pre_cancerous",
+      "questions": [
+        "Is pre-cancerous the same as cancer?",
+        "Do I have cancer?",
+        "Is this cancer already?"
+      ],
+      "answer": "No. Pre-cancerous means changes that may progress to cancer over time; many never do. A dermatologist can evaluate it and, if needed, treat it early — which is exactly why getting it checked within a month matters.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "precancer_what_now",
+      "result_band": "pre_cancerous",
+      "questions": [
+        "What should I do now?",
+        "What are my next steps?",
+        "What happens next?"
+      ],
+      "answer": "Schedule a dermatology consultation within 1 month. Until then, avoid picking at or irritating the spot, protect it from the sun, and take a photo now so any change is easy to see later.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "malignant_meaning",
+      "result_band": "malignant",
+      "questions": [
+        "What does malignant mean?",
+        "What does my result mean?",
+        "What does high risk mean?",
+        "What does urgent mean?"
+      ],
+      "answer": "The image shows features that can be associated with skin cancer. This is a screening flag, not a confirmed diagnosis — only a dermatologist can confirm what it is. See a dermatologist within 1-2 weeks.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "malignant_should_i_worry",
+      "result_band": "malignant",
+      "questions": [
+        "Should I be worried?",
+        "Is this serious?",
+        "Am I going to be okay?",
+        "How scared should I be?"
+      ],
+      "answer": "A flag here means it is important to get checked soon, but it is not a diagnosis — many flagged spots turn out to be harmless after a professional looks at them. The most helpful thing you can do is see a dermatologist within 1-2 weeks.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "malignant_what_now",
+      "result_band": "malignant",
+      "questions": [
+        "What should I do now?",
+        "What are my next steps?",
+        "Where do I go from here?"
+      ],
+      "answer": "See a dermatologist within 1-2 weeks. Bring this scan or a photo of the spot with you. Do not cut, burn, or treat the spot yourself, and avoid strong sun on it in the meantime.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "malignant_can_it_be_wrong",
+      "result_band": "malignant",
+      "questions": [
+        "Can the result be wrong?",
+        "Could this be a false alarm?",
+        "How accurate is this?"
+      ],
+      "answer": "Yes — this device deliberately errs on the side of caution, so some flagged spots turn out to be harmless. Think of this result as \"worth showing to a dermatologist soon\", not as a diagnosis.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_what_is_melanoma",
+      "result_band": "general",
+      "questions": [
+        "What is melanoma?",
+        "What is skin cancer?",
+        "What kinds of skin cancer are there?"
+      ],
+      "answer": "Skin cancer is an abnormal growth of skin cells, most often caused by sun damage. Melanoma is the most serious type because it can spread if not treated early — which is why early checking of changing moles or spots matters so much.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_abcde",
+      "result_band": "general",
+      "questions": [
+        "What is the ABCDE rule?",
+        "What do the ABCDE letters mean?",
+        "How do I check my own skin?"
+      ],
+      "answer": "ABCDE are the warning signs to watch on a mole or spot: Asymmetry (two halves look different), Border (ragged or blurred edge), Colour (uneven or multiple colours), Diameter (larger than ~6 mm), and Evolving (changing in size, shape, or colour). Any of these is a reason to have it checked.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_how_device_works",
+      "result_band": "general",
+      "questions": [
+        "How does this device work?",
+        "What does the AI actually do?",
+        "How does the scan work?"
+      ],
+      "answer": "The device photographs the skin spot and a trained image-recognition model compares its patterns to thousands of examples of benign, pre-cancerous, and malignant lesions. It then reports which group the image most resembles, with a confidence estimate. It screens — it does not diagnose.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_is_diagnosis",
+      "result_band": "general",
+      "questions": [
+        "Is this a diagnosis?",
+        "Can this replace a doctor?",
+        "Is this result final?"
+      ],
+      "answer": "No. DermaScan is a screening aid that helps decide whether a spot should be seen by a professional. Only a qualified clinician — usually with a biopsy — can diagnose skin cancer.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_data_storage",
+      "result_band": "general",
+      "questions": [
+        "Is my photo stored?",
+        "Where does my data go?",
+        "Is my data private?"
+      ],
+      "answer": "Scans are stored only on this device, in a local database, so you can track changes over time. Nothing is uploaded to the internet. You can delete saved scans from Settings.",
+      "always_append_disclaimer": false,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_sun_safety",
+      "result_band": "general",
+      "questions": [
+        "How do I protect my skin from the sun?",
+        "How do I prevent skin cancer?",
+        "What is good sun protection?"
+      ],
+      "answer": "Use sunscreen (SPF 30 or higher) on exposed skin, wear a hat and covering clothes, and avoid strong midday sun when you can. Check your own skin regularly and have any new or changing spot looked at.",
+      "always_append_disclaimer": false,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_uncertain_result",
+      "result_band": "general",
+      "questions": [
+        "Why did it say the image failed quality checks?",
+        "Why is the result uncertain?",
+        "Why should I retake the photo?"
+      ],
+      "answer": "The device could not analyse the image confidently — usually because of blur, poor lighting, or the spot not filling the frame. Retake the photo in good light, holding the camera steady and close. If it keeps failing, have the spot checked by a professional anyway.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_what_is_dermatologist",
+      "result_band": "general",
+      "questions": [
+        "What is a dermatologist?",
+        "Who should I go see?",
+        "Where do I get checked?"
+      ],
+      "answer": "A dermatologist is a doctor who specialises in skin. If none is available nearby, start with your local health center or a general physician — they can examine the spot and refer you if needed.",
+      "always_append_disclaimer": false,
+      "reviewed_by": null,
+      "reviewed_date": null
+    }
+  ]
+}

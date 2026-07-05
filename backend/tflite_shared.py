@@ -170,7 +170,7 @@ def compose_scan_result(
     backend_id: str,
 ) -> ScanResult:
     # Decide the class on the RAW probabilities so the validated, sensitivity-first
-    # cancer-screen threshold (fit on raw softmax) is preserved.
+    # cancer-screen threshold (tuned on raw softmax, training Cell 12) is preserved.
     idx = decide_index(probs)
     label = labels[idx]
     # Report confidence / per-class probabilities on the TEMPERATURE-CALIBRATED

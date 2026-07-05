@@ -25,7 +25,7 @@ def _bar(label: str, pct: float, *, fill: str | None = None) -> str:
     style = f'style="width:{w}%;background:{fill}"' if fill else f'style="width:{w}%"'
     return (
         f'<div style="display:flex;align-items:center;gap:12px;margin:8px 0">'
-        f'<span style="min-width:110px;font-size:13px">{label}</span>'
+        f'<span style="min-width:110px;font-size:{T.font_xs}px">{label}</span>'
         f'<div class="ds-prob-track"><div class="ds-prob-fill" {style}></div></div>'
         f'<span style="min-width:48px;text-align:right">{fmt_pct(pct)}</span></div>'
     )

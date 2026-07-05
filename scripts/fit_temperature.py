@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Fit temperature scaling scalar T on validation logits (no retrain).
 
-NOTE: Temperature scaling is NOT applied at inference — the deployed model
-outputs softmax probabilities and the decision threshold in thresholds.json
-was tuned on uncalibrated probs, so T has no effect on decisions.  This
-script is retained for reference / future use if a logit-output model is
-adopted.  Do not run it as part of the normal training pipeline.
+NOTE: The fitted T is applied to DISPLAYED confidence/probabilities only
+(backend/tflite_shared.apply_temperature and scripts/pi_server.py). The
+screening decision (decide_index) always runs on raw probabilities because
+the threshold in thresholds.json was tuned on uncalibrated outputs — so T
+never changes a decision, only how confident the UI claims to be.
 """
 
 from __future__ import annotations

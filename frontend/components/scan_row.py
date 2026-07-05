@@ -16,7 +16,7 @@ def render_scan_row(scan: Scan, case: Case, folder: Folder, *, key: str) -> bool
         f'<span class="ds-tier-dot" style="background:{color}"></span>'
         f'<span style="color:{T.text_muted}">{folder.name} ›</span> '
         f'<span style="font-weight:600">{case.name}</span> '
-        f'<span style="font-size:10px;color:{color};font-weight:700">{label}</span> '
+        f'<span style="font-size:{T.chip_font}px;color:{color};font-weight:700">{label}</span> '
         f'<span style="color:{T.text_muted};margin-left:auto">{scan.taken_at[:10]}</span></div>',
         unsafe_allow_html=True,
     )

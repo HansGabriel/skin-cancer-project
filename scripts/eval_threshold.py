@@ -46,16 +46,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_interpreter(model_path: str):
+    import os
+
+    num_threads = int(os.environ.get("SKIN_NUM_THREADS", "4"))
     try:
         from ai_edge_litert.interpreter import Interpreter
     except ImportError:
         try:
             import tflite_runtime.interpreter as tflite
-            return tflite.Interpreter(model_path=model_path)
+            return tflite.Interpreter(model_path=model_path, num_threads=num_threads)
         except ImportError:
             import tensorflow as tf
-            return tf.lite.Interpreter(model_path=model_path)
-    interp = Interpreter(model_path=model_path)
+            return tf.lite.Interpreter(model_path=model_path, num_threads=num_threads)
+    interp = Interpreter(model_path=model_path, num_threads=num_threads)
     interp.allocate_tensors()
     return interp
 

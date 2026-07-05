@@ -6,6 +6,7 @@ import streamlit as st
 
 from components.icons import icon
 from navigation import navigate
+from theme.tokens import TOKENS as T
 
 
 def format_app_bar_time(now: datetime | None = None) -> str:
@@ -47,8 +48,8 @@ def render_disclaimer_footer() -> None:
     st.markdown(
         f'<div class="ds-advice" style="background:transparent;border-left-color:#D4D9E6;'
         f'margin-top:20px">{icon("info", size=18)}'
-        '<div><div style="font-weight:700;font-size:13px">Not a diagnosis</div>'
-        '<div style="font-size:13px;color:#5A6273">This is an educational screening aid. '
+        f'<div><div style="font-weight:700;font-size:{T.font_xs}px">Not a diagnosis</div>'
+        f'<div style="font-size:{T.font_xs}px;color:#5A6273">This is an educational screening aid. '
         'Always contact a qualified health professional.</div></div></div>',
         unsafe_allow_html=True,
     )

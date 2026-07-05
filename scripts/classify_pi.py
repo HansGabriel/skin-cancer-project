@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -12,7 +15,10 @@ from picamera2 import Picamera2
 
 MODEL = "skin_classifier.tflite"
 LABELS_FILE = "labels.txt"
+THRESHOLDS_FILE = "thresholds.json"
 IMAGE_SIZE = 224
+# Pi 4 has 4 cores; XNNPACK is on by default in tflite-runtime.
+NUM_THREADS = int(os.environ.get("SKIN_NUM_THREADS", "4"))
 
 # Must match scripts/pi_server.py so CLI and server never drift on pixel format.
 PICAM_STILL_MAIN = {"size": (1024, 1024), "format": "RGB888"}
@@ -80,6 +86,30 @@ def dequantize_output(output: np.ndarray, output_details: dict) -> np.ndarray:
     return output.astype(np.float32)
 
 
+def load_thresholds(path: str) -> dict:
+    """Optional sensitivity-first decision config. Missing => argmax."""
+    p = Path(path)
+    if not p.is_file():
+        return {}
+    with p.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def decide_index(probs: np.ndarray, thresholds: dict) -> int:
+    """Mirror of scripts/pi_server.py + backend.tflite_shared.decide_index: flag
+    cancerous when p(pre_cancerous)+p(malignant) clears the screen threshold
+    (sensitivity-first). Kept as a copy — this script must stay standalone on the Pi."""
+    thr = thresholds.get("screen_cancer_threshold")
+    pre_i = thresholds.get("precancer_idx")
+    mal_i = thresholds.get("malignant_idx")
+    if thr is None or pre_i is None or mal_i is None or max(pre_i, mal_i) >= len(probs):
+        return int(np.argmax(probs))
+    if float(probs[pre_i]) + float(probs[mal_i]) >= float(thr):
+        return mal_i if probs[mal_i] >= probs[pre_i] else pre_i
+    masked = [p if i not in (pre_i, mal_i) else -1.0 for i, p in enumerate(probs)]
+    return int(np.argmax(masked))
+
+
 def main() -> None:
     labels = [line.strip() for line in open(LABELS_FILE, "r", encoding="utf-8") if line.strip()]
     if set(labels) != set(RECOMMENDATIONS):
@@ -87,7 +117,8 @@ def main() -> None:
             f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
         )
 
-    interpreter = tflite.Interpreter(model_path=MODEL)
+    thresholds = load_thresholds(THRESHOLDS_FILE)
+    interpreter = tflite.Interpreter(model_path=MODEL, num_threads=NUM_THREADS)
     interpreter.allocate_tensors()
     input_details = interpreter.get_input_details()[0]
     output_details = interpreter.get_output_details()[0]
@@ -106,7 +137,9 @@ def main() -> None:
     probs = dequantize_output(output, output_details)
     elapsed = time.time() - start
 
-    pred_idx = int(np.argmax(probs))
+    # Same sensitivity-first decision as pi_server.py / the Streamlit backend —
+    # the CLI must never report a different label than the deployed device.
+    pred_idx = decide_index(probs, thresholds)
     pred_label = labels[pred_idx]
     confidence = float(probs[pred_idx]) * 100.0
     recommendation = RECOMMENDATIONS[pred_label]

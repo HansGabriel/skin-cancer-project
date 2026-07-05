@@ -17,7 +17,7 @@ def render_recommendation_card(text: str, band: str = "low") -> None:
     st.markdown(
         f'<div class="ds-advice" style="background:{tint};border-left-color:{color}">'
         f'<span style="color:{color}">{icon(glyph, size=20)}</span>'
-        f'<div><div style="font-weight:700;font-size:13px;color:{color}">Recommendation</div>'
+        f'<div><div style="font-weight:700;font-size:{T.font_xs}px;color:{color}">Recommendation</div>'
         f'<p style="margin:2px 0 0">{text}</p></div></div>',
         unsafe_allow_html=True,
     )
