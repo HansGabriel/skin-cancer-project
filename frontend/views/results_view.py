@@ -12,7 +12,7 @@ from components.app_bar import render_disclaimer_footer
 from components.image_compare import render_image_compare
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
-from components.prob_bars import render_seven_class_expander, render_three_class_probs
+from components.prob_bars import render_seven_class_bars, render_three_class_probs
 from components.recommendation_card import render_recommendation_card
 from components.risk_ring import render_risk_ring
 from navigation import navigate
@@ -90,7 +90,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                 navigate("home")
             return
         if pl.get("blocked") and not pl.get("scan_result"):
-            st.error("Quality checks failed.")
+            st.error("Photo quality was too low to analyze — please retake.")
             for r in pl.get("quality", {}).get("reasons", []):
                 st.warning(r)
             return
@@ -107,38 +107,42 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                     "⚠ Inconclusive — the model is not confident about this result. "
                     "Retake with better lighting/focus, or consult a health professional."
                 )
-            t_path = Path(model_path).resolve().parent / "temperature.json"
-            if not t_path.is_file():
-                t_path = root / "models" / "temperature.json"
-            if t_path.is_file():
-                t_val = json.loads(t_path.read_text()).get("T", 1.0)
-                if t_val and float(t_val) != 1.0:
-                    # Displayed confidence IS calibrated (backend/tflite_shared.apply_temperature);
-                    # the screening decision itself still uses raw probabilities.
-                    st.caption(f"ℹ Confidence calibrated with temperature scaling (T = {float(t_val):.2f})")
-            render_image_compare(
-                pl.get("rgb"),
-                pl.get("gradcam_overlay_jpg"),
-                gradcam_caption="Grad-CAM unavailable — set SKIN_KERAS_PATH in Settings",
-            )
-            if pl.get("rgb_before") is not None and pl.get("rgb_analysis") is not None:
-                with st.expander("Preprocessing debug (before / after — ABCDE path only)"):
-                    c1, c2 = st.columns(2)
-                    c1.image(pl["rgb_before"], caption="Original (CNN input)", width="stretch")
-                    c2.image(pl["rgb_analysis"], caption="Enhanced (ABCDE/segmentation)", width="stretch")
+            render_image_compare(pl.get("rgb"), pl.get("gradcam_overlay_jpg"))
             if pl.get("borderline_note"):
                 st.warning(pl["borderline_note"])
             render_abcde_row(pl.get("abcde"))
             render_three_class_probs(sr.probs)
-            render_seven_class_expander(pl.get("seven_class_probs"), str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))
             render_recommendation_card(sr.action, str(pl.get("risk_band", "low")))
         qd = pl.get("quality", {}).get("reason_details", [])
         for _code, label, _sev in qd:
             st.warning(label)
         for w in pl.get("quality_warnings", []):
             st.warning(w)
-        if pl.get("trust_line"):
-            st.caption(pl["trust_line"])
+        # Everything technical lives in ONE collapsed expander — the main view
+        # stays in plain language for ordinary users and health workers.
+        if isinstance(sr, ScanResult):
+            with st.expander("🔧 Technical details"):
+                if pl.get("trust_line"):
+                    st.caption(pl["trust_line"])
+                t_path = Path(model_path).resolve().parent / "temperature.json"
+                if not t_path.is_file():
+                    t_path = root / "models" / "temperature.json"
+                if t_path.is_file():
+                    t_val = json.loads(t_path.read_text()).get("T", 1.0)
+                    if t_val and float(t_val) != 1.0:
+                        # Displayed confidence IS calibrated (backend/tflite_shared.apply_temperature);
+                        # the screening decision itself still uses raw probabilities.
+                        st.caption(f"Confidence calibrated with temperature scaling (T = {float(t_val):.2f})")
+                if pl.get("abcde"):
+                    render_abcde_row(pl.get("abcde"), show_values=True)
+                render_seven_class_bars(pl.get("seven_class_probs"))
+                if not pl.get("gradcam_overlay_jpg"):
+                    st.caption("AI attention heatmap (Grad-CAM) unavailable — the full Keras model is not loaded on this device.")
+                if pl.get("rgb_before") is not None and pl.get("rgb_analysis") is not None:
+                    st.markdown("**Preprocessing debug (before / after — ABCDE path only)**")
+                    c1, c2 = st.columns(2)
+                    c1.image(pl["rgb_before"], caption="Original (CNN input)", width="stretch")
+                    c2.image(pl["rgb_analysis"], caption="Enhanced (ABCDE/segmentation)", width="stretch")
         render_disclaimer_footer()
         # 2x2 grid — larger touch targets than a crushed 3-column row.
         c1, c2 = st.columns(2)

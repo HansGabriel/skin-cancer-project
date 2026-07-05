@@ -89,22 +89,28 @@ def _analysis_rgb(rgb: np.ndarray) -> np.ndarray:
 
 
 def _borderline_note(probs: dict[str, float], label: str) -> str | None:
-    """Flag near-tie predictions the UI should not over-trust."""
+    """Flag near-tie predictions the UI should not over-trust (plain language —
+    shown directly to ordinary users; exact percentages live in Technical details)."""
     malignant = float(probs.get("malignant", 0.0))
     benign = float(probs.get("benign", 0.0))
     if label == "benign" and malignant >= 25.0:
         return (
-            f"Borderline: CNN says {label} but malignant probability is still {malignant:.1f}%. "
-            "Treat as screening only — clinical ABCDE flags may warrant follow-up."
+            "The AI leans toward low concern, but it is not fully sure. "
+            "Please treat this as a screening only — if the spot worries you or "
+            "changes, have it checked by a health professional."
         )
     if label == "malignant" and benign >= 25.0:
         return (
-            f"Borderline: CNN says {label} but benign probability is still {benign:.1f}%. "
-            "Treat as screening only."
+            "The AI flagged this spot, but it is not fully sure. "
+            "Please treat this as a screening only and have the spot checked "
+            "by a health professional."
         )
     ordered = sorted(probs.values(), reverse=True)
     if len(ordered) >= 2 and (ordered[0] - ordered[1]) < 15.0:
-        return "Borderline: top two class probabilities are very close — interpret with caution."
+        return (
+            "The AI is not fully sure about this result — please treat it as a "
+            "screening only and have the spot checked by a health professional."
+        )
     return None
 
 

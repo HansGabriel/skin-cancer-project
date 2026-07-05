@@ -32,7 +32,7 @@ def render_app_bar(*, show_home: bool = False) -> None:
     with cols[0]:
         st.markdown(
             '<div class="ds-brand"><span class="ds-brand-dot"></span>DermaScan</div>'
-            '<div class="ds-brand-sub">Lesion screening · educational</div>',
+            '<div class="ds-brand-sub">Skin check · educational</div>',
             unsafe_allow_html=True,
         )
     idx = 1

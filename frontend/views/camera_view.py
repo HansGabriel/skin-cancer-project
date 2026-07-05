@@ -117,12 +117,14 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
             st.caption("Pi camera — inference runs on the Raspberry Pi.")
         else:
             st.caption(
-                "Use your device webcam below, or upload a photo. "
-                "(WSL/Linux: if the camera is blank, upload instead — the browser needs camera permission.)"
+                "Use your device camera below, or upload a photo. "
+                "If the camera preview is blank, upload a photo instead."
             )
 
-        with viewfinder_slot(shutter=scanning):
-            if use_hw_camera:
+        if use_hw_camera:
+            # Pi hardware camera: the fixed-square viewfinder frame fits the MJPEG
+            # preview and captured stills nicely.
+            with viewfinder_slot(shutter=scanning):
                 captured = st.session_state.get("capture_image_bytes")
                 if captured:
                     image_bytes = captured
@@ -150,7 +152,8 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                             image_bytes = cleaned
                             st.session_state["capture_image_bytes"] = cleaned
                             st.image(cleaned, width="stretch")
-            elif kind == "pi":
+        elif kind == "pi":
+            with viewfinder_slot(shutter=scanning):
                 st.info("Press START SCAN to capture from the Pi camera over the network.")
                 pu = st.file_uploader(
                     "Or send a test image to the Pi",
@@ -164,17 +167,20 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
                         image_bytes = cleaned
                         st.session_state["capture_image_bytes"] = cleaned
                         st.image(cleaned, width="stretch")
-            elif kind in ("mock", "local"):
-                image_bytes = _persist_capture(camera_key="local_camera", upload_key="cam_upload")
-                if kind == "mock":
-                    samples = list_sample_paths(root)
-                    if samples and image_bytes is None:
-                        pick = st.selectbox("Or pick a sample", [l for l, _ in samples], key="mock_sample_pick")
-                        chosen = dict(samples).get(pick)
-                        if chosen:
-                            st.image(str(chosen), width="stretch")
-            else:
-                image_bytes = _persist_capture(camera_key="local_camera_alt", upload_key="cam_upload_alt")
+        elif kind in ("mock", "local"):
+            # Browser webcam path: st.camera_input must NOT live inside the fixed
+            # 300x300 overflow:hidden viewfinder — it clips the live video and the
+            # "Take photo" button (this is what broke the camera on Streamlit Cloud).
+            image_bytes = _persist_capture(camera_key="local_camera", upload_key="cam_upload")
+            if kind == "mock":
+                samples = list_sample_paths(root)
+                if samples and image_bytes is None:
+                    pick = st.selectbox("Or pick a sample", [l for l, _ in samples], key="mock_sample_pick")
+                    chosen = dict(samples).get(pick)
+                    if chosen:
+                        st.image(str(chosen), width="stretch")
+        else:
+            image_bytes = _persist_capture(camera_key="local_camera_alt", upload_key="cam_upload_alt")
 
         if render_primary_button("START SCAN", key="cam_scan"):
             if kind == "mock" and image_bytes is None and samples:

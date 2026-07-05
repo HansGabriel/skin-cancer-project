@@ -39,17 +39,22 @@ def render_three_class_probs(probs: dict[str, float]) -> None:
         for k in ("benign", "pre_cancerous", "malignant")
     )
     st.markdown(
-        f'<div class="ds-card"><p class="ds-section-title">CNN · 3-class</p>{bars}</div>',
+        f'<div class="ds-card"><p class="ds-section-title">AI assessment</p>{bars}</div>',
         unsafe_allow_html=True,
     )
 
 
-def render_seven_class_expander(seven: dict[str, float] | None, keras_path: str) -> None:
-    with st.expander("Show differential (advanced)"):
-        if not seven:
-            st.info(f"No 7-class head. Set SKIN_KERAS_PATH (currently: {keras_path}).")
-            return
-        st.markdown(
-            "".join(_bar(_PRETTY7.get(dx, dx), float(seven.get(dx, 0))) for dx in HAM7_LABELS),
-            unsafe_allow_html=True,
-        )
+def render_seven_class_bars(seven: dict[str, float] | None) -> None:
+    """Detailed 7-type breakdown — rendered inside the Technical details expander.
+
+    Never leaks file paths or env-var names; when the 7-class model isn't loaded
+    a short neutral note is shown instead.
+    """
+    if not seven:
+        st.caption("Detailed lesion-type breakdown not available on this device.")
+        return
+    st.markdown("**Detailed lesion-type breakdown**")
+    st.markdown(
+        "".join(_bar(_PRETTY7.get(dx, dx), float(seven.get(dx, 0))) for dx in HAM7_LABELS),
+        unsafe_allow_html=True,
+    )

@@ -66,6 +66,11 @@ def inject_global_css() -> None:
 .ds-folder-card{{border:1px solid {T.outline};border-radius:{T.radius_sm}px;padding:12px 14px;margin-bottom:4px;font-size:{T.font_sm}px;}}
 .ds-case-row,.ds-scan-row{{padding:12px 0;border-bottom:1px solid {T.outline};font-size:{T.font_sm}px;}}
 .ds-viewfinder .stImage img,.ds-viewfinder [data-testid="stCameraInput"]{{border-radius:{T.radius_md}px;}}
+/* Never clip the browser camera widget — its video + "Take photo" button must stay
+   fully visible. If it ever ends up inside a viewfinder square, undo the clipping. */
+[data-testid="stCameraInput"]{{overflow:visible!important;}}
+.ds-viewfinder:has([data-testid="stCameraInput"]){{aspect-ratio:auto;max-width:100%;overflow:visible;}}
+.ds-viewfinder [data-testid="stCameraInput"] video{{width:100%;height:auto;object-fit:contain;}}
 .ds-prob-fill{{transition:width .5s cubic-bezier(.4,0,.2,1);}}
 /* Brand wordmark in the app bar. */
 .ds-brand{{display:flex;align-items:center;gap:8px;font-weight:800;font-size:{T.font_md}px;color:{T.violet};letter-spacing:-.01em;}}

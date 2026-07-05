@@ -68,9 +68,9 @@ def render_assistant_view() -> None:
             return
         if not kb.entries:
             st.info(
-                "No reviewed answers are available yet. Entries appear once a "
-                "clinician fills in reviewed_by/reviewed_date in data/assistant_kb.json "
-                "(or set SKIN_KB_DEV=1 for development)."
+                "The assistant's answers are being reviewed by a health professional "
+                "and will appear here soon. In the meantime, please direct any "
+                "questions about your result to a health worker."
             )
             return
 
@@ -85,7 +85,7 @@ def render_assistant_view() -> None:
             text, disclaim, reworded = _answer(kb, matcher, question, band)
             if disclaim:
                 text = f"{text}\n\n*{_DISCLAIMER}*"
-            badge = "✨ AI-reworded (Gemma)" if reworded else "✓ Verbatim vetted text"
+            badge = "✨ Friendly wording by on-device AI" if reworded else "✓ Reviewed answer"
             chat.append({"role": "user", "content": question})
             chat.append({"role": "assistant", "content": text, "badge": badge})
             st.rerun()
