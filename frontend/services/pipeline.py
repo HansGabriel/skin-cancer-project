@@ -13,10 +13,12 @@ from backend.contracts import ScanResult
 from backend.tflite_shared import decode_image_bytes_to_rgb
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
+from services.kiosk import is_kiosk
 from services.preprocess import enhance_lesion_image
 from services.quality import check_quality
 from services.risk import composite_risk_score, risk_band
 from services.segmentation import segment_safe
+from services.verdict import UIVerdict, resolve_verdict, retake_verdict
 
 APP_VERSION = "0.4.0"
 logger = logging.getLogger("dermascan.pipeline")
@@ -57,7 +59,7 @@ class PipelineResult(TypedDict, total=False):
     inference_ms: NotRequired[int]
     model_path: NotRequired[str]
     tta_enabled: NotRequired[bool]
-    borderline_note: NotRequired[str]
+    verdict: NotRequired[UIVerdict]
 
 
 def _preprocess_for_abcde() -> bool:
@@ -88,32 +90,6 @@ def _analysis_rgb(rgb: np.ndarray) -> np.ndarray:
     return enhance_lesion_image(rgb)
 
 
-def _borderline_note(probs: dict[str, float], label: str) -> str | None:
-    """Flag near-tie predictions the UI should not over-trust (plain language —
-    shown directly to ordinary users; exact percentages live in Technical details)."""
-    malignant = float(probs.get("malignant", 0.0))
-    benign = float(probs.get("benign", 0.0))
-    if label == "benign" and malignant >= 25.0:
-        return (
-            "The AI leans toward low concern, but it is not fully sure. "
-            "Please treat this as a screening only — if the spot worries you or "
-            "changes, have it checked by a health professional."
-        )
-    if label == "malignant" and benign >= 25.0:
-        return (
-            "The AI flagged this spot, but it is not fully sure. "
-            "Please treat this as a screening only and have the spot checked "
-            "by a health professional."
-        )
-    ordered = sorted(probs.values(), reverse=True)
-    if len(ordered) >= 2 and (ordered[0] - ordered[1]) < 15.0:
-        return (
-            "The AI is not fully sure about this result — please treat it as a "
-            "screening only and have the spot checked by a health professional."
-        )
-    return None
-
-
 def _trust_line(sr: ScanResult | None, *, model_path: str, tta: bool, quality_ok: bool) -> str:
     ms = sr.inference_ms if sr else 0
     model_name = os.path.basename(model_path)
@@ -137,6 +113,10 @@ def run_pipeline(
 ) -> PipelineResult:
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
+    # Kiosk mode: the quality gate is never optional — junk must yield "retake",
+    # not a risk verdict, regardless of the settings toggle.
+    if is_kiosk():
+        strict_quality = True
 
     def _finish(
         rgb_display: np.ndarray,
@@ -152,10 +132,10 @@ def run_pipeline(
         abcde = apply_to_abcde(case_id, abcde, rgb=rgb_for_abcde, mask=mask)
         p_mal = float(scan_result.probs.get("malignant", 0.0))
         comp = composite_risk_score(p_mal, abcde)
-        note = _borderline_note(scan_result.probs, scan_result.label)
         result: PipelineResult = {
             "blocked": False,
             "quality": q,
+            "verdict": resolve_verdict(scan_result, q),
             "rgb": rgb_display,
             "rgb_analysis": rgb_for_abcde,
             "mask": mask,
@@ -171,8 +151,6 @@ def run_pipeline(
             "tta_enabled": tta,
             "trust_line": _trust_line(scan_result, model_path=model_path, tta=tta, quality_ok=q.get("ok", True)),
         }
-        if note:
-            result["borderline_note"] = note
         if not q.get("ok"):
             result["quality_warnings"] = list(q.get("reasons", []))
         if rgb_before is not None:
@@ -183,14 +161,14 @@ def run_pipeline(
         try:
             rgb_display = decode_image_bytes_to_rgb(image_bytes)
         except ValueError as exc:
-            return {"blocked": True, "error": str(exc), "scan_result": None}
+            return {"blocked": True, "error": str(exc), "scan_result": None, "verdict": retake_verdict(None)}
 
         rgb_for_abcde = _analysis_rgb(rgb_display)
         rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
 
         q = check_quality(rgb_display)
         if not q["ok"] and strict_quality:
-            return {"blocked": True, "quality": q, "rgb": rgb_display, "scan_result": None}
+            return {"blocked": True, "quality": q, "rgb": rgb_display, "scan_result": None, "verdict": retake_verdict(q)}
         out: PipelineResult = {"quality": q}
         if not q["ok"]:
             out["quality_warnings"] = list(q["reasons"])

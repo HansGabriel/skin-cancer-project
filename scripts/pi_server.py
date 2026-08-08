@@ -13,7 +13,13 @@ import os
 
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request
+
+# Flask is only required to SERVE. Guarded so the decision/calibration logic in
+# this module stays importable on PC/CI (tests/test_decision_parity.py).
+try:
+    from flask import Flask, jsonify, request
+except ImportError:  # pragma: no cover — serving needs flask; parity tests don't
+    Flask = None  # type: ignore[assignment]
 
 # SKIN_NUM_THREADS (default 4): the Pi 4 has 4 cores; XNNPACK is on by default.
 _NUM_THREADS = int(os.environ.get("SKIN_NUM_THREADS", "4"))
@@ -25,7 +31,6 @@ except ImportError:
     import tflite_runtime.interpreter as tflite
     def _make_interpreter(model_path: str):
         return tflite.Interpreter(model_path=model_path, num_threads=_NUM_THREADS)
-from picamera2 import Picamera2
 
 BASE_DIR = Path(__file__).resolve().parent
 # Override with env vars for Pi deployment (e.g. SKIN_MODEL=skin_classifier_int8.tflite for
@@ -37,7 +42,9 @@ TEMPERATURE_PATH = BASE_DIR / os.environ.get("SKIN_TEMPERATURE", "temperature.js
 DB_PATH = BASE_DIR / "pi_scans.sqlite"
 IMAGE_SIZE = 224
 
-# Main stream must be explicit RGB so preprocessing and JPEG encoding match training.
+# picamera2's "RGB888" format actually delivers BGR byte order in memory —
+# capture_rgb() swaps to true RGB at the capture boundary so preprocessing and
+# JPEG encoding match training.
 PICAM_STILL_MAIN = {"size": (1024, 1024), "format": "RGB888"}
 
 # Keys must match exactly one line per row in labels.txt (3-class deployment contract).
@@ -84,13 +91,25 @@ def load_temperature(path: Path) -> float:
     return t if t > 0 else 1.0
 
 
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    """Mirror of backend.tflite_shared._softmax."""
+    x = logits.astype(np.float64) - np.max(logits)
+    e = np.exp(x)
+    return (e / np.sum(e)).astype(np.float32)
+
+
 def apply_temperature(probs: np.ndarray, temperature: float) -> np.ndarray:
-    """Mirror of backend.tflite_shared.apply_temperature: p_i^(1/T) renormalised.
-    Applied to DISPLAYED probs only — decide_index always runs on raw probs."""
+    """Mirror of backend.tflite_shared.apply_temperature: softmax(log(p) / T).
+
+    Recover pseudo-logits via log(p), divide by T, re-softmax — the standard
+    post-hoc temperature scaling. Must stay numerically identical to the backend
+    (enforced by tests/test_decision_parity.py). Applied to DISPLAYED probs only —
+    decide_index always runs on raw probs."""
     if temperature == 1.0:
-        return probs
-    scaled = np.power(np.clip(probs.astype(np.float64), 1e-12, 1.0), 1.0 / temperature)
-    return (scaled / scaled.sum()).astype(np.float32)
+        return probs.astype(np.float32)
+    eps = 1e-12
+    pseudo_logits = np.log(np.clip(probs.astype(np.float64), eps, 1.0))
+    return _softmax(pseudo_logits / float(temperature))
 
 
 def decide_index(probs: np.ndarray, thresholds: dict) -> int:
@@ -148,6 +167,10 @@ _WARMUP_FRAMES = 8
 def _get_camera():
     global _CAMERA
     if _CAMERA is None:
+        # Lazy import: picamera2 exists only on the Pi; PC/CI import this module
+        # for the decision logic without touching camera hardware.
+        from picamera2 import Picamera2
+
         cam = Picamera2()
         cam.configure(cam.create_still_configuration(main=PICAM_STILL_MAIN))
         cam.start()
@@ -159,7 +182,10 @@ def _get_camera():
 
 def capture_rgb() -> np.ndarray:
     with _CAMERA_LOCK:
-        return _get_camera().capture_array()
+        frame = _get_camera().capture_array()
+    # picamera2's "RGB888" is actually BGR byte order — swap here so the model
+    # (trained on RGB) never sees red/blue inverted channels.
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 def decode_upload_to_rgb(file_storage) -> np.ndarray:
@@ -239,89 +265,110 @@ def init_db() -> None:
         conn.commit()
 
 
-init_db()
-
-labels = load_labels(LABELS_PATH)
-thresholds = load_thresholds(THRESHOLDS_PATH)
-temperature = load_temperature(TEMPERATURE_PATH)
-if set(labels) != set(RECOMMENDATIONS):
-    raise RuntimeError(
-        f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
-    )
-
-interpreter = _make_interpreter(str(MODEL_PATH))
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()[0]
-output_details = interpreter.get_output_details()[0]
-
-app = Flask(__name__)
-print(
-    "NOTE: pi_server holds the camera open after the first /scan. Do not run the "
-    "kiosk Streamlit app (which also owns the camera) at the same time."
-)
+# Runtime state (model, labels, calibration) — populated by init_runtime().
+# Deferred out of import time so PC/CI can import this module for the decision
+# logic without model files next to the script or Pi hardware present.
+labels: list[str] = []
+thresholds: dict = {}
+temperature: float = 1.0
+interpreter = None
+input_details: dict | None = None
+output_details: dict | None = None
 
 
-@app.get("/health")
-def health():
-    return jsonify({"status": "ok", "model": MODEL_PATH.name, "labels": LABELS_PATH.name})
+def init_runtime() -> None:
+    """Create the DB and load labels/thresholds/temperature + the TFLite model.
 
-
-@app.get("/log")
-def get_log():
-    if not DB_PATH.exists():
-        return jsonify([])
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        cur = conn.execute(
-            "SELECT ts_iso, label, confidence, inference_ms, probs_json "
-            "FROM scans ORDER BY id DESC LIMIT 500"
+    Idempotent; called from __main__ before serving (and lazily by /scan so a
+    WSGI server pointed at pi_server:app still works).
+    """
+    global labels, thresholds, temperature, interpreter, input_details, output_details
+    if interpreter is not None:
+        return
+    init_db()
+    labels = load_labels(LABELS_PATH)
+    thresholds = load_thresholds(THRESHOLDS_PATH)
+    temperature = load_temperature(TEMPERATURE_PATH)
+    if set(labels) != set(RECOMMENDATIONS):
+        raise RuntimeError(
+            f"labels.txt classes {set(labels)} must match RECOMMENDATIONS keys {set(RECOMMENDATIONS)}"
         )
-        rows = []
-        for row in cur.fetchall():
-            rows.append(
-                {
-                    "ts_iso": row["ts_iso"],
-                    "backend_id": "pi",
-                    "label": row["label"],
-                    "confidence": row["confidence"],
-                    "probs": json.loads(row["probs_json"]),
-                    "inference_ms": row["inference_ms"],
-                }
+    interpreter = _make_interpreter(str(MODEL_PATH))
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()[0]
+    output_details = interpreter.get_output_details()[0]
+
+
+if Flask is not None:
+    app = Flask(__name__)
+
+    @app.get("/health")
+    def health():
+        return jsonify({"status": "ok", "model": MODEL_PATH.name, "labels": LABELS_PATH.name})
+
+    @app.get("/log")
+    def get_log():
+        if not DB_PATH.exists():
+            return jsonify([])
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            cur = conn.execute(
+                "SELECT ts_iso, label, confidence, inference_ms, probs_json "
+                "FROM scans ORDER BY id DESC LIMIT 500"
             )
-        return jsonify(rows)
-    finally:
-        conn.close()
-
-
-@app.post("/scan")
-def scan():
-    ts_iso = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-    try:
-        upload = request.files.get("image")
-        if upload is not None and upload.filename:
-            try:
-                image_rgb = decode_upload_to_rgb(upload)
-            except ValueError as exc:
-                return jsonify({"status": "error", "reason": str(exc)}), 400
-        else:
-            try:
-                image_rgb = capture_rgb()
-            except Exception as exc:  # noqa: BLE001
-                return jsonify(
+            rows = []
+            for row in cur.fetchall():
+                rows.append(
                     {
-                        "status": "error",
-                        "reason": f"Camera capture failed: {exc!s}",
+                        "ts_iso": row["ts_iso"],
+                        "backend_id": "pi",
+                        "label": row["label"],
+                        "confidence": row["confidence"],
+                        "probs": json.loads(row["probs_json"]),
+                        "inference_ms": row["inference_ms"],
                     }
-                ), 503
+                )
+            return jsonify(rows)
+        finally:
+            conn.close()
 
-        payload = run_scan_from_rgb(image_rgb, ts_iso=ts_iso)
-        return jsonify(payload)
-    except (ValueError, TypeError, KeyError, RuntimeError) as exc:
-        return jsonify({"status": "error", "reason": str(exc)}), 503
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"status": "error", "reason": f"Inference failed: {exc!s}"}), 503
+    @app.post("/scan")
+    def scan():
+        init_runtime()  # no-op when already initialised in __main__
+        ts_iso = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+        try:
+            upload = request.files.get("image")
+            if upload is not None and upload.filename:
+                try:
+                    image_rgb = decode_upload_to_rgb(upload)
+                except ValueError as exc:
+                    return jsonify({"status": "error", "reason": str(exc)}), 400
+            else:
+                try:
+                    image_rgb = capture_rgb()
+                except Exception as exc:  # noqa: BLE001
+                    return jsonify(
+                        {
+                            "status": "error",
+                            "reason": f"Camera capture failed: {exc!s}",
+                        }
+                    ), 503
+
+            payload = run_scan_from_rgb(image_rgb, ts_iso=ts_iso)
+            return jsonify(payload)
+        except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+            return jsonify({"status": "error", "reason": str(exc)}), 503
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"status": "error", "reason": f"Inference failed: {exc!s}"}), 503
 
 
 if __name__ == "__main__":
+    if Flask is None:
+        raise SystemExit("flask is required to run pi_server: pip install flask")
+    init_runtime()
+    print(
+        "NOTE: pi_server holds the camera open after the first /scan. Do not run the "
+        "kiosk Streamlit app (which also owns the camera) at the same time."
+    )
     app.run(host="0.0.0.0", port=5000)

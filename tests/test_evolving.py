@@ -60,10 +60,10 @@ def test_second_save_gets_evolving_verdict(store: Storage) -> None:
     }
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
     jpg = buf.tobytes()
-    store.save_scan(c.id, pl1, jpg)
+    store.save_scan(c.id, pl1, jpg, consent=True)
     pl2 = dict(pl1)
     pl2["abcde"] = {**_abcd(6.5), "E": {"value": None, "tier": 0, "verdict": "needs history"}}
-    s2 = store.save_scan(c.id, pl2, jpg)
+    s2 = store.save_scan(c.id, pl2, jpg, consent=True)
     e = json.loads(s2.e_json or "{}")
     assert e.get("verdict") in ("watch", "changing", "stable")
     assert e.get("verdict") != "needs history"

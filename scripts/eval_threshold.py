@@ -2,13 +2,27 @@
 
 Usage:
     ./venv/bin/python scripts/eval_threshold.py
+    ./venv/bin/python scripts/eval_threshold.py --production               # serving path: 4-view TTA
+    ./venv/bin/python scripts/eval_threshold.py --production --clean-subset
     ./venv/bin/python scripts/eval_threshold.py --model models/skin_classifier_int8.tflite
     ./venv/bin/python scripts/eval_threshold.py --out docs/
 
-Reads models/test_split.csv (columns: path, label_idx, label_3).
+Reads models/test_split.csv (columns: path, label_idx, label_3, lesion_id).
 Applies the same decide_index() logic used by backend/tflite_shared.py so the
 metrics reflect exactly what the Streamlit / Pi backends do, not a post-hoc
 re-analysis.
+
+--production evaluates through the deployed serving configuration: the same
+4-view TTA averaging as backend.tflite_shared.run_inference_on_rgb (SKIN_TTA
+defaults ON in the Streamlit backend). Without it, a single identity view is
+scored (TTA off).
+
+--clean-subset keeps only test images whose HAM10000 lesion_id has NO images
+outside the test split (HAM10000 has multiple photos per lesion; the checked-in
+split is image-level, so most test lesions leak into train/val).
+
+Unreadable/missing test images are NOT scored; if any exist the script prints
+them and exits nonzero so a broken dataset can never inflate the metrics.
 """
 
 from __future__ import annotations
@@ -23,12 +37,13 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from backend.tflite_shared import decide_index, load_labels  # noqa: E402
+from backend.tflite_shared import decide_index, load_labels, run_inference_on_rgb  # noqa: E402
 from backend.preprocessing import to_input_tensor, dequantize_output  # noqa: E402
 
 
 LABELS_PATH = ROOT / "models" / "labels.txt"
 TEST_CSV = ROOT / "models" / "test_split.csv"
+METADATA_CSV = ROOT / "datasets" / "ham10000" / "HAM10000_metadata.csv"
 DEFAULT_MODEL = ROOT / "models" / "skin_classifier.tflite"
 DEFAULT_OUT = ROOT / "models"
 
@@ -40,9 +55,40 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", default=str(DEFAULT_MODEL), help=".tflite model path")
     p.add_argument("--labels", default=str(LABELS_PATH))
     p.add_argument("--test_csv", default=str(TEST_CSV))
+    p.add_argument("--metadata", default=str(METADATA_CSV),
+                   help="HAM10000_metadata.csv (lesion_id per image; used by --clean-subset)")
+    p.add_argument("--production", action="store_true",
+                   help="Evaluate the deployed serving path: 4-view TTA averaging exactly as "
+                        "backend.tflite_shared.run_inference_on_rgb with SKIN_TTA on (the "
+                        "Streamlit backend default)")
+    p.add_argument("--clean-subset", action="store_true",
+                   help="Score only test images whose lesion_id has no images outside the test "
+                        "split (leakage-free lesions)")
     p.add_argument("--out", default=str(DEFAULT_OUT), help="Directory for PNG output")
     p.add_argument("--no_png", action="store_true", help="Skip PNG output (no matplotlib needed)")
     return p.parse_args()
+
+
+def filter_clean_subset(df, metadata_csv: str):
+    """Keep rows whose lesion_id has ALL of its HAM10000 images inside the test split.
+
+    HAM10000 ships multiple images of the same lesion (linked by lesion_id). The
+    checked-in split is image-level, so a test image whose lesion has other images
+    in train/val is contaminated. Uses stdlib csv for the metadata read.
+    """
+    import csv
+
+    if "lesion_id" not in df.columns:
+        print("test_split.csv has no lesion_id column — cannot build --clean-subset")
+        sys.exit(1)
+    total_by_lesion: dict[str, int] = {}
+    with open(metadata_csv, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            lid = row["lesion_id"]
+            total_by_lesion[lid] = total_by_lesion.get(lid, 0) + 1
+    in_test = df["lesion_id"].value_counts()
+    clean_lesions = {lid for lid, n in in_test.items() if total_by_lesion.get(lid, 0) == int(n)}
+    return df[df["lesion_id"].isin(clean_lesions)].reset_index(drop=True)
 
 
 def load_interpreter(model_path: str):
@@ -63,11 +109,16 @@ def load_interpreter(model_path: str):
     return interp
 
 
-def infer(interp, image_path: str) -> np.ndarray:
+def infer(interp, image_path: str, production: bool = False) -> np.ndarray:
     bgr = cv2.imread(image_path)
     if bgr is None:
         raise FileNotFoundError(image_path)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    if production:
+        # Deployed serving path: identical 4-view TTA average (identity/hflip/vflip/
+        # rot180) as the Streamlit backend runs with its SKIN_TTA=1 default.
+        probs, _ms = run_inference_on_rgb(rgb, interp, use_tta=True)
+        return probs.astype(np.float32)
     input_details = interp.get_input_details()[0]
     output_details = interp.get_output_details()[0]
     tensor = to_input_tensor(rgb, input_details)
@@ -134,15 +185,29 @@ def main() -> None:
     cancer_indices = {i for i, l in enumerate(labels) if l in CANCER_CLASSES}
     benign_idx = next(i for i, l in enumerate(labels) if l not in CANCER_CLASSES)
 
-    df = pd.read_csv(args.test_csv)
-    missing = [c for c in ("path", "label_idx") if c not in df.columns]
+    df_full = pd.read_csv(args.test_csv)
+    missing = [c for c in ("path", "label_idx") if c not in df_full.columns]
     if missing:
         print(f"test_split.csv missing columns: {missing}"); sys.exit(1)
+
+    df = df_full
+    if args.clean_subset:
+        df = filter_clean_subset(df_full, args.metadata)
+        print("\n=== Clean (leakage-free) subset ===")
+        print(f"Test images total: {len(df_full)}; clean (whole lesion inside test): {len(df)}; "
+              f"excluded (lesion also has train/val images): {len(df_full) - len(df)}")
+        if "label_3" in df_full.columns:
+            for lbl in labels:
+                tot = int((df_full["label_3"] == lbl).sum())
+                cln = int((df["label_3"] == lbl).sum())
+                print(f"  {lbl:>15}: {cln}/{tot} kept")
 
     model_name = Path(args.model).name
     print(f"\nModel : {args.model}")
     print(f"Labels: {labels}")
     print(f"Test rows: {len(df)}")
+    print(f"Inference mode: "
+          f"{'PRODUCTION (4-view TTA, deployed serving path)' if args.production else 'single view (TTA off)'}")
     print(f"Cancer classes: {[labels[i] for i in sorted(cancer_indices)]}")
     print(f"Cancer threshold: {__import__('json').loads((ROOT / 'models' / 'thresholds.json').read_text())['screen_cancer_threshold']:.3f}")
 
@@ -154,22 +219,24 @@ def main() -> None:
     y_thresh = np.zeros(len(df), dtype=int)
     probs_all = np.zeros((len(df), n_cls), dtype=np.float32)
 
-    skipped = 0
+    unreadable: list[str] = []
+    valid = np.ones(len(df), dtype=bool)
     for i, row in enumerate(df.itertuples(index=False)):
         if i % 200 == 0:
             print(f"  {i}/{len(df)}...", end="\r", flush=True)
         try:
-            probs = infer(interp, row.path)
+            probs = infer(interp, row.path, production=args.production)
         except FileNotFoundError:
-            skipped += 1
-            y_argmax[i] = y_true[i]  # don't penalise missing images
-            y_thresh[i] = y_true[i]
+            # Never score an image we could not read — collected and FAILED below.
+            unreadable.append(str(row.path))
+            valid[i] = False
             continue
         probs_all[i] = probs
         y_argmax[i] = int(np.argmax(probs))
         y_thresh[i] = decide_index(probs)
 
-    print(f"  Done. Skipped {skipped} missing images.")
+    print(f"  Done. {int(valid.sum())}/{len(df)} images readable.")
+    y_true, y_argmax, y_thresh = y_true[valid], y_argmax[valid], y_thresh[valid]
 
     # ── 3-class confusion matrices ──────────────────────────────────────────
     def confusion(y_t, y_p):
@@ -228,10 +295,21 @@ def main() -> None:
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         stem = model_name.replace(".tflite", "")
+        # Distinct filenames per config so serving-path / clean-subset runs never
+        # overwrite the historical single-view full-set PNGs.
+        stem += ("_production" if args.production else "") + ("_clean" if args.clean_subset else "")
         save_confusion_png(cm_argmax, labels, f"Confusion (argmax) — {stem}",
                            out_dir / f"confusion_argmax_{stem}.png")
         save_confusion_png(cm_thresh, labels, f"Confusion (threshold=0.11) — {stem}",
                            out_dir / f"confusion_threshold_{stem}.png")
+
+    if unreadable:
+        print(f"\nERROR: {len(unreadable)} test image(s) could not be read; the metrics above "
+              f"cover only the {int(valid.sum())} readable images and MUST NOT be quoted:",
+              file=sys.stderr)
+        for path in unreadable:
+            print(f"  {path}", file=sys.stderr)
+        sys.exit(1)
 
     print("\nDone.")
 

@@ -53,6 +53,16 @@ AI-assisted **screening** demo: EfficientNet-style classifier on PC, TensorFlow 
 
 **Debug:** `POST /scan` accepts optional multipart field `image` (JPEG/PNG) to bypass the camera.
 
+## Privacy & data retention
+
+Saved scans are photos of participants' skin and stay **on this device only** — nothing
+is uploaded. A scan is stored only after the participant ticks the consent box in the
+save dialog; History, saved cases, and Settings sit behind a staff passcode (set via
+`.streamlit/secrets.toml` or `DERMASCAN_PASSCODE` — never committed); and staff erase
+all participant data with the "End event" wipe in Settings after each session. Full
+policy, passcode setup, and the human-participants (ISEF/IRB) requirements:
+[docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## Repository layout (short)
 
 | Path | Role |

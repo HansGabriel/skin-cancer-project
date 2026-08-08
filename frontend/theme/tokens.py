@@ -70,6 +70,9 @@ class Tokens:
     # Touch
     touch_min: int = 48  # min button height (px)
     font_family: str = "'Plus Jakarta Sans', Inter, system-ui, sans-serif"
+    # Brand (display only — internal identifiers, paths and env vars stay "dermascan").
+    brand_name: str = "E.P.I.V.U.E."
+    brand_tagline: str = "Screening aid — not a diagnosis"
     # Aliases used by older components (plan naming: type_*)
     type_xs: int = 13
     type_sm: int = 15

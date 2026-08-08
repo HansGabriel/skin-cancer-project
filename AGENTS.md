@@ -38,8 +38,9 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 
 ### Preprocessing contract
 
-- **Training (Keras):** `efficientnet.preprocess_input` on RGB `224×224`.
-- **TFLite / OpenCV on Pi:** match training — typically `(img / 127.5) - 1.0` on resized RGB unless quantization changes input dtype (document if full int8 I/O is enabled).
+- **Training (Keras):** `efficientnet.preprocess_input` on RGB `224×224` — effectively **identity** on TF 2.21 (EfficientNet rescales internally), so the model sees raw `[0, 255]`.
+- **TFLite (PC + Pi):** float32 RGB `224×224` in **`[0, 255]`** — resize only, **no scaling**. `backend/preprocessing.py` is canonical; `scripts/pi_server.py` / `classify_pi.py` mirror it. Do **not** add `(img / 127.5) - 1.0` — the exported graph input expects raw `[0, 255]` (quantized input dtypes are handled from the tensor's scale/zero-point in `to_input_tensor`).
+- **Camera gotcha:** picamera2's `"RGB888"` format delivers **BGR** byte order; every capture path converts BGR→RGB at the capture boundary before inference.
 
 ---
 
@@ -57,7 +58,7 @@ requirements.txt
 venv/
 ```
 
-**Pi (`~/skin-classifier/`):** `skin_classifier.tflite`, `labels.txt`, `classify.py`, `pi_server.py`, `test_with_files.py`, `samples/`, `captures/`, optional `predictions_log.csv`, `venv/`.
+**Pi (`~/skin-cancer-project/` — the canonical install path; see docs/DEPLOYMENT.md "Autostart & crash recovery"):** full repo clone (`DermaScan.desktop` and `deploy/dermascan-kiosk.service` assume this path), with `skin_classifier.tflite`, `labels.txt`, `thresholds.json`, `temperature.json` next to `pi_server.py` / `classify_pi.py` for the standalone Flask/CLI path, plus `venv/`.
 
 ---
 

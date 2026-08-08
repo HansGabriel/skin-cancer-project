@@ -76,6 +76,7 @@ def inject_global_css() -> None:
 .ds-brand{{display:flex;align-items:center;gap:8px;font-weight:800;font-size:{T.font_md}px;color:{T.violet};letter-spacing:-.01em;}}
 .ds-brand-dot{{width:12px;height:12px;border-radius:999px;background:linear-gradient(135deg,{T.violet},{T.teal});box-shadow:0 0 0 3px {T.violet_tint};}}
 .ds-brand-sub{{font-size:{T.font_xs}px;color:{T.text_muted};font-weight:500;}}
+.ds-offline-pill{{margin-left:8px;padding:3px 10px;border-radius:999px;background:{T.violet_tint};color:{T.violet};font-size:{T.pill_font}px;font-weight:700;letter-spacing:.08em;vertical-align:middle;}}
 /* Icon buttons in the app bar: keep the click target, hide the text label. */
 .ds-iconbtn{{display:flex;justify-content:center;color:{T.text_muted};}}
 /* Risk ring hero. */

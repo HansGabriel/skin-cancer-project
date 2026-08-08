@@ -7,7 +7,12 @@ import streamlit as st
 from theme.tokens import TOKENS as T
 
 _LABELS = {"A": "A-Asymmetry", "B": "B-Border", "C": "C-Colour", "D": "D-Diameter", "E": "E-Evolving"}
-_TIER = {0: ("NORMAL ↓", T.success, "#111"), 1: ("BORDERLINE", T.warning, "#111"), 2: ("SUSPICIOUS ↑", T.urgent, "#fff")}
+# EPIVUE pill tones: soft tint background + strong text (matches the device concept).
+_TIER = {
+    0: ("NORMAL", T.success_tint, T.success),
+    1: ("BORDERLINE", T.warning_tint, T.warning),
+    2: ("SUSPICIOUS", T.urgent_tint, T.urgent),
+}
 
 
 def render_abcde_row(abcde: dict[str, Any] | None, *, show_values: bool = False) -> None:
@@ -30,7 +35,8 @@ def render_abcde_row(abcde: dict[str, Any] | None, *, show_values: bool = False)
         val = d.get("value")
         vstr = "—" if val is None else (f"{val:.2f}" if isinstance(val, float) else str(val))
         if d.get("verdict") == "needs history":
-            pill, bg, fg = "NEEDS EARLIER PHOTO", T.info, "#fff"
+            # First scan of a case: Evolving cannot be assessed — say so, never "normal".
+            pill, bg, fg = "NOT ASSESSED — FIRST VISIT", T.info_tint, T.info
         else:
             pill, bg, fg = _TIER.get(int(d.get("tier", 0)), ("—", T.outline, T.text))
         detail = d.get("detail", "")

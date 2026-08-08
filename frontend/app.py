@@ -21,7 +21,7 @@ sys.path.insert(0, str(FRONTEND))
 from backend.contracts import BackendKind
 from logging_config import configure_logging
 from navigation import current_route, init_navigation, navigate
-from services.auth import enforce_passcode_gate
+from services.auth import enforce_passcode_gate, enforce_staff_gate
 from services.inference import get_inference_backend
 from theme.css import inject_global_css
 from components.bottom_nav import render_bottom_nav
@@ -104,6 +104,7 @@ def main() -> None:
                 st.success(f"OK — model: {health.get('model', '?')}")
 
     route = current_route()
+    enforce_staff_gate(route)
     if route == "home":
         render_home_view()
     elif route == "camera":

@@ -154,7 +154,18 @@ class Storage:
             rows = conn.execute("SELECT * FROM scans WHERE case_id=? ORDER BY taken_at ASC", (case_id,)).fetchall()
         return [Scan(**dict(r)) for r in rows]
 
-    def save_scan(self, case_id: str, pipeline: dict[str, Any], image_bytes: bytes, *, model_path: str | None = None) -> Scan:
+    def save_scan(
+        self,
+        case_id: str,
+        pipeline: dict[str, Any],
+        image_bytes: bytes,
+        *,
+        model_path: str | None = None,
+        consent: bool = False,
+    ) -> Scan:
+        # Body photos never persist without an explicit consent step in the UI.
+        if not consent:
+            raise PermissionError("save_scan requires explicit participant consent (consent=True)")
         sr = pipeline["scan_result"]
         sid, taken = str(uuid.uuid4()), _utc_now()
         rel_img = f"images/{sid}.jpg"

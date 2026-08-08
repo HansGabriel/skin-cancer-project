@@ -6,6 +6,7 @@ import streamlit as st
 
 from components.icons import icon
 from navigation import navigate
+from services.kiosk import is_kiosk
 from theme.tokens import TOKENS as T
 
 
@@ -25,14 +26,19 @@ def _icon_nav(col, name: str, key: str, route: str) -> None:
 
 
 def render_app_bar(*, show_home: bool = False) -> None:
-    # Left: brand wordmark. Right: SVG icon nav buttons.
+    # Left: brand wordmark (+ OFFLINE pill on the kiosk). Right: SVG icon nav buttons.
     n_icons = 3 if show_home else 2
     weights = [5] + [1] * n_icons
     cols = st.columns(weights)
     with cols[0]:
+        offline = (
+            '<span class="ds-offline-pill">OFFLINE</span>'
+            if is_kiosk()
+            else ""
+        )
         st.markdown(
-            '<div class="ds-brand"><span class="ds-brand-dot"></span>DermaScan</div>'
-            '<div class="ds-brand-sub">Skin check · educational</div>',
+            f'<div class="ds-brand"><span class="ds-brand-dot"></span>{T.brand_name}{offline}</div>'
+            f'<div class="ds-brand-sub">{T.brand_tagline}</div>',
             unsafe_allow_html=True,
         )
     idx = 1

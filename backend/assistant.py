@@ -93,6 +93,18 @@ def load_kb(path: str | Path | None = None) -> KnowledgeBase:
     )
 
 
+def kb_is_live(path: str | Path | None = None) -> bool:
+    """True when at least one doctor-reviewed entry would be shown.
+
+    The Assist tab and its CTAs are hidden entirely when this is False — an
+    empty "answers are being reviewed" screen must never ship as a nav item.
+    """
+    try:
+        return bool(load_kb(path).entries)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
 # ── Retrieval: tiny TF-IDF + cosine (source of truth, always available) ─────────
 
 

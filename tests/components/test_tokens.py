@@ -25,6 +25,13 @@ def test_design_tokens_present():
     assert TOKENS.success_tint.startswith("#")
 
 
+def test_brand_tokens():
+    # EPIVUE display branding (concept D); internals stay "dermascan".
+    assert TOKENS.brand_name == "E.P.I.V.U.E."
+    assert "not a diagnosis" in TOKENS.brand_tagline.lower()
+    assert TOKENS.violet == "#6C4AB6"  # the concept's accent
+
+
 def test_7in_profile_scales_up():
     t = get_tokens("7in")
     d = get_tokens("desktop")

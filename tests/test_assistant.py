@@ -9,6 +9,7 @@ from unittest import mock
 import pytest
 
 from backend.assistant import (
+    kb_is_live,
     Matcher,
     OllamaRephraser,
     SIM_THRESHOLD,
@@ -176,3 +177,13 @@ def test_pick_followups_parses_indices():
 def test_health_error_when_no_server(monkeypatch):
     r = OllamaRephraser(base_url="http://127.0.0.1:1")  # nothing listens here
     assert r.health()["status"] == "error"
+
+
+def test_kb_is_live_requires_reviewed_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Assist tab exists only when at least one doctor-reviewed entry loads."""
+    monkeypatch.delenv("SKIN_KB_DEV", raising=False)
+    unreviewed = _write_kb(tmp_path, [_entry(reviewed_by=None, reviewed_date=None)])
+    assert kb_is_live(unreviewed) is False
+    reviewed = _write_kb(tmp_path, [_entry()])
+    assert kb_is_live(reviewed) is True
+    assert kb_is_live(tmp_path / "missing.json") is False

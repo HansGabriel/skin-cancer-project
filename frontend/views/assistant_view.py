@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import streamlit as st
 
 from backend.assistant import KnowledgeBase, Matcher, OllamaRephraser, load_kb, suggested_questions
@@ -11,6 +9,7 @@ from backend.contracts import ScanResult
 from components.app_bar import render_disclaimer_footer
 from components.mobile_frame import mobile_frame
 from components.urgency_pill import render_urgency_from_band
+from services.kiosk import is_kiosk
 
 _DISCLAIMER = "This is a screening aid, not a diagnosis. Contact a health professional."
 
@@ -102,7 +101,7 @@ def render_assistant_view() -> None:
             st.rerun()
 
         # Free-text input only where a keyboard exists (PC / Streamlit Cloud).
-        if os.environ.get("SKIN_KIOSK") != "1":
+        if not is_kiosk():
             typed = st.chat_input("Ask about your result…")
             if typed:
                 _ask(typed.strip())

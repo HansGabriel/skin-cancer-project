@@ -9,6 +9,7 @@ from components.primary_button import render_back_link
 from components.urgency_pill import render_urgency_from_band
 from navigation import navigate
 from services.storage import get_storage
+from theme.tokens import TOKENS as T
 
 
 def render_case_view() -> None:
@@ -26,9 +27,15 @@ def render_case_view() -> None:
     with mobile_frame():
         if render_back_link("Back", key="case_back"):
             navigate("folder", selected_folder_id=fid) if fid else navigate("history")
+        # EPIVUE-style case header: "CASE · BODY SITE" eyebrow above the case name.
+        site = (case.body_site or "").upper()
+        chip = f"CASE · {site}" if site else "CASE"
+        st.markdown(
+            f'<div style="font-size:{T.font_xs}px;letter-spacing:.12em;font-weight:700;'
+            f'color:{T.text_muted};margin:4px 0 2px">{chip}</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(f"### {case.name}")
-        if case.body_site:
-            st.caption(case.body_site)
         if not scans:
             st.info("No scans yet.")
             if st.button("+ Add scan"):

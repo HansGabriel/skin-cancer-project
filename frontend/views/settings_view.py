@@ -9,6 +9,7 @@ from backend import pi_backend_enabled
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
 from navigation import navigate
+from services.kiosk import is_kiosk
 from services.storage import data_dir, get_storage
 
 
@@ -20,17 +21,20 @@ def render_settings_view(*, root: Path) -> None:
         store = get_storage()
 
         # ── Plain settings (everything an ordinary user / health worker needs) ──
-        st.toggle(
-            "Require a clear photo before scanning",
-            key="strict_quality_gate",
-            help="Blocks blurry or badly lit photos so results stay reliable.",
-        )
+        if not is_kiosk():
+            # On the kiosk the gate is forced on inside the pipeline; no toggle.
+            st.toggle(
+                "Require a clear photo before scanning",
+                key="strict_quality_gate",
+                help="Blocks blurry or badly lit photos so results stay reliable.",
+            )
 
         # Assistant wording (on-device AI). Answers stay reviewed either way.
+        # MVP 2 locked design: canned doctor-reviewed text by default — the LLM
+        # reword layer is opt-in per session, never on by default.
         from backend.assistant import OLLAMA_MODEL, OllamaRephraser
 
-        if "assistant_gemma_enabled" not in st.session_state:
-            st.session_state["assistant_gemma_enabled"] = OllamaRephraser().health()["status"] == "ok"
+        st.session_state.setdefault("assistant_gemma_enabled", False)
         st.toggle(
             "Friendlier assistant wording (on-device AI)",
             key="assistant_gemma_enabled",
@@ -47,7 +51,7 @@ def render_settings_view(*, root: Path) -> None:
         st.caption(f"Saved scans use {mb:.1f} MB of storage.")
 
         st.divider()
-        if os.environ.get("SKIN_KIOSK") == "1":
+        if is_kiosk():
             # Kiosk: Exit lives here (reachable from every screen via bottom nav).
             # No free-text confirm on the keyboard-less kiosk — two-tap reset instead.
             if st.button("✕ Exit DermaScan", key="kiosk_exit"):
@@ -56,10 +60,12 @@ def render_settings_view(*, root: Path) -> None:
                 except OSError:
                     pass
                 st.stop()
-            if st.checkbox("I want to reset all data", key="reset_confirm") and st.button("Reset all data"):
+            if st.checkbox(
+                "End event — I want to erase all saved scans", key="reset_confirm"
+            ) and st.button("Erase all participant data"):
                 store.reset_all()
                 st.session_state.pop("last_result", None)
-                st.success("Reset complete.")
+                st.success("All saved scans erased.")
                 st.rerun()
         elif st.text_input("Type DELETE to reset") == "DELETE" and st.button("Reset all data"):
             store.reset_all()
