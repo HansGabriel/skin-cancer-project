@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import streamlit as st
 
+from backend.assistant import kb_is_live
 from backend.contracts import ScanResult
 from components.abcde_row import render_abcde_row
 from components.app_bar import render_disclaimer_footer
@@ -13,26 +13,18 @@ from components.image_compare import render_image_compare
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
 from components.prob_bars import render_seven_class_bars, render_three_class_probs
-from components.recommendation_card import render_recommendation_card
-from components.risk_ring import render_risk_ring
+from components.verdict_card import render_verdict_card
 from navigation import navigate
+from services.kiosk import is_kiosk
 from services.storage import get_storage
-
-# Below this calibrated top-class confidence (%), the model isn't sure enough to
-# stand behind a single label — show an "inconclusive" banner instead of pretending.
-# Tunable via env so it can be adjusted without a code change.
-try:
-    _INCONCLUSIVE_BELOW = float(os.environ.get("SKIN_INCONCLUSIVE_BELOW", "45"))
-except ValueError:
-    _INCONCLUSIVE_BELOW = 45.0
+from services.verdict import resolve_verdict, retake_verdict
 
 
 @st.dialog("Save to case")
 def _save_dialog(model_path: str) -> None:
-    import os
     from datetime import date
 
-    kiosk = os.environ.get("SKIN_KIOSK") == "1"
+    kiosk = is_kiosk()
     store = get_storage()
     folders = store.list_folders()
     folder_id = None
@@ -50,7 +42,12 @@ def _save_dialog(model_path: str) -> None:
             folder_id = st.selectbox("Folder", [f.id for f in folders], format_func=lambda i: next(f.name for f in folders if f.id == i))
         name = st.text_input("Case name", "Lesion scan")
         site = st.selectbox("Body site", ["arm", "leg", "trunk", "face", "scalp", "hand", "foot", "other"])
-    if st.button("Save", type="primary"):
+    consent = st.checkbox(
+        "I agree to save this photo of my skin on this device so it can be "
+        "compared at a later visit. Staff can delete it at any time.",
+        key="save_consent",
+    )
+    if st.button("Save", type="primary", disabled=not consent):
         pl = st.session_state.get("last_result")
         if not pl or not pl.get("scan_result"):
             st.error("Nothing to save.")
@@ -69,7 +66,7 @@ def _save_dialog(model_path: str) -> None:
             ok, buf = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
             if ok:
                 img = buf.tobytes()
-        saved = store.save_scan(case.id, pl, img, model_path=model_path)
+        saved = store.save_scan(case.id, pl, img, model_path=model_path, consent=True)
         if pl.get("abcde") and saved.e_json:
             import json
 
@@ -90,29 +87,18 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                 navigate("home")
             return
         if pl.get("blocked") and not pl.get("scan_result"):
-            st.error("Photo quality was too low to analyze — please retake.")
-            for r in pl.get("quality", {}).get("reasons", []):
-                st.warning(r)
+            render_verdict_card(pl.get("verdict") or retake_verdict(pl.get("quality")))
             return
         if pl.get("error") and not pl.get("scan_result"):
             st.error(pl["error"])
             return
         sr = pl.get("scan_result")
         if isinstance(sr, ScanResult):
-            render_risk_ring(sr.label, float(sr.confidence), str(pl.get("risk_band", "low")))
-            # Honest "neither / not sure" output: if even the calibrated top class is
-            # weak, tell the user it's inconclusive rather than over-trusting the label.
-            if float(sr.confidence) < _INCONCLUSIVE_BELOW:
-                st.warning(
-                    "⚠ Inconclusive — the model is not confident about this result. "
-                    "Retake with better lighting/focus, or consult a health professional."
-                )
+            # The verdict card is the ONLY risk-language element on this screen —
+            # every message (band, hedge, advice) comes from services.verdict.
+            render_verdict_card(pl.get("verdict") or resolve_verdict(sr, pl.get("quality")))
             render_image_compare(pl.get("rgb"), pl.get("gradcam_overlay_jpg"))
-            if pl.get("borderline_note"):
-                st.warning(pl["borderline_note"])
             render_abcde_row(pl.get("abcde"))
-            render_three_class_probs(sr.probs)
-            render_recommendation_card(sr.action, str(pl.get("risk_band", "low")))
         qd = pl.get("quality", {}).get("reason_details", [])
         for _code, label, _sev in qd:
             st.warning(label)
@@ -135,9 +121,11 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                         st.caption(f"Confidence calibrated with temperature scaling (T = {float(t_val):.2f})")
                 if pl.get("abcde"):
                     render_abcde_row(pl.get("abcde"), show_values=True)
+                # Percentages live only here — the main view speaks in bands.
+                render_three_class_probs(sr.probs)
                 render_seven_class_bars(pl.get("seven_class_probs"))
                 if not pl.get("gradcam_overlay_jpg"):
-                    st.caption("AI attention heatmap (Grad-CAM) unavailable — the full Keras model is not loaded on this device.")
+                    st.caption("AI attention heatmap unavailable on this device.")
                 if pl.get("rgb_before") is not None and pl.get("rgb_analysis") is not None:
                     st.markdown("**Preprocessing debug (before / after — ABCDE path only)**")
                     c1, c2 = st.columns(2)
@@ -147,7 +135,8 @@ def render_results_view(*, root: Path, model_path: str) -> None:
         # 2x2 grid — larger touch targets than a crushed 3-column row.
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("💬 Ask about this result", key="res_ask", use_container_width=True):
+            # The Assist CTA only exists when doctor-reviewed answers exist.
+            if kb_is_live() and st.button("💬 Ask about this result", key="res_ask", use_container_width=True):
                 navigate("assistant")
         with c2:
             if st.button("Save to case…", key="res_save", use_container_width=True):

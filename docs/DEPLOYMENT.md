@@ -103,3 +103,61 @@ Target panel: **7" 1024x600 HDMI IPS, 5-point capacitive touch, drive-free**
   install a system on-screen keyboard as an optional extra:
   `sudo apt install wvkbd` and bind `wvkbd-mobintl` to a hot corner/gesture —
   not required for any core flow.
+
+---
+
+## Autostart & crash recovery (kiosk)
+
+**Canonical Pi install path: `~/skin-cancer-project`.** `launch_kiosk.sh`
+self-resolves its own location, but the desktop launcher (`DermaScan.desktop`),
+the systemd unit (`deploy/dermascan-kiosk.service`), and AGENTS.md all assume
+this path — clone the repo there (or update those two files if you deviate).
+
+Current Raspberry Pi OS (images from **2024-10-28** onward, all Pi models) boots
+into the **labwc** Wayland compositor by default. `surf` is an X11 browser; it
+runs under **XWayland**, which labwc provides automatically — no X11 setup needed.
+Both autostart options below require **desktop autologin**
+(`sudo raspi-config` → System Options → Boot / Auto Login → **Desktop Autologin**),
+otherwise nothing graphical runs at boot.
+
+### Option 1 — labwc autostart (simplest, no crash recovery)
+
+Append one line to `~/.config/labwc/autostart` (create the file if missing):
+
+```sh
+~/skin-cancer-project/launch_kiosk.sh &
+```
+
+labwc runs this when the desktop session starts. If the kiosk crashes or
+Streamlit fails to boot, nothing restarts it — fine for supervised demos.
+
+### Option 2 — systemd user unit (autostart + restart on failure)
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp ~/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable dermascan-kiosk.service
+```
+
+- `Restart=on-failure` + `RestartSec=5` relaunch the kiosk if it exits nonzero
+  (e.g. `launch_kiosk.sh`'s 40s Streamlit watchdog) — but not after a clean exit
+  via the on-screen Exit button.
+- labwc bridges the desktop session to systemd
+  (`systemctl --user --no-block start labwc-session.target`), which reaches
+  `graphical-session.target`; `WantedBy=graphical-session.target` starts the
+  kiosk with the desktop and `PartOf=` stops it when the session ends.
+- Logs: `journalctl --user -u dermascan-kiosk` plus `/tmp/dermascan_kiosk.log`.
+
+**Pick one option, not both** — two supervisors fighting over the same
+Streamlit port and pidfiles is worse than either alone.
+
+### Disable screen blanking
+
+An unattended kiosk goes black without this:
+
+- **Desktop session:** Raspberry Pi Control Centre (Preferences → Raspberry Pi
+  Configuration) → **Display** → **Screen Blanking** → off.
+- **Console (text) blanking:** append `consoleblank=0` to
+  `/boot/firmware/cmdline.txt` (keep everything on the single existing line) —
+  covers the brief console phase before the desktop and any non-desktop fallback.

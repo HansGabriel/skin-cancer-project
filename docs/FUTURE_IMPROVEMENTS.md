@@ -8,12 +8,10 @@ items, ranked by impact. No code has been changed for these yet.
 
 ## Performance (the Pi is the bottleneck)
 
-### 1. Reduce camera warmup frames (easy latency win)
-`frontend/services/pi_camera.py` `capture_still_jpeg()` discards **8 full-res
-`main` frames** on every "Take Photo", then captures a 9th. On the Pi that's
-~1–2s of dead time per capture. The camera already runs continuously with AE/AWB
-settled (the live preview proves it), so **1–2 warmup frames is likely enough**.
-Lowering `_WARMUP_FRAMES` from 8 → 2 should noticeably speed up capture.
+### 1. ✅ Done — camera warmup frames reduced
+`frontend/services/pi_camera.py` now discards only **2** warmup frames per
+capture (`_WARMUP_FRAMES = 2`) — the 8-frame / ~1–2s dead time this item
+originally described has been fixed. Nothing left to do.
 
 ### 2. Keep TTA off on the Pi (already correct)
 Test-time augmentation runs the model 4× and averages — the single biggest
@@ -24,12 +22,12 @@ inference cost. It's already disabled for the Pi backend by default. Leave it of
 capture (pure OpenCV on an ARM core). Cheap-ish, but a candidate to profile if
 capture latency matters.
 
-### 4. Benchmark and possibly switch to the int8 model
-`models/skin_classifier_int8.tflite` exists but is **unused** — the kiosk runs
-`skin_classifier.tflite`. A fully-int8 model is typically **2–4× faster on ARM**
-with minimal accuracy loss; its latency was never benchmarked. Action: run both
-on the Pi, compare inference ms *and* whether predictions shift. If int8 holds
-up, switch `SKIN_MODEL_PATH` to it.
+### 4. ❌ Dropped — int8 model offers no speedup
+Measured: `skin_classifier_int8.tflite` is only +24 bytes vs the deployed file
+with bit-identical confusion matrices — the deployed `skin_classifier.tflite` is
+already integer-quantized, so there is no 2–4× win to collect (a true speedup
+would need a full-int8 re-export with a representative dataset; see
+docs/DEPLOYMENT.md follow-up B.5).
 
 ---
 
@@ -42,13 +40,12 @@ heuristics. This is the correct call for not breaking the trained weights, but i
 means the CNN never benefits from the image cleanup. If the model is ever
 retrained, baking that preprocessing into training could help.
 
-### 6. ⭐ Apply temperature calibration (highest-value, free)
-`models/temperature.json` has `T ≈ 1.54` fitted on validation data, but it is
-**not applied during inference**. The confidence numbers shown to users are
-therefore raw softmax — **overconfident**. Applying temperature scaling
-(`logits / T` before softmax) makes "87% confidence" actually mean ~87%. The
-value is already computed; this is essentially free, and for a *medical
-screening* tool, honest confidence matters a lot. **Do this first.**
+### 6. ✅ Done — temperature calibration applied
+`models/temperature.json` (`T ≈ 1.54`) **is applied** to all displayed
+confidences (`backend/tflite_shared.apply_temperature`, called from
+`compose_scan_result`; mirrored in `scripts/pi_server.py`). Decisions still run
+on raw probabilities so the validated 0.11 screen threshold is preserved.
+Nothing left to do.
 
 ### 7. Add an uncertainty / "not sure" output
 Every scan currently gets a confident label, even on garbage input. The deferred
@@ -65,7 +62,7 @@ CLAHE/unsharp enhancement is partly compensating for this hardware limit.
 ---
 
 ## Recommended order
-1. **#6 — Apply temperature scaling.** Free, makes confidence numbers truthful.
-2. **#4 — Benchmark int8.** Potential 2–4× speedup on the Pi.
-3. **#1 — Cut warmup frames** (8 → 2). Faster captures.
-4. Everything else is polish.
+(#1, #6 are done; #4 was dropped after measurement — see items above.)
+1. **#7 — Uncertainty / "not sure" output.** Most clinically honest remaining win.
+2. **#8 — Macro lens.** Hardware fix for the fixed-focus accuracy ceiling.
+3. Everything else (#3, #5) is profiling/retrain-time polish.

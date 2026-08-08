@@ -1,0 +1,38 @@
+# DermaScan kiosk — systemd USER unit: start the kiosk with the desktop session
+# and restart it automatically if it crashes.
+#
+# Install (as the kiosk user, repo at ~/skin-cancer-project — see docs/DEPLOYMENT.md):
+#   mkdir -p ~/.config/systemd/user
+#   cp ~/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable dermascan-kiosk.service
+#
+# Requirements / notes:
+# - Desktop AUTOLOGIN must be enabled (raspi-config → System Options → Boot /
+#   Auto Login → Desktop Autologin) so the graphical user session exists at boot;
+#   user units only run while that user is logged in.
+# - Current Raspberry Pi OS (2024-10-28 and later, all models) boots the labwc
+#   Wayland compositor; labwc bridges the session to systemd via
+#   `systemctl --user --no-block start labwc-session.target`, which reaches
+#   graphical-session.target — that is what starts this unit. surf is an X11
+#   browser and runs under XWayland, which labwc provides automatically.
+# - PartOf=graphical-session.target stops the kiosk when the session ends;
+#   Restart=on-failure re-runs launch_kiosk.sh when it exits nonzero (e.g. the
+#   Streamlit 40s startup watchdog) — a clean exit via the kiosk Exit button
+#   (exit 0) does NOT trigger a restart.
+# - Do NOT also add launch_kiosk.sh to ~/.config/labwc/autostart when this unit
+#   is enabled — pick one mechanism (docs/DEPLOYMENT.md "Autostart & crash recovery").
+
+[Unit]
+Description=DermaScan kiosk (Streamlit + surf fullscreen)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/skin-cancer-project/launch_kiosk.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

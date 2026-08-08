@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import streamlit as st
 
 from components.app_bar import render_app_bar, render_disclaimer_footer
@@ -12,6 +10,7 @@ from components.primary_button import render_primary_button
 from components.scan_row import render_scan_row
 from components.viewfinder import render_viewfinder_placeholder
 from navigation import navigate
+from services.kiosk import is_kiosk
 from services.storage import get_storage
 
 # Kiosk exit moved to Settings (reachable everywhere via the bottom nav).
@@ -32,7 +31,7 @@ def render_home_view() -> None:
         render_disclaimer_footer()
         st.markdown('<p class="ds-section-title" style="margin-top:8px">History</p>', unsafe_allow_html=True)
         # No physical/on-screen keyboard on the kiosk — hide the search box there.
-        if os.environ.get("SKIN_KIOSK") != "1":
+        if not is_kiosk():
             st.text_input("Search", placeholder="🔍", key="home_search", label_visibility="collapsed")
         store = get_storage()
         folders = store.list_folders()

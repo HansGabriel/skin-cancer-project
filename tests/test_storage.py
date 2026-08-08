@@ -49,7 +49,7 @@ def _pipeline(sr: _SR) -> dict:
 def test_folder_case_scan(store: Storage) -> None:
     f = store.create_folder("F")
     c = store.create_case(f.id, "C", body_site="arm")
-    s = store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff" + b"\x00" * 20)
+    s = store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff" + b"\x00" * 20, consent=True)
     assert len(store.list_scans(c.id)) == 1
     assert json.loads(s.abcd_json)["D"]["value"] == 4.0
 
@@ -57,6 +57,28 @@ def test_folder_case_scan(store: Storage) -> None:
 def test_delete_folder(store: Storage) -> None:
     f = store.create_folder("X")
     c = store.create_case(f.id, "Y")
-    store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff")
+    store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff", consent=True)
     store.delete_folder(f.id)
     assert store.list_folders() == []
+
+
+def test_save_scan_refuses_without_consent(store: Storage) -> None:
+    """Body photos must never persist without the explicit consent step."""
+    f = store.create_folder("F")
+    c = store.create_case(f.id, "C")
+    with pytest.raises(PermissionError):
+        store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff")
+    assert store.list_scans(c.id) == []
+    assert list((store.root / "images").iterdir()) == []
+
+
+def test_reset_all_erases_rows_and_files(store: Storage) -> None:
+    """The end-event wipe leaves no participant image, mask, or row behind."""
+    f = store.create_folder("F")
+    c = store.create_case(f.id, "C")
+    store.save_scan(c.id, _pipeline(_SR()), b"\xff\xd8\xff" + b"\x00" * 10, consent=True)
+    assert list((store.root / "images").iterdir())
+    store.reset_all()
+    assert store.list_folders() == []
+    assert list((store.root / "images").iterdir()) == []
+    assert list((store.root / "masks").iterdir()) == []

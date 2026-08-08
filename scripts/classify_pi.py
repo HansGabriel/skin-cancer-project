@@ -49,7 +49,10 @@ def capture_rgb() -> np.ndarray:
     try:
         picam2.start()
         time.sleep(1.0)
-        return picam2.capture_array()
+        frame = picam2.capture_array()
+        # picamera2's "RGB888" is actually BGR byte order — swap here so the model
+        # (trained on RGB) never sees red/blue inverted channels.
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     finally:
         try:
             picam2.stop()

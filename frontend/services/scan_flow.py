@@ -20,12 +20,19 @@ def load_keras_vis_cached(path: str):
 
 def finalize_pipeline_result(pl: dict, keras_path: str) -> None:
     rgb = pl.get("rgb")
-    if rgb is None or not keras_path or not Path(keras_path).is_file():
+    if rgb is None:
         return
-    try:
-        enrich_result_with_vis(pl, rgb, load_keras_vis_cached(keras_path))
-    except Exception as exc:  # noqa: BLE001
-        pl["vis_error"] = str(exc)
+    if keras_path and Path(keras_path).is_file():
+        try:
+            enrich_result_with_vis(pl, rgb, load_keras_vis_cached(keras_path))
+        except Exception as exc:  # noqa: BLE001
+            pl["vis_error"] = str(exc)
+    # No Keras on this device (the kiosk): gradient-free Eigen-CAM from the
+    # two-output TFLite export, if present. Silent no-op otherwise.
+    if not pl.get("gradcam_overlay_jpg"):
+        from services.eigencam import enrich_with_eigencam
+
+        enrich_with_eigencam(pl)
 
 
 def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None) -> dict:

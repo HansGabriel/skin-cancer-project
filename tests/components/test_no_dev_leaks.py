@@ -40,3 +40,14 @@ def test_no_dev_jargon_in_user_facing_files():
             if re.search(bad, text):
                 offenders.append(f"{f.name}: matches '{bad}'")
     assert not offenders, "\n".join(offenders)
+
+
+def test_mandated_safety_copy_present():
+    """Copy the design mandates must exist at its single source of truth."""
+    app_bar = (FRONTEND / "components" / "app_bar.py").read_text(encoding="utf-8")
+    assert "Not a diagnosis" in app_bar
+    assert "educational screening aid" in app_bar
+    verdict = (FRONTEND / "services" / "verdict.py").read_text(encoding="utf-8")
+    assert "Low risk is not no risk" in verdict
+    splash = (FRONTEND / "static" / "splash.html").read_text(encoding="utf-8")
+    assert "not a diagnosis" in splash.lower()
