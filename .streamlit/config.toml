@@ -5,10 +5,14 @@ gatherUsageStats = false
 headless = true
 maxUploadSize = 8
 enableXsrfProtection = true
+# Serves frontend/static/ at /app/static/ — how the vendored woff2 fonts reach
+# the browser. They must NOT be inlined as data: URIs in the stylesheet, which
+# Streamlit re-sends on every rerun; served this way the browser caches them.
+enableStaticServing = true
 
 [theme]
 base = "light"
-primaryColor = "#6C4AB6"
+primaryColor = "#16233A"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F6FB"
-textColor = "#14181F"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#131A22"

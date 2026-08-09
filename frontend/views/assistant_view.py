@@ -8,8 +8,9 @@ from backend.assistant import KnowledgeBase, Matcher, OllamaRephraser, load_kb, 
 from backend.contracts import ScanResult
 from components.app_bar import render_disclaimer_footer
 from components.mobile_frame import mobile_frame
-from components.urgency_pill import render_urgency_from_band
+from components.urgency_pill import render_verdict_pill
 from services.kiosk import is_kiosk
+from services.verdict import resolve_verdict
 
 _DISCLAIMER = "This is a screening aid, not a diagnosis. Contact a health professional."
 
@@ -54,9 +55,12 @@ def render_assistant_view() -> None:
         st.markdown("### 💬 Assistant")
         band, band_label = _current_band()
         if band_label:
+            # Same verdict object the results screen rendered — never a second
+            # wording derived from the composite risk band.
             pl = st.session_state.get("last_result") or {}
-            render_urgency_from_band(str(pl.get("risk_band", "low")))
-            st.caption(f"Asking about your last result: **{band_label}**")
+            v = pl.get("verdict") or resolve_verdict(pl.get("scan_result"), pl.get("quality"))
+            render_verdict_pill(v)
+            st.caption("Asking about your last result.")
         else:
             st.caption("General questions — run a scan to ask about a specific result.")
 

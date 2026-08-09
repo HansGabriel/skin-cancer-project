@@ -22,7 +22,8 @@ from backend.preprocessing import to_input_tensor
 
 # Same wording as the Keras Grad-CAM path — the UI shows one disclaimer either way.
 EIGENCAM_DISCLAIMER = (
-    "Heatmap highlights regions the model weighted most; it is not lesion ground truth or a diagnosis."
+    "The bright areas show which parts of the photo the scanner paid most attention to. "
+    "It is not an outline of the spot, and it is not a diagnosis."
 )
 
 
@@ -67,13 +68,46 @@ def overlay_jpg(rgb: np.ndarray, cam01: np.ndarray) -> bytes:
     return enc.tobytes()
 
 
+#: Signature output holding the conv feature map (see scripts/export_cam_tflite.py).
+FEATURES_OUTPUT = "features"
+
+
+def _run_for_features(interpreter: Any, inp: dict, tensor: Any) -> Any:
+    """Invoke the CAM model and return its conv feature map, or ``None``.
+
+    Prefers the named signature output so the tensor is fetched by name rather
+    than by output ordering, which the converter does not guarantee. Falls back
+    to scanning for a 4D output so models exported before the export script
+    named its outputs keep working.
+    """
+    try:
+        runner = interpreter.get_signature_runner()
+        outputs = runner(**{next(iter(runner.get_input_details())): tensor})
+        feat = outputs.get(FEATURES_OUTPUT)
+        if feat is not None and getattr(feat, "ndim", 0) == 4:
+            return feat[0]
+        for value in outputs.values():
+            if getattr(value, "ndim", 0) == 4:
+                return value[0]
+    except Exception:  # noqa: BLE001 — pre-signature export, fall through to indices
+        pass
+    interpreter.set_tensor(inp["index"], tensor)
+    interpreter.invoke()
+    feat = None
+    for od in interpreter.get_output_details():
+        t = interpreter.get_tensor(od["index"])
+        if t.ndim == 4:
+            feat = t[0]
+    return feat
+
+
 def enrich_with_eigencam(result: dict[str, Any]) -> None:
-    """Fill ``gradcam_overlay_jpg`` (the slot the Keras path uses) from the CAM export.
+    """Fill ``attention_overlay_jpg`` (the slot the Keras path uses) from the CAM export.
 
     Silent no-op when the artifact is missing, the runtime can't load it, or the
     Keras path already produced an overlay.
     """
-    if result.get("gradcam_overlay_jpg") is not None:
+    if result.get("attention_overlay_jpg") is not None:
         return
     rgb = result.get("rgb")
     if rgb is None or not cam_model_path().is_file():
@@ -84,16 +118,19 @@ def enrich_with_eigencam(result: dict[str, Any]) -> None:
         it = get_tflite_interpreter(str(cam_model_path()))
         inp = it.get_input_details()[0]
         # Canonical preprocessing (backend/preprocessing.py) — same contract as production.
-        it.set_tensor(inp["index"], to_input_tensor(rgb, inp))
-        it.invoke()
-        feat = None
-        for od in it.get_output_details():
-            t = it.get_tensor(od["index"])
-            if t.ndim == 4:
-                feat = t[0]
+        tensor = to_input_tensor(rgb, inp)
+        feat = _run_for_features(it, inp, tensor)
         if feat is None:
             return
-        result["gradcam_overlay_jpg"] = overlay_jpg(rgb, eigencam_map(feat))
-        result["gradcam_disclaimer"] = EIGENCAM_DISCLAIMER
+        result["attention_overlay_jpg"] = overlay_jpg(rgb, eigencam_map(feat))
+        result["attention_note"] = EIGENCAM_DISCLAIMER
+        # Stage 3 of the content gate rides along here rather than running in
+        # services.lesion_gate: the conv features it needs are this model's
+        # output, which has just been computed for the heatmap. Doing it in the
+        # gate would mean a second full inference on every scan — real cost on
+        # a Pi 4. ``None`` when models/feature_stats.json is absent.
+        from services.lesion_gate import is_out_of_distribution
+
+        result["out_of_distribution"] = is_out_of_distribution(feat.mean(axis=(0, 1)))
     except Exception:  # noqa: BLE001 — explanation is optional; never break a scan
         return

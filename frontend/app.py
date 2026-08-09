@@ -24,6 +24,7 @@ from navigation import current_route, init_navigation, navigate
 from services.auth import enforce_passcode_gate, enforce_staff_gate
 from services.inference import get_inference_backend
 from theme.css import inject_global_css
+from theme.tokens import TOKENS
 from components.bottom_nav import render_bottom_nav
 from views.assistant_view import render_assistant_view
 from views.camera_view import render_camera_view
@@ -70,7 +71,7 @@ def _init_session() -> None:
 def main() -> None:
     configure_logging()
     st.set_page_config(
-        page_title="DermaScan AI",
+        page_title=TOKENS.brand_name,
         page_icon="🧬",
         layout="centered",
         initial_sidebar_state="collapsed",

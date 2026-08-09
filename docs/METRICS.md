@@ -97,3 +97,50 @@ mixup / focal-alpha re-weighting is planned future work.
 
 - Case DB: `~/.dermascan/dermascan.db` (override: `DERMASCAN_DATA_DIR`).
 - Backend scan log: `logs/scans.sqlite` (separate inference history).
+
+## Capture quality thresholds
+
+The focus check is a Laplacian variance, but two normalisations are applied
+first (`frontend/services/quality.py`), because the raw number lies in two ways:
+
+- **Size** — variance grows with resolution, so the same scene graded
+  differently from the 4056px Pi camera and a 640px webcam. Downscaled to at
+  most 512px, never upscaled (upscaling interpolates detail away and makes a
+  sharp photo look soft).
+- **Contrast** — variance scales with the square of contrast, so a dim but
+  perfectly sharp photo read as "blurry". Stretched to full range first;
+  exposure is reported separately by the light meter and is only advisory.
+
+Measured on the dermoscopic images in `samples/` (regression-tested in
+`tests/test_quality_levels.py`):
+
+| Image | Focus score |
+|---|---|
+| Real dermoscopic sample | ~450 |
+| Same sample, Gaussian blur 5×5 | ~52 |
+| Same sample, Gaussian blur 11×11 | ~17 |
+| Featureless frame | 0 |
+
+Thresholds sit in that gap: **advisory below 120**, **hard stop below 25**.
+
+This matters more than it sounds. A lesion close-up is smooth skin with a
+soft-edged mark in it, so its variance is inherently low, while a synthetic
+checkerboard scores in the thousands. The previous default of 35 was tuned on
+synthetic patterns and sat *above* every real sample — which is why genuine
+lesions were rejected with "image too blurry".
+
+### Skin detection
+
+`frontend/services/lesion_gate.py` identifies skin from YCrCb chroma, with
+exposure normalised first. Two failure modes drove that design, both invisible
+to tests on raw arrays:
+
+- **JPEG chroma quantisation** nudges near-neutral pixels toward the skin box: a
+  grey desk measured 5% skin as an array and 15% after a quality-92 JPEG, over
+  the 12% threshold. Fixed by the saturation floor of 30.
+- **Low light crushes chroma**, so a real lesion shot in a dim hall came back as
+  "no skin was found". Fixed by lifting the frame to a standard brightness
+  before judging colour.
+
+Both are regression-tested through the real encode in
+`tests/test_gate_robustness.py`, across seven skin tones and five exposures.

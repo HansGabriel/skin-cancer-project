@@ -60,7 +60,8 @@ def test_retake_handles_missing_quality_dict() -> None:
 def test_benign_confident_is_low_concern_with_safety_line() -> None:
     v = resolve_verdict(_scan("benign", 80.0), QUALITY_OK)
     assert v.state == "low_concern"
-    assert v.tone == "success"
+    # Deliberately colourless: a clean screen must not be styled as an all-clear.
+    assert v.tone == "neutral"
     assert LOW_RISK_SAFETY_LINE in v.advice
 
 
@@ -90,7 +91,8 @@ def test_flagged_but_unconfident_keeps_referral_without_urgent_styling() -> None
         v = resolve_verdict(_scan(label, 20.0), QUALITY_OK)
         assert v.state == "uncertain_caution"
         assert v.tone != "urgent"
-        assert "checked" in v.advice
+        # Low confidence must not drop the referral — it only drops the urgency.
+        assert "health worker" in v.advice
         assert "urgent" not in v.text().lower()
 
 
@@ -135,3 +137,72 @@ def test_cross_product_always_one_coherent_verdict() -> None:
         has_urgent = any(w in text for w in URGENT_WORDS)
         has_unsure = any(w in text for w in UNSURE_WORDS)
         assert not (has_urgent and has_unsure), f"{v.state} mixes urgency and uncertainty: {text}"
+
+
+# --- One voice across every screen -------------------------------------------
+
+
+class _SavedScan:
+    """Minimal stand-in for services.storage.Scan (only what the verdict needs)."""
+
+    def __init__(self, label: str, confidence: float) -> None:
+        self.label = label
+        self.confidence = confidence
+
+
+def test_saved_scan_says_the_same_thing_as_the_live_result() -> None:
+    """History, case and assistant screens used to re-derive wording from the
+    composite risk band, so one scan could read "URGENT" in a list and
+    "NOT SURE" on its own screen. Both paths must resolve identically."""
+    from services.verdict import verdict_for_saved_scan
+
+    for label in ("benign", "pre_cancerous", "malignant"):
+        for conf in (5.0, 30.0, 44.9, 45.0, 60.0, 99.0):
+            live = resolve_verdict(_scan(label, conf), QUALITY_OK)
+            saved = verdict_for_saved_scan(_SavedScan(label, conf))
+            assert live.state == saved.state
+            assert live.headline == saved.headline
+            assert live.tone == saved.tone
+
+
+def test_no_lesion_is_distinct_from_retake() -> None:
+    """"I cannot read this photo" and "this is not a skin spot" are different
+    problems; telling someone to fix the lighting when they photographed a wall
+    is useless advice."""
+    from services.verdict import no_lesion_verdict
+
+    v = no_lesion_verdict(("No skin was found in this photo.",))
+    assert v.state == "no_lesion"
+    assert v.state != retake_verdict(None).state
+    assert v.headline != retake_verdict(None).headline
+    text = v.text().lower()
+    assert not any(w in text for w in URGENT_WORDS)
+    assert "concern" not in text and "risk" not in text
+
+
+def test_no_lesion_keeps_the_reason_it_was_given() -> None:
+    from services.verdict import no_lesion_verdict
+
+    assert "No skin was found in this photo." in no_lesion_verdict(
+        ["No skin was found in this photo."]
+    ).reasons
+
+
+def test_verdict_copy_stays_readable() -> None:
+    """Plain words only: nothing a visitor reads may contain model jargon."""
+    from services.verdict import no_lesion_verdict, verdict_for_label
+
+    jargon = (
+        "softmax", "logit", "inference", "classifier", "cnn", "model",
+        "confidence floor", "threshold", "calibrat", "probability", "tensor",
+        "malignant", "pre_cancerous", "benign",
+    )
+    verdicts = [retake_verdict(None), no_lesion_verdict()] + [
+        verdict_for_label(label, conf)
+        for label in ("benign", "pre_cancerous", "malignant")
+        for conf in (10.0, 90.0)
+    ]
+    for v in verdicts:
+        text = v.text().lower()
+        for word in jargon:
+            assert word not in text, f"{v.state} exposes '{word}': {v.text()}"

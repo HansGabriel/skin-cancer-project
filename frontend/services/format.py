@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from theme.tokens import TOKENS as T
 
-_BAND_URGENCY = {
-    "low": ("LOW CONCERN", T.success),
-    "moderate": ("IMPORTANT", T.warning),
-    "high": ("URGENT", T.urgent),
+# Verdict tone → (ink, fill). "neutral" is intentionally colourless: a clean
+# screening result must never be dressed up as an all-clear badge.
+_TONE_COLORS = {
+    "neutral": (T.text, T.surface),
+    "info": (T.info, T.info_tint),
+    "warning": (T.warning, T.warning_tint),
+    "urgent": (T.urgent, T.urgent_tint),
 }
 
 
@@ -36,5 +39,10 @@ def tier_label(tier: int, *, evolving: bool = False) -> tuple[str, str]:
     return labels.get(tier, ("—", T.outline))
 
 
-def urgency_from_band(band: str) -> tuple[str, str]:
-    return _BAND_URGENCY.get(band, ("SCREENING", T.info))
+def tone_colors(tone: str) -> tuple[str, str]:
+    """Resolve a ``UIVerdict.tone`` to its ``(ink, fill)`` pair.
+
+    Every screen that shows verdict wording colours it through here, so the
+    palette stays consistent and no view invents its own risk colour.
+    """
+    return _TONE_COLORS.get(tone, _TONE_COLORS["info"])

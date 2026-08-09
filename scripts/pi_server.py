@@ -161,7 +161,9 @@ def dequantize_output(output: np.ndarray, output_details: dict) -> np.ndarray:
 # (services/pi_camera.py) cannot run at the same time — one camera owner only.
 _CAMERA = None
 _CAMERA_LOCK = __import__("threading").Lock()
-_WARMUP_FRAMES = 8
+# The camera is kept running between scans with AE/AWB already settled, so a
+# long warmup burst is pure latency. Matches services/pi_camera.py.
+_WARMUP_FRAMES = 2
 
 
 def _get_camera():
@@ -304,7 +306,30 @@ if Flask is not None:
 
     @app.get("/health")
     def health():
-        return jsonify({"status": "ok", "model": MODEL_PATH.name, "labels": LABELS_PATH.name})
+        """Readiness, not liveness: the PC uses this to decide the Pi can scan.
+
+        Loading is attempted here so a Pi with a missing or corrupt .tflite
+        fails on the health check rather than on a live participant's scan.
+        """
+        try:
+            init_runtime()
+        except Exception as exc:  # noqa: BLE001 — reported, not raised, to the LAN client
+            return jsonify(
+                {
+                    "status": "error",
+                    "reason": str(exc),
+                    "model": MODEL_PATH.name,
+                    "labels": LABELS_PATH.name,
+                }
+            ), 503
+        return jsonify(
+            {
+                "status": "ok",
+                "model": MODEL_PATH.name,
+                "labels": LABELS_PATH.name,
+                "model_loaded": interpreter is not None,
+            }
+        )
 
     @app.get("/log")
     def get_log():

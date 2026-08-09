@@ -34,20 +34,35 @@ kill_pidfile "$STREAMLIT_PIDFILE"
 kill_pidfile "$SURF_PIDFILE"
 sleep 1
 
-# Quality gates: relaxed enough for real close-up camera shots, but still strict
-# enough to reject an all-black/blank/blown-out frame. Bump toward the defaults
-# (35 / 35 / 220 / 0.15) if too many bad photos slip through during testing.
-export SKIN_QUALITY_BLUR_MIN=8
-export SKIN_QUALITY_V_MIN=15
-export SKIN_QUALITY_V_MAX=245
-export SKIN_QUALITY_SKIN_MIN=0.03
+# Capture quality. These only decide whether a photo earns an advisory note —
+# a genuinely unreadable frame is caught by the separate hard thresholds, and
+# "this is not a skin spot" is services/lesion_gate.py, not these.
+# Focus is measured on a contrast- and size-normalised image; real dermoscopic
+# captures score in the hundreds (calibrated in services/quality.py against
+# the images in samples/; see tests/test_quality_levels.py).
+export SKIN_QUALITY_BLUR_MIN=120
+export SKIN_QUALITY_V_MIN=25
+export SKIN_QUALITY_V_MAX=235
 
 # Tell the app it's in kiosk mode so it shows the on-screen Exit button.
 export SKIN_KIOSK=1
 
 # Staff passcode (locks History/Cases/Settings behind the on-screen keypad).
-# Set it in .streamlit/secrets.toml ([dermascan] passcode = "...") or export
-# DERMASCAN_PASSCODE here from a staff-held file — never commit either. See docs/PRIVACY.md.
+# Read from a staff-held file that is NOT in git. Without it the staff area
+# stays closed rather than open — see enforce_staff_gate() in services/auth.py.
+PASSCODE_FILE="${DERMASCAN_PASSCODE_FILE:-$HOME/.dermascan_passcode}"
+if [ -r "$PASSCODE_FILE" ]; then
+  DERMASCAN_PASSCODE="$(tr -d "[:space:]" < "$PASSCODE_FILE")"
+  export DERMASCAN_PASSCODE
+  echo "Staff passcode loaded from $PASSCODE_FILE"
+else
+  echo "WARNING: no staff passcode at $PASSCODE_FILE — History, saved scans and"
+  echo "         Settings will be CLOSED on this kiosk. Create the file with:"
+  echo "           printf %s '<your-code>' > $PASSCODE_FILE && chmod 600 $PASSCODE_FILE"
+fi
+
+# How long a staff unlock lasts before it re-locks itself (seconds).
+export DERMASCAN_STAFF_TIMEOUT=300
 
 # Use all 4 Pi cores for TFLite inference.
 export SKIN_NUM_THREADS=4

@@ -10,9 +10,10 @@ def test_desktop_tokens_defaults():
     t = get_tokens("desktop")
     # Light clinical theme: white background, near-black text.
     assert t.bg == "#FFFFFF"
-    assert t.text == "#14181F"
-    assert t.mobile_width == 460
-    assert t.font_base == 17
+    assert t.text == "#131A22"
+    # Landscape two-pane frame — the kiosk panel is 1024x600, not a tall phone.
+    assert t.mobile_width == 1040
+    assert t.font_base == 16
     assert t.touch_min == 48
     assert t.space_24 == 24
     assert EVOLUTION.diam_watch_mm == 2.0
@@ -26,16 +27,37 @@ def test_design_tokens_present():
 
 
 def test_brand_tokens():
-    # EPIVUE display branding (concept D); internals stay "dermascan".
+    # EPIVUE display branding; internals stay "dermascan".
     assert TOKENS.brand_name == "E.P.I.V.U.E."
     assert "not a diagnosis" in TOKENS.brand_tagline.lower()
-    assert TOKENS.violet == "#6C4AB6"  # the concept's accent
+    assert TOKENS.violet == "#16233A"  # instrument navy, the primary action colour
+
+
+def test_instrument_palette_present():
+    """The dark field and its reticle are the design's signature elements."""
+    assert TOKENS.field == "#0B1220"
+    assert TOKENS.reticle == "#3DDBD9"
+    assert TOKENS.field_ink.startswith("#")
+
+
+def test_no_green_reassurance_colour_for_verdicts():
+    """A clean screening result must not be styled as an all-clear.
+
+    services.verdict maps low_concern to the "neutral" tone precisely so it
+    renders in plain ink; if a green ever becomes a verdict tone, the UI starts
+    promising safety it cannot promise.
+    """
+    from services.format import tone_colors
+
+    ink, fill = tone_colors("neutral")
+    assert ink == TOKENS.text
+    assert fill == TOKENS.surface
 
 
 def test_7in_profile_scales_up():
     t = get_tokens("7in")
     d = get_tokens("desktop")
-    assert t.mobile_width == 744
+    assert t.mobile_width == 1000
     assert t.touch_min >= 56
     # Every font token must be at least as large as desktop.
     for name in ("font_xs", "font_sm", "font_base", "font_md", "font_lg",

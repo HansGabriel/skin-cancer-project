@@ -6,8 +6,10 @@ the app enforces and the paragraph the research paper's ethics section can cite.
 
 ## What the app stores, and when
 
-- **Nothing persists by default.** A scan lives only in the session; leaving the
-  Results screen (Clear / new scan / reboot) discards the photo.
+- **Nothing persists by default.** A scan lives only in the session. Every exit
+  from the Results screen — "Done", "Clear", "Take another photo", or a reboot —
+  drops the photo from session state, so the next visitor cannot navigate back
+  into it.
 - **"Save to case" requires explicit consent.** The save dialog contains a
   consent confirmation; `Storage.save_scan` refuses (raises `PermissionError`)
   unless the consent flag is passed. Saved data: the analysis JPEG, the
@@ -24,12 +26,20 @@ configured: set `DERMASCAN_PASSCODE` (env) or `.streamlit/secrets.toml`:
 
 ```toml
 [dermascan]
-passcode = "1234"
+passcode = "<choose-4-digits>"
 ```
 
 The kiosk shows a numeric keypad for it. Scanning never requires the code —
 only reviewing stored data does. The supervising staff member/adviser holds the
 passcode and acts as data steward.
+
+**With no passcode set, the kiosk closes the staff area rather than opening it.**
+An unattended kiosk must never expose saved body photos, the "Erase all
+participant data" button, or Exit. `launch_kiosk.sh` reads the code from
+`~/.dermascan_passcode` (never committed) and prints a warning when it is
+missing. A staff unlock also expires by itself after five minutes
+(`DERMASCAN_STAFF_TIMEOUT`), and Settings has a "Lock the staff area" button,
+because one browser session serves the whole event.
 
 ## Retention
 

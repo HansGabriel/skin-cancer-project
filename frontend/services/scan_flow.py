@@ -29,7 +29,7 @@ def finalize_pipeline_result(pl: dict, keras_path: str) -> None:
             pl["vis_error"] = str(exc)
     # No Keras on this device (the kiosk): gradient-free Eigen-CAM from the
     # two-output TFLite export, if present. Silent no-op otherwise.
-    if not pl.get("gradcam_overlay_jpg"):
+    if not pl.get("attention_overlay_jpg"):
         from services.eigencam import enrich_with_eigencam
 
         enrich_with_eigencam(pl)
@@ -50,5 +50,28 @@ def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: flo
         case_id=case_id,
     )
     finalize_pipeline_result(pl, keras_path)
+    _apply_out_of_distribution(pl)
     pl["pixels_per_mm"] = pixels_per_mm
     return pl
+
+
+def _apply_out_of_distribution(pl: dict) -> None:
+    """Withdraw the result when the model's own features say it saw something
+    unlike anything it was trained on.
+
+    The colour and shape stages in ``services.lesion_gate`` stop a wall, but not
+    something merely skin-coloured. This is the last stage, and it can only run
+    after inference because it reads the model's features. ``None`` means the
+    check did not run (no models/feature_stats.json) — treated as "not checked",
+    never as a pass.
+    """
+    if pl.get("out_of_distribution") is not True or pl.get("scan_result") is None:
+        return
+    from services.verdict import no_lesion_verdict
+
+    logger.info("scan withdrawn: features are unlike the training data")
+    pl["blocked"] = True
+    pl["scan_result"] = None
+    pl["verdict"] = no_lesion_verdict(
+        ("This does not look like the skin spots the scanner was taught to read.",)
+    )

@@ -48,6 +48,10 @@ def test_mandated_safety_copy_present():
     assert "Not a diagnosis" in app_bar
     assert "educational screening aid" in app_bar
     verdict = (FRONTEND / "services" / "verdict.py").read_text(encoding="utf-8")
-    assert "Low risk is not no risk" in verdict
+    # The safety line may be reworded for plainness, but a clean result must
+    # always say it is not a promise AND name the signs to watch for.
+    assert "does not promise the spot is safe" in verdict
+    for sign in ("changes", "grows", "bleeds"):
+        assert sign in verdict
     splash = (FRONTEND / "static" / "splash.html").read_text(encoding="utf-8")
     assert "not a diagnosis" in splash.lower()

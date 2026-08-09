@@ -9,6 +9,7 @@ from components.folder_card import render_folder_card
 from components.mobile_frame import mobile_frame
 from navigation import navigate
 from services.storage import get_storage
+from services.verdict import verdict_for_saved_scan
 
 
 @st.dialog("New folder")
@@ -48,7 +49,7 @@ def render_history_view() -> None:
                     if q and q not in c.name.lower() and (not c.body_site or q not in c.body_site.lower()):
                         continue
                     scans = store.list_scans(c.id)
-                    urg = scans[-1].risk_band if scans else "low"
+                    latest = verdict_for_saved_scan(scans[-1]) if scans else None
                     dt = scans[-1].taken_at[:10] if scans else "—"
-                    if render_case_row(c, urgency=urg, date=dt, key=f"hc_{c.id}"):
+                    if render_case_row(c, verdict=latest, date=dt, key=f"hc_{c.id}"):
                         navigate("case", selected_case_id=c.id, selected_folder_id=f.id)

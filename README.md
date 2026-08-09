@@ -57,8 +57,9 @@ AI-assisted **screening** demo: EfficientNet-style classifier on PC, TensorFlow 
 
 Saved scans are photos of participants' skin and stay **on this device only** — nothing
 is uploaded. A scan is stored only after the participant ticks the consent box in the
-save dialog; History, saved cases, and Settings sit behind a staff passcode (set via
-`.streamlit/secrets.toml` or `DERMASCAN_PASSCODE` — never committed); and staff erase
+save dialog. History, saved cases, and Settings sit behind a staff passcode once one is
+configured (`.streamlit/secrets.toml` or `DERMASCAN_PASSCODE` — never committed); on the
+kiosk, if no passcode is set those screens stay **closed** rather than open. Staff erase
 all participant data with the "End event" wipe in Settings after each session. Full
 policy, passcode setup, and the human-participants (ISEF/IRB) requirements:
 [docs/PRIVACY.md](docs/PRIVACY.md).

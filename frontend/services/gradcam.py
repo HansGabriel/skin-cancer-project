@@ -12,7 +12,8 @@ import numpy as np
 HAM7_LABELS = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
 
 GRAD_CAM_DISCLAIMER = (
-    "Heatmap highlights regions the model weighted most; it is not lesion ground truth or a diagnosis."
+    "The bright areas show which parts of the photo the scanner paid most attention to. "
+    "It is not an outline of the spot, and it is not a diagnosis."
 )
 
 
@@ -81,7 +82,7 @@ def gradcam_overlay_jpg(model: Any, rgb: np.ndarray, class_idx: int) -> tuple[np
 
 
 def enrich_result_with_vis(result: dict[str, Any], rgb: np.ndarray, model: Any) -> None:
-    """Populate ``seven_class_probs``, ``gradcam_overlay_jpg`` using an already-loaded ``model``."""
+    """Populate ``seven_class_probs``, ``attention_overlay_jpg`` using an already-loaded ``model``."""
     try:
         probs, idx = predict_probs(model, rgb)
     except Exception:  # noqa: BLE001
@@ -93,11 +94,11 @@ def enrich_result_with_vis(result: dict[str, Any], rgb: np.ndarray, model: Any) 
         result["seven_class_probs"] = None
     try:
         _, jpg = gradcam_overlay_jpg(model, rgb, idx)
-        result["gradcam_overlay_jpg"] = jpg
-        result["gradcam_disclaimer"] = GRAD_CAM_DISCLAIMER
+        result["attention_overlay_jpg"] = jpg
+        result["attention_note"] = GRAD_CAM_DISCLAIMER
     except Exception:  # noqa: BLE001
-        result["gradcam_overlay_jpg"] = None
-        result["gradcam_disclaimer"] = GRAD_CAM_DISCLAIMER
+        result["attention_overlay_jpg"] = None
+        result["attention_note"] = GRAD_CAM_DISCLAIMER
 
 
 def attach_vis_extras(

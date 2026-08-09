@@ -11,6 +11,7 @@ from components.primary_button import render_back_link
 from navigation import navigate
 from services.kiosk import is_kiosk
 from services.storage import data_dir, get_storage
+from theme.tokens import TOKENS
 
 
 def render_settings_view(*, root: Path) -> None:
@@ -21,13 +22,16 @@ def render_settings_view(*, root: Path) -> None:
         store = get_storage()
 
         # ── Plain settings (everything an ordinary user / health worker needs) ──
-        if not is_kiosk():
-            # On the kiosk the gate is forced on inside the pipeline; no toggle.
-            st.toggle(
-                "Require a clear photo before scanning",
-                key="strict_quality_gate",
-                help="Blocks blurry or badly lit photos so results stay reliable.",
-            )
+        # Off by default. services.lesion_gate is what stops junk input now, and
+        # blocking every slightly-soft photo was rejecting real lesions.
+        st.toggle(
+            "Only accept very clear photos",
+            key="strict_quality_gate",
+            help=(
+                "Photos that are slightly blurry or dim are still checked, with a "
+                "note. Turn this on to reject them instead."
+            ),
+        )
 
         # Assistant wording (on-device AI). Answers stay reviewed either way.
         # MVP 2 locked design: canned doctor-reviewed text by default — the LLM
@@ -51,10 +55,20 @@ def render_settings_view(*, root: Path) -> None:
         st.caption(f"Saved scans use {mb:.1f} MB of storage.")
 
         st.divider()
+        # Lock the staff area back up without waiting for the timeout — the
+        # kiosk holds one browser session all event, so leaving it open hands
+        # saved photos and the wipe button to whoever walks up next.
+        if st.session_state.get("_staff_ok"):
+            if st.button("Lock the staff area", key="staff_lock"):
+                from services.auth import lock_staff_area
+
+                lock_staff_area()
+                navigate("home")
+
         if is_kiosk():
             # Kiosk: Exit lives here (reachable from every screen via bottom nav).
             # No free-text confirm on the keyboard-less kiosk — two-tap reset instead.
-            if st.button("✕ Exit DermaScan", key="kiosk_exit"):
+            if st.button(f"Exit {TOKENS.brand_name}", key="kiosk_exit"):
                 try:
                     Path("/tmp/dermascan_quit").write_text("quit")
                 except OSError:

@@ -18,16 +18,21 @@ RECOMMENDATIONS: dict[str, Recommendation] = {
     "benign": {
         "icon": "🟢",
         "urgency": "LOW CONCERN",
-        "action": "No immediate action needed. Continue regular self-checks.",
+        "action": "No action needed now. Keep checking your skin from time to time.",
     },
     "pre_cancerous": {
         "icon": "🟠",
         "urgency": "IMPORTANT",
-        "action": "Schedule a dermatology consultation within 1 month.",
+        "action": "See a skin doctor within a month.",
     },
     "malignant": {
         "icon": "🔴",
         "urgency": "URGENT",
-        "action": "See a dermatologist within 1-2 weeks.",
+        "action": "See a skin doctor within one to two weeks.",
     },
 }
+
+# The labels that mean "the screen flagged this". One definition, imported by
+# services.verdict and scripts/eval_threshold.py — keeping labels, metrics and
+# UI in sync is an AGENTS.md rule, and three private copies is how they drift.
+CANCER_LABELS: tuple[str, ...] = ("pre_cancerous", "malignant")
