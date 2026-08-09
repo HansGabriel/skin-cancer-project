@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import streamlit as st
 
+from theme.tokens import TOKENS as T
 
-def render_image_compare(rgb, overlay_jpg: bytes | None, *, gradcam_caption: str | None = None) -> None:
-    """Photo + optional AI-attention overlay.
 
-    When no overlay is available, show only the photo — the technical reason
-    (Grad-CAM/keras path) belongs in the Technical details expander, not here.
-    ``gradcam_caption`` is kept for backwards compatibility but no longer shown
-    to end users.
+def render_image_compare(rgb, overlay_jpg: bytes | None, *, note: str | None = None) -> None:
+    """Photo + optional attention overlay, with the note that explains the overlay.
+
+    The note must render whenever the overlay does. Showing a heatmap of "where
+    the AI looked" with no explanation invites people to read it as the scanner
+    outlining a lesion, which is exactly what it is not.
     """
     if not overlay_jpg:
         if rgb is not None:
@@ -22,5 +23,10 @@ def render_image_compare(rgb, overlay_jpg: bytes | None, *, gradcam_caption: str
         if rgb is not None:
             st.image(rgb, use_container_width=True)
     with right:
-        st.caption("Where the AI looked")
+        st.caption("Where the scanner looked")
         st.image(overlay_jpg, use_container_width=True)
+    if note:
+        st.markdown(
+            f'<p style="color:{T.text_muted};font-size:{T.font_xs}px;margin:4px 0 0">{note}</p>',
+            unsafe_allow_html=True,
+        )

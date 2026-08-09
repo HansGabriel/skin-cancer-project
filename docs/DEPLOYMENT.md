@@ -143,14 +143,40 @@ systemctl --user enable dermascan-kiosk.service
 - `Restart=on-failure` + `RestartSec=5` relaunch the kiosk if it exits nonzero
   (e.g. `launch_kiosk.sh`'s 40s Streamlit watchdog) — but not after a clean exit
   via the on-screen Exit button.
-- labwc bridges the desktop session to systemd
-  (`systemctl --user --no-block start labwc-session.target`), which reaches
-  `graphical-session.target`; `WantedBy=graphical-session.target` starts the
-  kiosk with the desktop and `PartOf=` stops it when the session ends.
+- The unit is `WantedBy=graphical-session.target`, so it starts with the desktop
+  and `PartOf=` stops it when the session ends. **That target has to be
+  activated by the session**, via labwc's documented bridge line. labwc runs
+  `~/.config/labwc/autostart`, but it does not add the line for you — check it
+  is there, or the unit stays enabled-but-never-started:
+
+  ```bash
+  grep -q labwc-session.target ~/.config/labwc/autostart 2>/dev/null || \
+    echo 'systemctl --user --no-block start labwc-session.target' >> ~/.config/labwc/autostart
+  systemctl --user status dermascan-kiosk   # should be "active" after a reboot
+  ```
+
+  This line is not a second supervisor — it only wires the session to systemd,
+  so it does not conflict with the "pick one option" rule below.
 - Logs: `journalctl --user -u dermascan-kiosk` plus `/tmp/dermascan_kiosk.log`.
 
 **Pick one option, not both** — two supervisors fighting over the same
-Streamlit port and pidfiles is worse than either alone.
+Streamlit port and pidfiles is worse than either alone. (The bridge line above
+is part of Option 2, not Option 1's `launch_kiosk.sh &` entry.)
+
+### Staff passcode
+
+`launch_kiosk.sh` reads the staff code from `~/.dermascan_passcode` (never
+committed) and exports `DERMASCAN_PASSCODE`. If the file is missing it prints a
+warning and the kiosk keeps History, saved scans and Settings **closed** — an
+unattended kiosk must not expose participant photos. Create it with:
+
+```bash
+printf '%s' '<choose-4-digits>' > ~/.dermascan_passcode && chmod 600 ~/.dermascan_passcode
+```
+
+A staff unlock expires after `DERMASCAN_STAFF_TIMEOUT` seconds (default 300),
+and Settings has a "Lock the staff area" button — the kiosk holds one browser
+session for the whole event, so an unlock would otherwise never end.
 
 ### Disable screen blanking
 

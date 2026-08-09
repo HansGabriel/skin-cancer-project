@@ -1,9 +1,24 @@
-"""Single source of truth for DermaScan v2 design tokens.
+"""Single source of truth for the design tokens.
+
+The look is built around one idea: **the instrument is the interface**. A single
+dark circular field with a cyan reticle — a dermatoscope's view — carries every
+state of a scan (waiting, captured, judged, empty). Everything around it stays
+quiet: white paper, hairline rules, near-black text.
+
+Palette notes, because two choices here are deliberate and easy to "fix" by
+accident:
+
+- Colours are named after what a dermatoscope actually shows — ``melanin``
+  brown, ``erythema`` red, ``veil`` blue — not after traffic lights.
+- A clean result has **no colour at all**. Green reads as "you are fine", and
+  false reassurance is the one failure mode that hurts people here (see
+  ``services.verdict.LOW_RISK_SAFETY_LINE``). Clean results get plain ink and
+  the safety line instead of a reassuring badge.
 
 Display profiles (env ``SKIN_DISPLAY``, read once at import):
-- ``desktop`` (default) — PC / Streamlit Cloud browser; values unchanged from MVP 1.
-- ``7in`` — the 7" 1024x600 (or 800x480) touchscreen kiosk at surf zoom 1.0:
-  wider frame, larger type, and >=56px touch targets.
+- ``desktop`` (default) — PC / Streamlit browser.
+- ``7in`` — the 1024x600 landscape touchscreen kiosk at zoom 1.0: wider frame,
+  larger type, >=56px touch targets.
 
 Set the env var BEFORE ``streamlit run`` (launch_kiosk.sh exports SKIN_DISPLAY=7in).
 """
@@ -16,35 +31,61 @@ from dataclasses import dataclass, replace
 
 @dataclass(frozen=True)
 class Tokens:
-    # Clean clinical light palette — high contrast on a small panel.
+    # --- Paper and ink ---------------------------------------------------
     bg: str = "#FFFFFF"
-    bg_elev: str = "#F4F6FB"
-    surface: str = "#EDEFF6"
-    outline: str = "#D4D9E6"
-    text: str = "#14181F"
-    text_muted: str = "#5A6273"
-    violet: str = "#6C4AB6"  # darkened so it reads on white
-    violet_strong: str = "#4A2F86"
-    teal: str = "#0EA5A4"  # medical secondary accent
-    teal_strong: str = "#0B7E7D"
-    success: str = "#15803D"
-    warning: str = "#B45309"
-    urgent: str = "#DC2626"
-    info: str = "#2563EB"
-    # Soft tints for card fills behind risk content (not the saturated badge colors).
-    success_tint: str = "#E7F6EC"
-    warning_tint: str = "#FDF3E4"
-    urgent_tint: str = "#FCEBEA"
-    info_tint: str = "#E8F0FE"
-    violet_tint: str = "#F0EBFA"
-    # Elevation — consistent depth instead of flat 1px borders.
-    shadow_sm: str = "0 1px 3px rgba(20,24,31,.06), 0 1px 2px rgba(20,24,31,.04)"
-    shadow_md: str = "0 6px 18px rgba(20,24,31,.10), 0 2px 6px rgba(20,24,31,.06)"
-    radius_xs: int = 8
-    radius_sm: int = 12
-    radius_md: int = 16
+    bg_elev: str = "#F5F7FA"
+    surface: str = "#EDF1F7"
+    outline: str = "#E2E6EE"  # hairline rule
+    text: str = "#131A22"
+    text_muted: str = "#5B6675"
+
+    # --- The instrument --------------------------------------------------
+    field: str = "#0B1220"  # the aperture's dark field — the ONE dark element
+    field_ink: str = "#E8EEF6"  # text/marks on the dark field
+    reticle: str = "#3DDBD9"  # graticule + focus marks. Never a button.
+
+    # --- Verdict accents, after dermoscopic signs -------------------------
+    erythema: str = "#C0362C"  # urgent
+    melanin: str = "#7A4B2A"  # needs a check
+    veil: str = "#4A6FB0"  # unsure (the blue-white veil)
+
+    # --- Legacy aliases --------------------------------------------------
+    # Existing components refer to these names; they now resolve to the new
+    # palette so one edit here restyles the whole app.
+    violet: str = "#16233A"  # primary action — instrument navy, not purple
+    violet_strong: str = "#0B1220"
+    violet_tint: str = "#EDF1F7"
+    teal: str = "#3DDBD9"
+    teal_strong: str = "#0F7A6C"
+    success: str = "#0F7A6C"  # non-verdict "good" only (ABCDE tiers)
+    warning: str = "#7A4B2A"
+    urgent: str = "#C0362C"
+    info: str = "#4A6FB0"
+    success_tint: str = "#E6F2F0"
+    warning_tint: str = "#F6EEE7"
+    urgent_tint: str = "#FAECEA"
+    info_tint: str = "#ECF1F9"
+
+    # --- Depth -----------------------------------------------------------
+    # Restrained on purpose: shadows are a compositing cost on the Pi 4 GPU, so
+    # only the aperture and raised buttons get one.
+    shadow_sm: str = "0 1px 2px rgba(19,26,34,.06)"
+    shadow_md: str = "0 8px 24px rgba(11,18,32,.14)"
+
+    radius_xs: int = 6
+    radius_sm: int = 10
+    radius_md: int = 14
     radius_pill: int = 999
-    mobile_width: int = 460
+
+    # --- Layout ----------------------------------------------------------
+    # Landscape two-pane: the 1024x600 panel is only 600px tall, so stacking
+    # the photo above the verdict forces scrolling on a kiosk nobody scrolls.
+    mobile_width: int = 1040  # frame width (name kept for existing components)
+    pane_gap: int = 28
+    # Sized so a whole results screen — bar, aperture, verdict, actions, staff
+    # details, disclaimer and nav — fits 600px without scrolling.
+    aperture_px: int = 250  # diameter of the instrument circle
+
     space_2: int = 2
     space_4: int = 4
     space_8: int = 8
@@ -53,60 +94,72 @@ class Tokens:
     space_20: int = 20
     space_24: int = 24
     space_32: int = 32
-    # Type scale (px). Desktop values match MVP 1 exactly.
+
+    # --- Type ------------------------------------------------------------
+    font_2xs: int = 10
+    chip_font: int = 11
+    pill_font: int = 12
     font_xs: int = 13
     font_sm: int = 15
-    font_base: int = 17
+    font_base: int = 16
     font_md: int = 19
-    font_lg: int = 23
-    font_xl: int = 27
-    font_2xl: int = 30
-    # Small-print scale — every size a component may render must come from here
-    # (no inline px literals in components; enforced by tests/components/test_tokens.py).
-    font_2xs: int = 9  # ABCDE chip captions / tier pills
-    chip_font: int = 10  # case chips, scan-row labels, ABCDE letter labels
-    pill_font: int = 12  # urgency pill, row dates
-    stat_font: int = 18  # ABCDE values, empty-state titles
-    # Touch
-    touch_min: int = 48  # min button height (px)
-    font_family: str = "'Plus Jakarta Sans', Inter, system-ui, sans-serif"
+    font_lg: int = 24
+    font_xl: int = 30
+    font_2xl: int = 38
+    stat_font: int = 18
+    verdict_font: int = 34  # the one headline
+    advice_font: int = 20  # the one serif sentence
+
+    touch_min: int = 48
+
+    # Archivo carries the UI and the data (tabular figures). Source Serif sets
+    # exactly one thing: the sentence of advice addressed to a person — the
+    # machine speaks in grotesque, the advice to a human is set in serif.
+    font_family: str = "'Archivo', 'Helvetica Neue', Arial, sans-serif"
+    serif_family: str = "'Source Serif 4', Georgia, 'Times New Roman', serif"
+
     # Brand (display only — internal identifiers, paths and env vars stay "dermascan").
     brand_name: str = "E.P.I.V.U.E."
-    brand_tagline: str = "Screening aid — not a diagnosis"
+    brand_tagline: str = "Skin check — not a diagnosis"
+
     # Aliases used by older components (plan naming: type_*)
     type_xs: int = 13
     type_sm: int = 15
-    type_base: int = 17
+    type_base: int = 16
     type_md: int = 19
-    type_lg: int = 23
-    type_xl: int = 27
-    type_2xl: int = 30
+    type_lg: int = 24
+    type_xl: int = 30
+    type_2xl: int = 38
 
 
 def _seven_inch(base: Tokens) -> Tokens:
-    """1024x600 (or 800x480) panel at surf zoom 1.0: wider frame, ~x1.15 type, 56px targets."""
+    """1024x600 landscape panel at zoom 1.0: wider frame, larger type, 56px targets."""
     return replace(
         base,
-        mobile_width=744,  # fits 800-wide minus padding; centers on 1024
-        font_xs=15,
-        font_sm=17,
-        font_base=19,
-        font_md=22,
-        font_lg=26,
-        font_xl=30,
-        font_2xl=34,
+        mobile_width=1000,
+        aperture_px=225,
+        pane_gap=24,
         font_2xs=12,
         chip_font=13,
-        pill_font=15,
+        pill_font=14,
+        font_xs=15,
+        font_sm=17,
+        font_base=18,
+        font_md=21,
+        font_lg=26,
+        font_xl=32,
+        font_2xl=40,
         stat_font=21,
+        verdict_font=36,
+        advice_font=22,
         touch_min=56,
         type_xs=15,
         type_sm=17,
-        type_base=19,
-        type_md=22,
+        type_base=18,
+        type_md=21,
         type_lg=26,
-        type_xl=30,
-        type_2xl=34,
+        type_xl=32,
+        type_2xl=40,
     )
 
 

@@ -1,4 +1,9 @@
-"""Persistent bottom navigation bar (all routes, PC and kiosk)."""
+"""Bottom navigation — plain words, no emoji.
+
+Emoji render from a different font at a different weight on every platform, and
+on the Pi they fall back to a flat monochrome glyph. Words are legible for
+everyone, translate cleanly, and keep the whole bar in one typeface.
+"""
 
 from __future__ import annotations
 
@@ -11,14 +16,14 @@ from navigation import Route, current_route, navigate
 
 def _items() -> tuple[tuple[str, Route], ...]:
     items: list[tuple[str, Route]] = [
-        ("🏠\nHome", "home"),
-        ("📷\nScan", "camera"),
-        ("📁\nHistory", "history"),
+        ("Home", "home"),
+        ("New check", "camera"),
+        ("Saved", "history"),
     ]
     # Assist appears only when doctor-reviewed answers exist — never a dead tab.
     if kb_is_live():
-        items.append(("💬\nAssist", "assistant"))
-    items.append(("⚙\nSettings", "settings"))
+        items.append(("Questions", "assistant"))
+    items.append(("Settings", "settings"))
     return tuple(items)
 
 
@@ -26,14 +31,14 @@ def render_bottom_nav() -> None:
     active = current_route()
     nav_items = _items()
     with mobile_frame():
-        st.divider()
+        st.markdown('<hr class="ds-rule">', unsafe_allow_html=True)
         cols = st.columns(len(nav_items))
         for col, (label, route) in zip(cols, nav_items):
             is_active = active == route
             if col.button(
                 label,
                 key=f"nav_{route}",
-                type="primary" if is_active else "secondary",
                 use_container_width=True,
-            ) and not is_active:
+                type="primary" if is_active else "secondary",
+            ):
                 navigate(route)

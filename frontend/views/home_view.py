@@ -1,57 +1,96 @@
+"""Home: what this does, and one button to start.
+
+The old version stacked three empty things — a blank grey square, an empty
+search box, and a "No scans yet" card — so a fresh install looked broken. Now
+the aperture sits at rest with an instruction in it, and the history section
+only appears once there is history.
+"""
+
 from __future__ import annotations
 
 import streamlit as st
 
+from components.aperture import render_aperture
 from components.app_bar import render_app_bar, render_disclaimer_footer
-from components.empty_state import render_empty_state
 from components.folder_card import render_folder_card
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_primary_button
 from components.scan_row import render_scan_row
-from components.viewfinder import render_viewfinder_placeholder
 from navigation import navigate
 from services.kiosk import is_kiosk
 from services.storage import get_storage
+from theme.tokens import TOKENS as T
 
-# Kiosk exit moved to Settings (reachable everywhere via the bottom nav).
+# One line each. On a 600px-tall kiosk panel these compete with the button that
+# actually starts the check, so they say the minimum and stop.
+_STEPS = (
+    "Fill the ring with the spot and hold still",
+    "Tap once to take the photo",
+    "Read what to do next, in plain words",
+)
+
+
+def _render_steps() -> None:
+    rows = "".join(
+        f'<div style="display:flex;gap:{T.space_12}px;align-items:center;'
+        f'padding:{T.space_4}px 0;font-size:{T.font_sm}px">'
+        f'<span style="flex:0 0 20px;height:20px;border-radius:999px;background:{T.surface};'
+        f'color:{T.text_muted};font-size:{T.font_2xs}px;font-weight:700;display:flex;'
+        f'align-items:center;justify-content:center">{i}</span>'
+        f"<span>{text}</span></div>"
+        for i, text in enumerate(_STEPS, 1)
+    )
+    st.markdown(rows, unsafe_allow_html=True)
 
 
 def render_home_view() -> None:
     with mobile_frame():
         render_app_bar()
-        st.markdown(
-            '<div style="text-align:center;margin:4px 0 10px">'
-            '<div style="font-size:14px;color:#5A6273">Point the camera at a skin lesion '
-            'and tap scan.</div></div>',
-            unsafe_allow_html=True,
-        )
-        render_viewfinder_placeholder()
-        if render_primary_button("📷  SCAN LESION", key="home_scan"):
-            navigate("camera")
-        render_disclaimer_footer()
-        st.markdown('<p class="ds-section-title" style="margin-top:8px">History</p>', unsafe_allow_html=True)
-        # No physical/on-screen keyboard on the kiosk — hide the search box there.
-        if not is_kiosk():
-            st.text_input("Search", placeholder="🔍", key="home_search", label_visibility="collapsed")
+        left, right = st.columns([5, 6], gap="large")
+        with left:
+            render_aperture(hint="Put the spot inside the ring")
+        with right:
+            st.markdown(
+                f'<p style="font-size:{T.font_lg}px;font-weight:700;letter-spacing:-.02em;'
+                f'margin:0 0 {T.space_4}px">Check a spot on your skin</p>'
+                f'<p style="color:{T.text_muted};font-size:{T.font_sm}px;margin:0 0 {T.space_12}px">'
+                "Takes about a minute. Nothing leaves this device.</p>",
+                unsafe_allow_html=True,
+            )
+            _render_steps()
+            st.markdown('<div class="ds-gap"></div>', unsafe_allow_html=True)
+            if render_primary_button("Start a skin check", key="home_scan"):
+                navigate("camera")
+
         store = get_storage()
         folders = store.list_folders()
-        q = (st.session_state.get("home_search") or "").strip().lower()
-        if not folders and not store.latest_scans_global(1):
-            render_empty_state("No scans yet", "Your scans will appear here.")
-            return
-        filtered = [f for f in folders if not q or q in f.name.lower()]
-        if filtered:
-            st.markdown('<div class="ds-history-scroll">', unsafe_allow_html=True)
-            cols = st.columns(min(4, len(filtered)))
-            for col, folder in zip(cols, filtered[:4]):
-                with col:
-                    if render_folder_card(folder, key=f"home_f_{folder.id}"):
-                        navigate("folder", selected_folder_id=folder.id)
-            st.markdown("</div>", unsafe_allow_html=True)
-        for scan, case, folder in store.latest_scans_global(4):
-            if q and q not in case.name.lower() and q not in folder.name.lower():
-                continue
-            if render_scan_row(scan, case, folder, key=f"home_s_{scan.id}"):
-                navigate("case", selected_case_id=case.id, selected_folder_id=folder.id)
-        if st.button("View all history", key="home_all_hist"):
-            navigate("history")
+        recent = store.latest_scans_global(4)
+        if folders or recent:
+            st.markdown('<hr class="ds-rule">', unsafe_allow_html=True)
+            st.markdown('<p class="ds-section-title">Saved spots</p>', unsafe_allow_html=True)
+            # No physical keyboard on the kiosk — hide the search box there.
+            q = ""
+            if not is_kiosk():
+                st.text_input(
+                    "Search saved spots",
+                    placeholder="Search saved spots",
+                    key="home_search",
+                    label_visibility="collapsed",
+                )
+                q = (st.session_state.get("home_search") or "").strip().lower()
+            filtered = [f for f in folders if not q or q in f.name.lower()]
+            if filtered:
+                cols = st.columns(min(4, len(filtered)))
+                for col, folder in zip(cols, filtered[:4]):
+                    with col:
+                        if render_folder_card(folder, key=f"home_f_{folder.id}"):
+                            navigate("folder", selected_folder_id=folder.id)
+            for scan, case, folder in recent:
+                if q and q not in case.name.lower() and q not in folder.name.lower():
+                    continue
+                if render_scan_row(scan, case, folder, key=f"home_s_{scan.id}"):
+                    navigate("case", selected_case_id=case.id, selected_folder_id=folder.id)
+            if st.button("See all saved spots", key="home_all_hist"):
+                navigate("history")
+
+        render_disclaimer_footer()

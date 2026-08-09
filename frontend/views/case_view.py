@@ -6,9 +6,10 @@ import streamlit as st
 
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
-from components.urgency_pill import render_urgency_from_band
+from components.urgency_pill import render_verdict_pill
 from navigation import navigate
 from services.storage import get_storage
+from services.verdict import verdict_for_saved_scan
 from theme.tokens import TOKENS as T
 
 
@@ -48,7 +49,7 @@ def render_case_view() -> None:
             with cols[i % len(cols)]:
                 st.image(str(store.root / s.image_path), use_container_width=True)
                 st.caption(s.taken_at[:10])
-                render_urgency_from_band(s.risk_band)
+                render_verdict_pill(verdict_for_saved_scan(s))
         if len(scans) >= 2:
             labels = [f"{s.taken_at[:10]}" for s in scans]
             d_vals, b_vals, a_vals = [], [], []

@@ -13,12 +13,12 @@ from backend.contracts import ScanResult
 from backend.tflite_shared import decode_image_bytes_to_rgb
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
-from services.kiosk import is_kiosk
+from services.lesion_gate import FrameCheck, check_skin, check_spot
 from services.preprocess import enhance_lesion_image
 from services.quality import check_quality
 from services.risk import composite_risk_score, risk_band
 from services.segmentation import segment_safe
-from services.verdict import UIVerdict, resolve_verdict, retake_verdict
+from services.verdict import UIVerdict, no_lesion_verdict, resolve_verdict, retake_verdict
 
 APP_VERSION = "0.4.0"
 logger = logging.getLogger("dermascan.pipeline")
@@ -48,12 +48,12 @@ class PipelineResult(TypedDict, total=False):
     composite: float
     risk_band: str
     seven_class_probs: dict[str, float] | None
-    gradcam_overlay_jpg: bytes | None
-    gradcam_disclaimer: str | None
+    attention_overlay_jpg: bytes | None
+    attention_note: str | None
     rgb_before: NotRequired[np.ndarray]
     rgb_analysis: NotRequired[np.ndarray]
     error: str
-    quality_warnings: NotRequired[list[str]]
+    frame_check: NotRequired[FrameCheck]
     vis_error: NotRequired[str]
     trust_line: NotRequired[str]
     inference_ms: NotRequired[int]
@@ -102,6 +102,59 @@ def _trust_line(sr: ScanResult | None, *, model_path: str, tta: bool, quality_ok
     )
 
 
+def _gate(
+    rgb_display: np.ndarray,
+    rgb_for_abcde: np.ndarray,
+    q: dict,
+    *,
+    strict_quality: bool,
+) -> tuple[PipelineResult | None, Any]:
+    """Run every stop-check in order. Returns ``(blocking_result, mask)``.
+
+    Both backends call this so they cannot drift apart: the upload path once
+    honoured ``strict_quality`` while the Pi path ignored it, which meant the
+    same photo could pass on one device and be rejected on the other.
+
+    Order is deliberate. "There is no skin here" is answered first because a
+    photo of a wall also fails the focus check, and "hold the camera still" is
+    useless advice for it.
+    """
+    no_skin, skin = check_skin(rgb_display)
+    if no_skin is not None:
+        return {
+            "blocked": True,
+            "quality": q,
+            "frame_check": no_skin,
+            "rgb": rgb_display,
+            "scan_result": None,
+            "verdict": no_lesion_verdict(no_skin.reasons),
+        }, None
+
+    if not q["ok"] or (q["reasons"] and strict_quality):
+        return {
+            "blocked": True,
+            "quality": q,
+            "rgb": rgb_display,
+            "scan_result": None,
+            "verdict": retake_verdict(q),
+        }, None
+
+    mask = segment_safe(rgb_for_abcde)
+    # A 3-class softmax always sums to 1, so without this a photo of a bare
+    # forearm comes back as a confident "benign".
+    frame = check_spot(rgb_display, mask, skin=skin)
+    if not frame.is_lesion_photo:
+        return {
+            "blocked": True,
+            "quality": q,
+            "frame_check": frame,
+            "rgb": rgb_display,
+            "scan_result": None,
+            "verdict": no_lesion_verdict(frame.reasons),
+        }, mask
+    return None, mask
+
+
 def run_pipeline(
     backend,
     image_bytes: bytes | None,
@@ -113,10 +166,11 @@ def run_pipeline(
 ) -> PipelineResult:
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
-    # Kiosk mode: the quality gate is never optional — junk must yield "retake",
-    # not a risk verdict, regardless of the settings toggle.
-    if is_kiosk():
-        strict_quality = True
+    # ``strict_quality`` now only decides whether *advisory* quality notes (a
+    # slightly soft or dim photo) also block. It is no longer forced on for the
+    # kiosk: services.lesion_gate is what keeps junk input from reaching the
+    # classifier, and it runs unconditionally. Blocking every imperfect photo
+    # was rejecting real lesions shot in ordinary indoor light.
 
     def _finish(
         rgb_display: np.ndarray,
@@ -144,15 +198,13 @@ def run_pipeline(
             "composite": comp,
             "risk_band": risk_band(comp),
             "seven_class_probs": None,
-            "gradcam_overlay_jpg": None,
-            "gradcam_disclaimer": None,
+            "attention_overlay_jpg": None,
+            "attention_note": None,
             "inference_ms": scan_result.inference_ms,
             "model_path": model_path,
             "tta_enabled": tta,
             "trust_line": _trust_line(scan_result, model_path=model_path, tta=tta, quality_ok=q.get("ok", True)),
         }
-        if not q.get("ok"):
-            result["quality_warnings"] = list(q.get("reasons", []))
         if rgb_before is not None:
             result["rgb_before"] = rgb_before
         return result
@@ -167,13 +219,10 @@ def run_pipeline(
         rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
 
         q = check_quality(rgb_display)
-        if not q["ok"] and strict_quality:
-            return {"blocked": True, "quality": q, "rgb": rgb_display, "scan_result": None, "verdict": retake_verdict(q)}
-        out: PipelineResult = {"quality": q}
-        if not q["ok"]:
-            out["quality_warnings"] = list(q["reasons"])
+        blocking, mask = _gate(rgb_display, rgb_for_abcde, q, strict_quality=strict_quality)
+        if blocking is not None:
+            return blocking
 
-        mask = segment_safe(rgb_for_abcde)
         # Classifier always sees the original capture (matches HAM10000 / training preprocessing).
         model_jpg = image_bytes
         try:
@@ -215,7 +264,9 @@ def run_pipeline(
     rgb_for_abcde = _analysis_rgb(rgb_display)
     rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
     q = check_quality(rgb_display)
-    mask = segment_safe(rgb_for_abcde)
+    blocking, mask = _gate(rgb_display, rgb_for_abcde, q, strict_quality=strict_quality)
+    if blocking is not None:
+        return blocking
     abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
     result = _finish(
         rgb_display,
@@ -227,6 +278,4 @@ def run_pipeline(
         rgb_before=rgb_before,
         model_jpg=scan_result.image_jpg_bytes,
     )
-    if not q.get("ok"):
-        result["quality_warnings"] = list(q["reasons"])
     return result

@@ -1,11 +1,17 @@
+"""The top bar: who this is, what it is not, and the time.
+
+Navigation deliberately lives only in the bottom bar. This bar used to also
+carry two icon buttons rendered as ``st.button("")`` — an SVG glyph floating
+above an empty button shell, which is what those two blank boxes on the home
+screen were.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
 
 import streamlit as st
 
-from components.icons import icon
-from navigation import navigate
 from services.kiosk import is_kiosk
 from theme.tokens import TOKENS as T
 
@@ -17,45 +23,28 @@ def format_app_bar_time(now: datetime | None = None) -> str:
     return f"{hour}:{dt.minute:02d}{ampm} {dt.strftime('%a, %b')} {dt.day}, {dt.year}"
 
 
-def _icon_nav(col, name: str, key: str, route: str) -> None:
-    """Render an SVG icon above a slim click target in the given column."""
-    with col:
-        st.markdown(f'<div class="ds-iconbtn">{icon(name)}</div>', unsafe_allow_html=True)
-        if st.button("", key=key, help=route.capitalize(), use_container_width=True):
-            navigate(route)
-
-
-def render_app_bar(*, show_home: bool = False) -> None:
-    # Left: brand wordmark (+ OFFLINE pill on the kiosk). Right: SVG icon nav buttons.
-    n_icons = 3 if show_home else 2
-    weights = [5] + [1] * n_icons
-    cols = st.columns(weights)
-    with cols[0]:
-        offline = (
-            '<span class="ds-offline-pill">OFFLINE</span>'
-            if is_kiosk()
-            else ""
-        )
-        st.markdown(
-            f'<div class="ds-brand"><span class="ds-brand-dot"></span>{T.brand_name}{offline}</div>'
-            f'<div class="ds-brand-sub">{T.brand_tagline}</div>',
-            unsafe_allow_html=True,
-        )
-    idx = 1
-    if show_home:
-        _icon_nav(cols[idx], "home", "app_bar_home", "home")
-        idx += 1
-    _icon_nav(cols[idx], "folder", "app_bar_history", "history")
-    _icon_nav(cols[idx + 1], "gear", "app_bar_settings", "settings")
-    st.markdown(f'<p class="ds-app-bar-time">{format_app_bar_time()}</p>', unsafe_allow_html=True)
+def render_app_bar(*, show_home: bool = False) -> None:  # noqa: ARG001 — nav is the bottom bar now
+    offline = '<span class="ds-offline-pill">OFFLINE</span>' if is_kiosk() else ""
+    st.markdown(
+        '<div style="display:flex;align-items:flex-end;justify-content:space-between;'
+        f'gap:{T.space_16}px;padding:{T.space_8}px 0 {T.space_12}px;'
+        f'border-bottom:1px solid {T.outline};margin-bottom:{T.space_16}px">'
+        "<div>"
+        f'<div class="ds-brand"><span class="ds-brand-dot"></span>{T.brand_name}{offline}</div>'
+        f'<div class="ds-brand-sub">{T.brand_tagline}</div>'
+        "</div>"
+        f'<div class="ds-app-bar-time">{format_app_bar_time()}</div>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_disclaimer_footer() -> None:
     st.markdown(
-        f'<div class="ds-advice" style="background:transparent;border-left-color:#D4D9E6;'
-        f'margin-top:20px">{icon("info", size=18)}'
-        f'<div><div style="font-weight:700;font-size:{T.font_xs}px">Not a diagnosis</div>'
-        f'<div style="font-size:{T.font_xs}px;color:#5A6273">This is an educational screening aid. '
-        'Always contact a qualified health professional.</div></div></div>',
+        f'<p style="margin:{T.space_16}px 0 0;padding-top:{T.space_12}px;'
+        f'border-top:1px solid {T.outline};font-size:{T.font_xs}px;color:{T.text_muted};'
+        'line-height:1.5"><strong style="color:inherit">Not a diagnosis.</strong> '
+        "This is an educational screening aid. Always contact a qualified health "
+        "professional.</p>",
         unsafe_allow_html=True,
     )

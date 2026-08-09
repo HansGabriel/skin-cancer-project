@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT))
 
 from backend.tflite_shared import decide_index, load_labels, run_inference_on_rgb  # noqa: E402
 from backend.preprocessing import to_input_tensor, dequantize_output  # noqa: E402
+from backend.recommendations import CANCER_LABELS  # noqa: E402
 
 
 LABELS_PATH = ROOT / "models" / "labels.txt"
@@ -47,7 +48,9 @@ METADATA_CSV = ROOT / "datasets" / "ham10000" / "HAM10000_metadata.csv"
 DEFAULT_MODEL = ROOT / "models" / "skin_classifier.tflite"
 DEFAULT_OUT = ROOT / "models"
 
-CANCER_CLASSES = {"pre_cancerous", "malignant"}
+# One definition, shared with services.verdict — AGENTS.md requires labels,
+# metrics and UI to stay in sync, and separate copies is how they drift apart.
+CANCER_CLASSES = set(CANCER_LABELS)
 
 
 def parse_args() -> argparse.Namespace:
