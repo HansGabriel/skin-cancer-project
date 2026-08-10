@@ -58,7 +58,7 @@ requirements.txt
 venv/
 ```
 
-**Pi (`~/skin-cancer-project/` — the canonical install path; see docs/DEPLOYMENT.md "Autostart & crash recovery"):** full repo clone (`DermaScan.desktop` and `deploy/dermascan-kiosk.service` assume this path), with `skin_classifier.tflite`, `labels.txt`, `thresholds.json`, `temperature.json` next to `pi_server.py` / `classify_pi.py` for the standalone Flask/CLI path, plus `venv/`.
+**Pi (`~/Documents/skin-cancer-project/` — the canonical install path; see docs/DEPLOYMENT.md "Autostart & crash recovery"):** full repo clone (`EPIVUE.desktop` and `deploy/dermascan-kiosk.service` assume this path), with `skin_classifier.tflite`, `labels.txt`, `thresholds.json`, `temperature.json` next to `pi_server.py` / `classify_pi.py` for the standalone Flask/CLI path, plus `venv/`.
 
 ---
 

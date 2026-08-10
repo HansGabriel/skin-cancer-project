@@ -1,9 +1,9 @@
 # DermaScan kiosk — systemd USER unit: start the kiosk with the desktop session
 # and restart it automatically if it crashes.
 #
-# Install (as the kiosk user, repo at ~/skin-cancer-project — see docs/DEPLOYMENT.md):
+# Install (as the kiosk user, repo at ~/Documents/skin-cancer-project — see docs/DEPLOYMENT.md):
 #   mkdir -p ~/.config/systemd/user
-#   cp ~/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
+#   cp ~/Documents/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
 #   systemctl --user enable dermascan-kiosk.service
 #
@@ -30,7 +30,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/skin-cancer-project/launch_kiosk.sh
+ExecStart=%h/Documents/skin-cancer-project/launch_kiosk.sh
 Restart=on-failure
 RestartSec=5
 

@@ -108,8 +108,8 @@ Target panel: **7" 1024x600 HDMI IPS, 5-point capacitive touch, drive-free**
 
 ## Autostart & crash recovery (kiosk)
 
-**Canonical Pi install path: `~/skin-cancer-project`.** `launch_kiosk.sh`
-self-resolves its own location, but the desktop launcher (`DermaScan.desktop`),
+**Canonical Pi install path: `~/Documents/skin-cancer-project`.** `launch_kiosk.sh`
+self-resolves its own location, but the desktop launcher (`EPIVUE.desktop`),
 the systemd unit (`deploy/dermascan-kiosk.service`), and AGENTS.md all assume
 this path — clone the repo there (or update those two files if you deviate).
 
@@ -125,7 +125,7 @@ otherwise nothing graphical runs at boot.
 Append one line to `~/.config/labwc/autostart` (create the file if missing):
 
 ```sh
-~/skin-cancer-project/launch_kiosk.sh &
+~/Documents/skin-cancer-project/launch_kiosk.sh &
 ```
 
 labwc runs this when the desktop session starts. If the kiosk crashes or
@@ -135,7 +135,7 @@ Streamlit fails to boot, nothing restarts it — fine for supervised demos.
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp ~/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
+cp ~/Documents/skin-cancer-project/deploy/dermascan-kiosk.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable dermascan-kiosk.service
 ```

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=E.P.I.V.U.E.
+Comment=Start the E.P.I.V.U.E. skin check kiosk
+Exec=/bin/sh -c 'exec "$HOME/Documents/skin-cancer-project/launch_kiosk.sh"'
+Icon=accessories-camera
+Terminal=false
+Categories=Education;Science;
