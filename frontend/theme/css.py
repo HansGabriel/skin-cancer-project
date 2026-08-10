@@ -21,8 +21,11 @@ import streamlit as st
 
 from theme.tokens import TOKENS as T
 
-# Below this width the two panes stack. The 1024x600 kiosk never crosses it.
-_STACK_BP = 760
+# Below this width the two panes stack. Kept well under the kiosk's effective
+# width so the panel can run zoomed: surf zoom Z leaves 1024/Z CSS pixels, so
+# 660 allows up to ~1.55x before the layout stacks. Two panes at 660 are still
+# ~320px each, which clears the 225px aperture.
+_STACK_BP = 660
 
 _FONT_DIR = "app/static/fonts"
 
