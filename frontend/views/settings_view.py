@@ -9,7 +9,7 @@ from backend import pi_backend_enabled
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
 from navigation import navigate
-from services.kiosk import is_kiosk
+from services.kiosk import is_kiosk, request_quit
 from services.storage import data_dir, get_storage
 from theme.tokens import TOKENS
 
@@ -69,10 +69,7 @@ def render_settings_view(*, root: Path) -> None:
             # Kiosk: Exit lives here (reachable from every screen via bottom nav).
             # No free-text confirm on the keyboard-less kiosk — two-tap reset instead.
             if st.button(f"Exit {TOKENS.brand_name}", key="kiosk_exit"):
-                try:
-                    Path("/tmp/dermascan_quit").write_text("quit")
-                except OSError:
-                    pass
+                request_quit()
                 st.stop()
             if st.checkbox(
                 "End event — I want to erase all saved scans", key="reset_confirm"
