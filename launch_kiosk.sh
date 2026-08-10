@@ -84,9 +84,11 @@ echo "$STREAMLIT_PID" >"$STREAMLIT_PIDFILE"
 # redirects itself once the app answers (no blank screen during boot).
 # SURF_ZOOM scales CSS pixels on the 7" 1024x600 panel. At 1.0 the type is
 # legible on a monitor but too small at arm's length on a 7" screen, so the
-# kiosk runs zoomed. Zoom Z leaves 1024/Z CSS pixels, so the ceiling is ~1.55
-# before the panel crosses the 660px stacking breakpoint in theme/css.py.
-SURF_ZOOM="${SURF_ZOOM:-1.4}"
+# The layout is designed for exactly 1024x600, so the panel wants no zoom.
+# Only raise this if the compositor is NOT running the panel at its native
+# mode — check with `wlr-randr` first, since these boards advertise 1920x1080
+# over EDID and a zoomed 1080p desktop is the wrong fix for small text.
+SURF_ZOOM="${SURF_ZOOM:-1.0}"
 DISPLAY=:0 surf -F -z "$SURF_ZOOM" "$SPLASH" &
 SURF_PID=$!
 echo "$SURF_PID" >"$SURF_PIDFILE"
