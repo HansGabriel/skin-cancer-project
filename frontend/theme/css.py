@@ -72,8 +72,15 @@ h1,h2,h3,h4,h5{{font-family:{T.font_family}!important;color:{T.text}!important;
    Width is set here rather than on .ds-mobile-frame: that wrapper emits its
    opening and closing div in separate st.markdown calls, so Streamlit closes
    each one and it never actually wraps anything. */
+/* Fill the viewport height and centre the content in it. Screens here are
+   short (600px) and the content is deliberately sparse, so left at auto
+   height everything crowds into a band at the top with dead space below.
+   min-height rather than height so a taller screen (Results) still grows and
+   scrolls instead of being clipped. */
 .block-container{{padding-top:{T.space_8}px!important;padding-bottom:{T.space_8}px!important;
-  max-width:{T.mobile_width}px!important;}}
+  max-width:{T.mobile_width}px!important;
+  min-height:100vh!important;display:flex!important;flex-direction:column!important;
+  justify-content:center!important;}}
 [data-testid="stVerticalBlock"]{{gap:{T.space_8}px!important;}}
 [data-testid="stElementContainer"]:empty{{display:none!important;}}
 hr{{margin:{T.space_8}px 0!important;}}

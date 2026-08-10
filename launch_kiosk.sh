@@ -82,8 +82,11 @@ echo "$STREAMLIT_PID" >"$STREAMLIT_PIDFILE"
 
 # Open surf immediately on the local splash page — it polls Streamlit and
 # redirects itself once the app answers (no blank screen during boot).
-# SURF_ZOOM 1.0 suits the 7" 1024x600 panel; tweak (0.9 / 1.1) if needed.
-SURF_ZOOM="${SURF_ZOOM:-1.0}"
+# SURF_ZOOM scales CSS pixels on the 7" 1024x600 panel. At 1.0 the type is
+# legible on a monitor but too small at arm's length on a 7" screen, so the
+# kiosk runs zoomed. Ceiling is ~1.3: above that the 1024px panel drops below
+# the 760px stacking breakpoint in theme/css.py and the two panes stack.
+SURF_ZOOM="${SURF_ZOOM:-1.25}"
 DISPLAY=:0 surf -F -z "$SURF_ZOOM" "$SPLASH" &
 SURF_PID=$!
 echo "$SURF_PID" >"$SURF_PIDFILE"
