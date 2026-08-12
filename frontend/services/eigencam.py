@@ -101,16 +101,31 @@ def _run_for_features(interpreter: Any, inp: dict, tensor: Any) -> Any:
     return feat
 
 
-def enrich_with_eigencam(result: dict[str, Any]) -> None:
-    """Fill ``attention_overlay_jpg`` (the slot the Keras path uses) from the CAM export.
+def enrich_with_eigencam(result: dict[str, Any], *, want_overlay: bool = False) -> None:
+    """Run the CAM export for the attention heatmap and/or the stage-3 gate.
 
     Silent no-op when the artifact is missing, the runtime can't load it, or the
     Keras path already produced an overlay.
+
+    ``want_overlay`` is False on the scan path. The heatmap it produces is only
+    ever shown behind a button inside "Details for staff", but building it cost
+    a full second forward pass plus a full-resolution colormap blend on **every
+    scan** — around a second of Pi time for a panel almost nobody opens.
+
+    The forward pass is still made when stage 3 of the content gate is live,
+    because that gate reads the same conv features and can withdraw a result.
+    Skipping the pass whenever the gate is real would quietly remove a safety
+    check, so the condition is "the gate cannot run" (no ``feature_stats.json``)
+    — not "the heatmap is not on screen".
     """
     if result.get("attention_overlay_jpg") is not None:
         return
     rgb = result.get("rgb")
     if rgb is None or not cam_model_path().is_file():
+        return
+    from services.lesion_gate import is_out_of_distribution, ood_stage_available
+
+    if not want_overlay and not ood_stage_available():
         return
     try:
         from backend.streamlit_resources import get_tflite_interpreter
@@ -122,15 +137,13 @@ def enrich_with_eigencam(result: dict[str, Any]) -> None:
         feat = _run_for_features(it, inp, tensor)
         if feat is None:
             return
-        result["attention_overlay_jpg"] = overlay_jpg(rgb, eigencam_map(feat))
-        result["attention_note"] = EIGENCAM_DISCLAIMER
+        if want_overlay:
+            result["attention_overlay_jpg"] = overlay_jpg(rgb, eigencam_map(feat))
+            result["attention_note"] = EIGENCAM_DISCLAIMER
         # Stage 3 of the content gate rides along here rather than running in
         # services.lesion_gate: the conv features it needs are this model's
-        # output, which has just been computed for the heatmap. Doing it in the
-        # gate would mean a second full inference on every scan — real cost on
-        # a Pi 4. ``None`` when models/feature_stats.json is absent.
-        from services.lesion_gate import is_out_of_distribution
-
+        # output, which has just been computed. Doing it in the gate would mean
+        # a second full inference. ``None`` when models/feature_stats.json is absent.
         result["out_of_distribution"] = is_out_of_distribution(feat.mean(axis=(0, 1)))
     except Exception:  # noqa: BLE001 — explanation is optional; never break a scan
         return

@@ -168,6 +168,13 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
         use_hw_camera = _PICAMERA2_AVAILABLE and kind in ("pi", "local")
         captured = st.session_state.get("capture_image_bytes")
 
+        # "Check it anyway" on the refusal screen lands here: re-run the same
+        # photo with every stop-check bypassed. Handled at this level rather
+        # than in results_view because that view has no backend to scan with.
+        if st.session_state.pop("force_rescan", False) and captured:
+            _run(backend, captured, pixels, strict_q, keras, case_id, force=True)
+            return
+
         left, right = st.columns([5, 6], gap="large")
 
         with left:
@@ -254,7 +261,7 @@ def render_camera_view(*, root: Path, backend, kind: str) -> None:
         render_disclaimer_footer()
 
 
-def _run(backend, image_bytes, pixels, strict_q, keras, case_id) -> None:
+def _run(backend, image_bytes, pixels, strict_q, keras, case_id, *, force: bool = False) -> None:
     with st.spinner("Checking the spot…"):
         pl = run_scan_and_store(
             backend,
@@ -263,7 +270,16 @@ def _run(backend, image_bytes, pixels, strict_q, keras, case_id) -> None:
             strict_quality=strict_q,
             keras_path=keras,
             case_id=str(case_id) if case_id else None,
+            force=force,
         )
-    st.session_state.pop("capture_image_bytes", None)
+    # Keep the photo when the scan was refused: the result screen offers "Check
+    # it anyway", and that retry needs the original bytes. Discard it otherwise,
+    # so a finished scan leaves no skin photo in session state (docs/PRIVACY.md).
+    if pl.get("blocked"):
+        st.session_state["capture_image_bytes"] = image_bytes
+    else:
+        st.session_state.pop("capture_image_bytes", None)
+    if force:
+        pl["forced"] = True
     st.session_state["last_result"] = pl
     navigate("results")

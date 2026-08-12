@@ -4,11 +4,17 @@ An imperfect-but-readable photo must still produce a result with a note beside
 it. Rejecting those outright is what made real lesions come back as "image not
 clear" and nothing else.
 
-The thresholds are calibrated against the real dermoscopic images in
-``samples/`` rather than synthetic patterns, because the two behave nothing
-alike: a lesion close-up is smooth skin and scores ~15 on Laplacian variance,
-while a checkerboard scores in the thousands. Tuning on synthetic data is
-exactly how the old threshold ended up above every real photo.
+Note what ``samples/`` actually is: ``samples/README.md`` documents those three
+files as **synthetic placeholders (simple colour patches)**. They score 435-469
+on the normalised focus metric, while real HAM10000 dermoscopy has a median of
+79. Calibrating against them is how the soft threshold reached 120 and refused
+72% of genuine lesions — the same mistake, one order of magnitude worse, as the
+checkerboard-tuned 35 that preceded it.
+
+So the tests here are a floor, not a calibration: they prove the two levels
+behave sanely on shapes we control. The thresholds themselves are calibrated
+against real dermoscopy, and ``tests/test_gate_real_images.py`` is what holds
+that line.
 """
 
 from __future__ import annotations
@@ -41,8 +47,12 @@ def _flat(size: int, value: int) -> np.ndarray:
 
 @pytest.mark.skipif(not SAMPLES, reason="no sample images in samples/")
 @pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.stem)
-def test_real_lesion_photos_are_never_rejected(path: Path) -> None:
-    """The regression that started this: real lesions read as "too blurry"."""
+def test_sample_images_are_never_rejected(path: Path) -> None:
+    """Sanity floor on the shipped demo images.
+
+    Named for what it does: these are the synthetic ``samples/`` patches, not
+    real lesions. The real-photo guarantee lives in test_gate_real_images.py.
+    """
     q = check_quality(_load(path))
     assert q["ok"], f"{path.name} rejected: {q['reasons']}"
     assert focus_meter(_load(path))[0] >= 2, f"{path.name} graded as soft/blurry"

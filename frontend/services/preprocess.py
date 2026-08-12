@@ -7,9 +7,24 @@ import numpy as np
 
 
 def shades_of_gray(rgb: np.ndarray, p: float = 6.0) -> np.ndarray:
-    """Finlayson color constancy on RGB uint8."""
-    img = rgb.astype(np.float64) + 1.0
-    scale = np.power(np.mean(np.power(img, p), axis=(0, 1)), 1.0 / p)
+    """Finlayson color constancy on RGB uint8.
+
+    float32 with repeated multiplication rather than float64 with ``np.power``:
+    at the 1024x1024 frame the Pi actually captures, the old form allocated a
+    25 MB float64 array and evaluated a transcendental ``pow`` per element,
+    costing ~118 ms — on a device where memory bandwidth is the binding
+    constraint. For the integer exponent this defaults to, ``x**6`` is three
+    multiplications, and float32 halves the traffic. Same result to well within
+    a uint8 rounding step; non-integer ``p`` still falls back to ``np.power``.
+    """
+    img = rgb.astype(np.float32) + 1.0
+    if float(p).is_integer() and 0 < int(p) <= 8:
+        powered = img.copy()
+        for _ in range(int(p) - 1):
+            powered *= img
+    else:
+        powered = np.power(img, p)
+    scale = np.power(np.mean(powered, axis=(0, 1)), 1.0 / p)
     out = img / scale * 128.0
     return np.clip(out, 0, 255).astype(np.uint8)
 

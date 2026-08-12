@@ -39,10 +39,24 @@ import cv2
 import numpy as np
 
 # Fraction of the frame that must look like skin.
-_SKIN_MIN = float(os.environ.get("SKIN_GATE_SKIN_MIN", "0.12"))
+#
+# Measured on 200 real HAM10000 images (2026-08-13): the old 0.12 rejected 11%
+# of genuine lesions, but lowering this number was NOT the fix — the Cb ceiling
+# in skin_mask was (see there). With Cb at 140 the real rejection rate is 2.0%
+# anywhere from 0.06 to 0.12, so the threshold is chosen for junk protection
+# instead: 0.08 sits well above the worst neutral surface in
+# tests/test_gate_robustness.py (textured dark grey through JPEG, 0.057) and
+# far below the weakest real skin tone there (0.797).
+#
+# Do not drop this to 0.05 "to be safe" — that is below the grey-desk score and
+# buys 0.7pp of real images. The regression test will catch it.
+_SKIN_MIN = float(os.environ.get("SKIN_GATE_SKIN_MIN", "0.08"))
 # A lesion smaller than this is noise; larger than this is the whole frame.
 _LESION_MIN_FRAC = float(os.environ.get("SKIN_GATE_LESION_MIN_FRAC", "0.004"))
 _LESION_MAX_FRAC = float(os.environ.get("SKIN_GATE_LESION_MAX_FRAC", "0.75"))
+# Coverage a mask must ALSO reach before "touches every edge" counts as
+# "the spot fills the whole photo" — see _touches_all_borders.
+_LESION_BORDER_FRAC = float(os.environ.get("SKIN_GATE_LESION_BORDER_FRAC", "0.50"))
 # Lab colour distance between the spot and the skin ring around it. ~2.3 is the
 # classic "just noticeable difference"; below this there is no distinct spot.
 _MIN_CONTRAST = float(os.environ.get("SKIN_GATE_MIN_CONTRAST", "5.0"))
@@ -107,7 +121,16 @@ def skin_mask(image_rgb: np.ndarray) -> np.ndarray:
     ycrcb = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2YCrCb)
     cr = ycrcb[:, :, 1].astype(np.int16)
     cb = ycrcb[:, :, 2].astype(np.int16)
-    m_chroma = (cr >= 136) & (cr <= 177) & (cb >= 77) & (cb <= 127)
+    # Cb ceiling is 140, not the textbook 127. Polarized and oil-immersion
+    # dermoscopy renders skin pink-violet under a cool white balance and lands
+    # at Cb 133-138 — just outside the classic box — so the images this device
+    # is *for* were the ones being called "not skin". Widening to 140 took the
+    # false rejection rate on real HAM10000 images from 10% to 2% without any
+    # measured junk surface (wall, sky, leaf, denim, grey desk) crossing over.
+    # Known cost: light-pink surfaces (e.g. pink plastic) now read as skin. They
+    # are stopped a stage later by check_spot instead, which needs a distinct
+    # spot with real Lab contrast — a uniform sheet has none.
+    m_chroma = (cr >= 136) & (cr <= 177) & (cb >= 77) & (cb <= 140)
 
     hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
     h = hsv[:, :, 0].astype(np.int16)
@@ -170,8 +193,20 @@ def lesion_contrast(image_rgb: np.ndarray, mask: np.ndarray) -> float:
 
 
 def _touches_all_borders(mask: np.ndarray) -> bool:
-    """A blob bleeding off every edge is the whole scene, not a lesion."""
+    """A blob bleeding off every edge *and* covering most of the frame is the
+    whole scene, not a lesion.
+
+    The area half of that sentence used to be missing, and the edge test alone
+    is far weaker than it sounds: a lesion that merely reaches all four edges
+    through thin extensions was refused as "fills the whole photo" at only ~30%
+    coverage — measured on 4 of 60 real HAM10000 images. It also contradicted
+    ``segmentation._FRAC_MAX``, which happily produces masks up to 0.96.
+    Requiring real coverage as well keeps the "camera pointed at an arm"
+    rejection while letting large, irregular lesions through.
+    """
     m = mask > 0
+    if float(np.count_nonzero(m)) / float(m.size) < _LESION_BORDER_FRAC:
+        return False
     return bool(m[0, :].any() and m[-1, :].any() and m[:, 0].any() and m[:, -1].any())
 
 
@@ -222,6 +257,17 @@ def _ood_threshold() -> float | None:
     stats = _feature_stats() or {}
     p99 = (stats.get("train_distance_percentiles") or {}).get("99")
     return float(p99) * 1.1 if p99 else None
+
+
+def ood_stage_available() -> bool:
+    """True when stage 3 can actually run (``models/feature_stats.json`` exists).
+
+    Callers use this to decide whether the conv features are worth computing at
+    all. That matters because those features cost a second full forward pass:
+    without this predicate, "skip the CAM to save time" would silently disable a
+    safety gate, and with it the cost is paid only when the gate is real.
+    """
+    return _ood_threshold() is not None
 
 
 def is_out_of_distribution(features: np.ndarray) -> bool | None:

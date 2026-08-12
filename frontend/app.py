@@ -55,17 +55,23 @@ def _init_session() -> None:
             "SKIN_KERAS_PATH", str(ROOT / "models" / "skin_classifier_full.keras")
         )
     st.session_state.setdefault("pixels_per_mm_ui", 10.0)
-    st.session_state.setdefault("strict_quality_gate", True)
+    # Off by default — settings_view.py has always *said* this, but the default
+    # here was True, so an advisory ("slightly blurry") blocked the scan
+    # outright. Measured against real HAM10000 dermoscopy that refused 72% of
+    # genuine lesions. services.lesion_gate is what stops junk input now.
+    st.session_state.setdefault("strict_quality_gate", False)
     st.session_state.setdefault("inference_backend_kind", "local")
     st.session_state.setdefault("pi_base_url_input", _default_pi_url())
     st.session_state.setdefault("preprocess_enabled", True)
     st.session_state.setdefault("preprocess_debug", False)
-    if st.session_state["inference_backend_kind"] == "pi":
-        st.session_state.setdefault("tta_toggle", False)
-        os.environ.setdefault("SKIN_TTA", "0")
-    else:
-        st.session_state.setdefault("tta_toggle", True)
-        os.environ.setdefault("SKIN_TTA", "1")
+    # TTA on for every backend. It used to be switched off for the remote-Pi
+    # backend as a speed measure, but docs/METRICS.md validated the deployed
+    # 0.911 cancer sensitivity *with 4-view TTA on* — so that special case
+    # quietly served a configuration nobody had measured. It is also not where
+    # the time goes: the extra passes are ~0.6 s of what was a 30 s scan.
+    # Staff can still turn it off in Settings; that is a deliberate, visible act.
+    st.session_state.setdefault("tta_toggle", True)
+    os.environ.setdefault("SKIN_TTA", "1")
 
 
 def main() -> None:

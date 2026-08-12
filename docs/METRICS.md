@@ -98,7 +98,85 @@ mixup / focal-alpha re-weighting is planned future work.
 - Case DB: `~/.dermascan/dermascan.db` (override: `DERMASCAN_DATA_DIR`).
 - Backend scan log: `logs/scans.sqlite` (separate inference history).
 
+## Segmentation cost (GrabCut skip margin)
+
+`frontend/services/segmentation.py` builds several candidate masks and keeps the
+one whose foreground fraction is closest to `_IDEAL_FRAC = 0.18`. GrabCut was
+the 7th candidate and ran on every scan. Measured at the 1024×1024 frame the Pi
+captures: the six threshold candidates cost **~78 ms together**, GrabCut alone
+**~2200 ms** — 99% of segmentation and roughly 85% of a 30-second Pi scan.
+
+It is now skipped when the best cheap candidate already scores within
+`_GRABCUT_SKIP_SCORE`. That bound is exact rather than empirical, because
+`_score_mask` depends *only* on foreground fraction and ties break toward the
+cheap candidate — so GrabCut can only change the outcome by scoring strictly
+lower. Chosen against the old always-run behaviour on 20 real HAM10000 images:
+
+| margin | GrabCut skipped | mask differs | ABCD tier flips |
+|---|---|---|---|
+| 0.02 | 30% | 0 | 0 |
+| 0.05 | 40% | 0 | 0 |
+| **0.10 (shipped)** | **60%** | **0** | **0** |
+| 0.20 | 90% | 1 | 1 |
+
+Result on 20 real images (x86, warm interpreter): **median scan 158 ms**, down
+from ~2300 ms. The mean is ~1000 ms because the 40% that still need GrabCut
+remain expensive — that tail is where any further optimisation has to go.
+
+**Two ways of speeding up the remaining 40% were measured and rejected**, both
+because they move a displayed ABCDE tier. Border score is `P²/(4πA)`, so it
+reacts to small changes in contour roughness far more than mask overlap
+suggests — a high IoU is *not* evidence that the tiers survived.
+
+- *GrabCut downscaled to 384px + linear upscale*: 16× faster, but mask IoU
+  against the full-resolution result was 0.756 (min 0.383) and it flipped the
+  border tier on **4 of 10 images**.
+- *Fewer GrabCut iterations* (`cv2.grabCut(..., iters, ...)`, currently 5):
+  even 5→3 flipped an ABCD tier on **6 of 8 images** for a 30% speedup. IoU
+  stayed at 0.930, which is exactly the trap above.
+
+  | iters | ms/img | IoU vs 5 | ABCD tier flips |
+  |---|---|---|---|
+  | 5 (shipped) | baseline | — | — |
+  | 3 | −30% | 0.930 | 6/8 |
+  | 2 | −42% | 0.904 | 6/8 |
+  | 1 | −58% | 0.835 | 5/8 |
+
+Anything further should change *which mask is chosen* (as the skip margin does)
+rather than *how that mask is computed*, or else re-validate the ABCDE tiers
+end-to-end and update this file.
+
 ## Capture quality thresholds
+
+> **Recalibrated 2026-08-13 against real dermoscopy.** The thresholds below were
+> previously tuned against `samples/*.jpg`, which `samples/README.md` documents
+> as **synthetic placeholders (simple colour patches)**. Measured on 200 random
+> HAM10000 images, that mistake was costing almost every real scan:
+>
+> | | focus score |
+> |---|---|
+> | `samples/*.jpg` (synthetic) | 449 / 435 / 469 |
+> | Real HAM10000 (n=200) | **median 79**, p25 55, p10 42 |
+> | Old soft threshold | 120 → **72.5% of real lesions flagged** |
+> | New soft threshold | **40** → 9.5% flagged |
+>
+> A flagged photo is *refused outright* whenever strict mode is on, and strict
+> mode was defaulted on (`app.py`) despite `settings_view.py` documenting it as
+> off. Together those two facts refused roughly 72% of genuine dermoscopic
+> images. The hard stop moved 25 → 20 because a real HAM10000 image measured
+> 24.8 — losing by 0.2 is not "unusable".
+>
+> The same audit found the skin gate rejecting 11% of real images: the YCrCb
+> box's `Cb <= 127` ceiling excludes polarized and oil-immersion dermoscopy,
+> which sits at Cb 133–138. Raising it to 140 dropped that to 2.0% with no
+> measured junk surface crossing over. `_SKIN_MIN` is 0.08, chosen for junk
+> margin rather than for real images — between 0.06 and 0.12 the real rejection
+> rate is unchanged at 2.0%, while 0.08 sits well above the worst neutral
+> surface in `tests/test_gate_robustness.py` (textured dark grey, 0.057).
+>
+> `tests/test_gate_real_images.py` holds these lines against real images and is
+> skipped when `datasets/` is absent. **Do not re-tune any of these against
+> `samples/`** — that is the error this note exists to stop repeating.
 
 The focus check is a Laplacian variance, but two normalisations are applied
 first (`frontend/services/quality.py`), because the raw number lies in two ways:

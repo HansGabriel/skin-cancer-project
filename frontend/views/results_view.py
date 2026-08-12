@@ -24,10 +24,18 @@ from components.primary_button import render_back_link
 from components.prob_bars import render_seven_class_bars, render_three_class_probs
 from components.verdict_card import render_verdict_card
 from navigation import navigate
+from services.eigencam import cam_model_path
 from services.kiosk import is_kiosk
+from services.pipeline import trust_line
+from services.scan_flow import build_attention_overlay
 from services.storage import get_storage
 from services.verdict import resolve_verdict, retake_verdict
 from theme.tokens import TOKENS as T
+
+
+def cam_available() -> bool:
+    """Whether an attention view could be built at all on this device."""
+    return cam_model_path().is_file()
 
 
 @st.dialog("Save this scan")
@@ -143,6 +151,15 @@ def _render_stopped(pl: dict) -> None:
         if st.button("Take another photo", type="primary", key="stop_retry", use_container_width=True):
             st.session_state.pop("last_result", None)
             navigate("camera")
+        # A refusal must not be a dead end. Taking a better photo is the right
+        # first answer, but when the scanner is simply wrong about the photo —
+        # it does happen — the person holding the lesion needs a way through.
+        if st.session_state.get("capture_image_bytes") and st.button(
+            "Check it anyway", key="stop_force", use_container_width=True
+        ):
+            st.session_state["force_rescan"] = True
+            st.session_state.pop("last_result", None)
+            navigate("camera")
         if st.button("Back to start", key="stop_home", use_container_width=True):
             _go_home()
     render_disclaimer_footer()
@@ -192,6 +209,19 @@ def render_results_view(*, root: Path, model_path: str) -> None:
             if kb_is_live() and st.button("Ask a question about this", key="res_ask", use_container_width=True):
                 navigate("assistant")
 
+        # A forced scan bypassed the checks that would have refused this photo,
+        # so the reason it was refused has to travel with the result. Silently
+        # showing a normal-looking verdict for a photo the scanner could not
+        # read is exactly the false confidence this app is built to avoid.
+        if pl.get("forced"):
+            fc = pl.get("frame_check")
+            why = "; ".join(getattr(fc, "reasons", ()) or ()) if fc else ""
+            st.warning(
+                "This photo did not pass the usual checks"
+                + (f" ({why})" if why else "")
+                + " and was read anyway. Treat the result with extra caution."
+            )
+
         for _code, label, _sev in pl.get("quality", {}).get("reason_details", []):
             st.warning(label)
 
@@ -199,15 +229,26 @@ def render_results_view(*, root: Path, model_path: str) -> None:
         # stays in plain language for visitors and health workers.
         with st.expander("Details for staff"):
             render_abcde_row(pl.get("abcde"), show_values=True)
-            render_image_compare(
-                pl.get("rgb"), pl.get("attention_overlay_jpg"), note=pl.get("attention_note")
-            )
-            if not pl.get("attention_overlay_jpg"):
+            # The heatmap is built on request, not on every scan: it costs a
+            # second full model pass plus a full-resolution blend, and this
+            # panel is collapsed by default. st.expander is not lazy — its body
+            # runs on every rerun — so the button is what defers the work.
+            if pl.get("attention_overlay_jpg"):
+                render_image_compare(
+                    pl.get("rgb"), pl.get("attention_overlay_jpg"), note=pl.get("attention_note")
+                )
+            elif not cam_available():
                 st.caption("The attention view is not available on this device.")
+            elif st.button("Show where the scanner looked", key="res_attention"):
+                with st.spinner("Building the attention view…"):
+                    build_attention_overlay(pl, str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))
+                st.session_state["last_result"] = pl
+                st.rerun()
             render_three_class_probs(sr.probs)
             render_seven_class_bars(pl.get("seven_class_probs"))
-            if pl.get("trust_line"):
-                st.caption(pl["trust_line"])
+            line = trust_line(pl)
+            if line:
+                st.caption(line)
             t_path = Path(model_path).resolve().parent / "temperature.json"
             if not t_path.is_file():
                 t_path = root / "models" / "temperature.json"

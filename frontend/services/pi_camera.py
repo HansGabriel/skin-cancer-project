@@ -162,12 +162,22 @@ class _PiCamera:
 
     @staticmethod
     def _draw_guide(rgb) -> None:
-        """Overlay a center square showing the region that will be sent for analysis."""
+        """Overlay a center square showing the region that will be sent for analysis.
+
+        The side must match ``_center_crop`` exactly. It used to be drawn at
+        0.7x while the capture took the full centre square — so the box claimed
+        an area barely half of what was actually kept. People framed the lesion
+        to fill the box and got a photo with twice the field of view, which made
+        the lesion smaller on the result screen *and* smaller inside the 224px
+        model tensor than they intended. Two constants describing one crop is
+        how that drifts, so this reads the crop geometry rather than repeating it.
+        """
         h, w = rgb.shape[:2]
-        side = int(min(h, w) * 0.7)
+        side = min(h, w)
         x0 = (w - side) // 2
         y0 = (h - side) // 2
-        cv2.rectangle(rgb, (x0, y0), (x0 + side, y0 + side), (80, 200, 120), 2)
+        # Inset by a pixel so a full-bleed rectangle is still visible on-screen.
+        cv2.rectangle(rgb, (x0 + 1, y0 + 1), (x0 + side - 2, y0 + side - 2), (80, 200, 120), 2)
 
     # -- still capture -----------------------------------------------------
     def capture_still_jpeg(self) -> bytes | None:

@@ -22,14 +22,15 @@ def render_settings_view(*, root: Path) -> None:
         store = get_storage()
 
         # ── Plain settings (everything an ordinary user / health worker needs) ──
-        # Off by default. services.lesion_gate is what stops junk input now, and
-        # blocking every slightly-soft photo was rejecting real lesions.
+        # Off by default (app.py). services.lesion_gate is what stops junk input
+        # now, and blocking every slightly-soft photo was rejecting real lesions.
         st.toggle(
-            "Only accept very clear photos",
+            "Refuse photos that are not very clear",
             key="strict_quality_gate",
             help=(
-                "Photos that are slightly blurry or dim are still checked, with a "
-                "note. Turn this on to reject them instead."
+                "Off: slightly blurry or dim photos are still checked, with a note "
+                "next to the result. On: they are refused instead and you are asked "
+                "to retake. Turning this on will reject some real lesions."
             ),
         )
 

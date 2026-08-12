@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -18,10 +19,11 @@ def load_keras_vis_cached(path: str):
     return load_keras_model(path)
 
 
-def finalize_pipeline_result(pl: dict, keras_path: str) -> None:
+def finalize_pipeline_result(pl: dict, keras_path: str, *, want_overlay: bool = False) -> None:
     rgb = pl.get("rgb")
     if rgb is None:
         return
+    t0 = time.perf_counter()
     if keras_path and Path(keras_path).is_file():
         try:
             enrich_result_with_vis(pl, rgb, load_keras_vis_cached(keras_path))
@@ -29,18 +31,34 @@ def finalize_pipeline_result(pl: dict, keras_path: str) -> None:
             pl["vis_error"] = str(exc)
     # No Keras on this device (the kiosk): gradient-free Eigen-CAM from the
     # two-output TFLite export, if present. Silent no-op otherwise.
+    #
+    # want_overlay is False on the scan path — the heatmap is built on demand
+    # when staff ask for it (see views/results_view.py). The call is still made
+    # so stage 3 of the content gate runs when it is available.
     if not pl.get("attention_overlay_jpg"):
         from services.eigencam import enrich_with_eigencam
 
-        enrich_with_eigencam(pl)
+        enrich_with_eigencam(pl, want_overlay=want_overlay)
+    ms = int((time.perf_counter() - t0) * 1000)
+    if ms >= 1:
+        pl.setdefault("stage_ms", {})["attention"] = ms
 
 
-def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None) -> dict:
+def build_attention_overlay(pl: dict, keras_path: str) -> None:
+    """Produce the attention heatmap now, on staff request.
+
+    Kept out of the scan path deliberately — see ``finalize_pipeline_result``.
+    """
+    finalize_pipeline_result(pl, keras_path, want_overlay=True)
+
+
+def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False) -> dict:
     backend_id = getattr(backend, "backend_id", "?")
     logger.info(
-        "starting scan backend=%s upload=%s",
+        "starting scan backend=%s upload=%s force=%s",
         backend_id,
         image_bytes is not None,
+        force,
     )
     pl = run_pipeline(
         backend,
@@ -48,6 +66,7 @@ def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: flo
         pixels_per_mm=pixels_per_mm,
         strict_quality=strict_quality,
         case_id=case_id,
+        force=force,
     )
     finalize_pipeline_result(pl, keras_path)
     _apply_out_of_distribution(pl)

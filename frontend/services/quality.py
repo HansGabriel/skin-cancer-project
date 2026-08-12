@@ -21,14 +21,26 @@ from typing import TypedDict
 import cv2
 import numpy as np
 
-# Focus thresholds, measured on the real dermoscopic images in samples/ rather
-# than on synthetic patterns — tuning on a checkerboard is how the old default
-# (35) ended up above every real photo, so genuine lesions were rejected as
-# "too blurry". With the normalisation in _focus_score, those samples score
-# ~450, the same photos visibly blurred score ~17, and a featureless frame
-# scores 0. The thresholds sit in that gap.
-_BLUR_SOFT = float(os.environ.get("SKIN_QUALITY_BLUR_MIN", "120"))
-_BLUR_HARD = float(os.environ.get("SKIN_QUALITY_BLUR_HARD", "25"))
+# Focus thresholds, measured on REAL dermoscopy (2026-08-13: 200 random
+# HAM10000 images) — see docs/METRICS.md "Capture quality thresholds".
+#
+#   real HAM10000   median 79, p25 55, p10 42
+#   samples/*.jpg   449 / 435 / 469
+#
+# The previous soft default of 120 was tuned against samples/, which
+# samples/README.md documents as "synthetic placeholders (simple color
+# patches)". Synthetic patches score ~5x real dermoscopy, so 120 sat far above
+# the median real photo and **72.5% of real lesions tripped the advisory** —
+# and because an advisory blocks whenever strict mode is on, most real lesions
+# were refused outright. That is the same mistake the old default of 35 made
+# (tuned on a checkerboard), one order of magnitude worse.
+#
+# 40 puts the advisory at ~9.5% of real dermoscopy: soft enough to still flag a
+# genuinely bad photo, low enough that ordinary lesions get scanned. The hard
+# stop is 20 rather than 25 because a real HAM10000 image measured 24.8 — a
+# photo that loses by 0.2 is not "unusable".
+_BLUR_SOFT = float(os.environ.get("SKIN_QUALITY_BLUR_MIN", "40"))
+_BLUR_HARD = float(os.environ.get("SKIN_QUALITY_BLUR_HARD", "20"))
 
 _V_SOFT_MIN = float(os.environ.get("SKIN_QUALITY_V_MIN", "35"))
 _V_SOFT_MAX = float(os.environ.get("SKIN_QUALITY_V_MAX", "220"))

@@ -33,7 +33,19 @@ _LETTERS = ("A", "B", "C", "D", "E")
 _TIER_INK = {0: T.text_muted, 1: T.melanin, 2: T.erythema}
 
 _FIELD_R = 46.0  # the dark field
-_PHOTO_R = 38.0  # the specimen inside it
+# The specimen inside it. The photo renders at (2 * _PHOTO_R / 104) *
+# aperture_px, so on the 7" kiosk (aperture_px 225, device pixel ratio 1) the
+# old 38.0 put a 1024px capture into ~164 real pixels — small enough that people
+# asked whether that thumbnail was what the model saw. It is not: the classifier
+# always receives the original capture bytes (services/pipeline.py).
+#
+# 41.0 gives ~177px and is the most that fits: the ABCDE marks are stroked 3
+# units wide centred on _RIM_R, so anything past ~41.5 puts the photo edge under
+# the marks and the rim stops reading as a rim. Making the circle itself bigger
+# is a tokens change (aperture_px), and that trades against the 600px height
+# budget the results screen is built to fit without scrolling — verify on the
+# panel before raising it.
+_PHOTO_R = 41.0
 _RIM_R = 42.0  # graticule + ABCDE marks live on this radius
 
 

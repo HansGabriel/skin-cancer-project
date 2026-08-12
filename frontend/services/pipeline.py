@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, NotRequired, TypedDict
+import time
+from contextlib import contextmanager
+from typing import Any, Iterator, NotRequired, TypedDict
 
 import cv2
 import numpy as np
@@ -22,6 +24,32 @@ from services.verdict import UIVerdict, no_lesion_verdict, resolve_verdict, reta
 
 APP_VERSION = "0.4.0"
 logger = logging.getLogger("dermascan.pipeline")
+
+
+@contextmanager
+def _stage(stages: dict[str, int], name: str) -> Iterator[None]:
+    """Record how long one pipeline stage took, in ms.
+
+    The only timer this pipeline used to have lived inside the TTA loop
+    (``backend.tflite_shared``), so the figure shown to staff described the
+    model and nothing else: a 30-second scan reported "Inference: 0.8s". That
+    number sent people looking at the classifier when ~85% of the time was in
+    segmentation. Measure the whole thing or the measurement misleads.
+    """
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        stages[name] = int((time.perf_counter() - t0) * 1000)
+
+
+def _log_stages(stages: dict[str, int]) -> None:
+    """One grep-able line per scan: `grep 'scan stages' /tmp/dermascan_kiosk.log`."""
+    if not stages:
+        return
+    total = sum(stages.values())
+    detail = " ".join(f"{k}={v}ms" for k, v in stages.items())
+    logger.info("scan stages %s total=%dms", detail, total)
 
 
 def _log_pi_error(backend, message: str) -> None:
@@ -60,6 +88,8 @@ class PipelineResult(TypedDict, total=False):
     model_path: NotRequired[str]
     tta_enabled: NotRequired[bool]
     verdict: NotRequired[UIVerdict]
+    stage_ms: NotRequired[dict[str, int]]
+    forced: NotRequired[bool]
 
 
 def _preprocess_for_abcde() -> bool:
@@ -102,14 +132,41 @@ def _trust_line(sr: ScanResult | None, *, model_path: str, tta: bool, quality_ok
     )
 
 
+def trust_line(pl: dict) -> str:
+    """The staff timing line, built at RENDER time.
+
+    It has to be built here rather than inside ``run_pipeline`` because the
+    attention overlay is produced after the pipeline returns — so a line built
+    in the pipeline structurally cannot report it. Leading with the scan total
+    and its breakdown is the point: the old line reported only the model's own
+    milliseconds, which read as "0.8s" while the user watched a 30-second
+    spinner.
+    """
+    base = pl.get("trust_line", "")
+    stages = pl.get("stage_ms") or {}
+    if not stages:
+        return base
+    total = sum(stages.values())
+    # Only the stages worth a staff member's attention; the sub-10ms ones are
+    # noise on a line that has to fit a 1024px panel.
+    parts = " · ".join(f"{k} {v/1000:.1f}s" for k, v in stages.items() if v >= 100)
+    head = f"Scan: {total/1000:.1f}s"
+    if parts:
+        head += f" ({parts})"
+    return f"{head} · {base}"
+
+
 def _gate(
     rgb_display: np.ndarray,
-    rgb_for_abcde: np.ndarray,
     q: dict,
     *,
     strict_quality: bool,
-) -> tuple[PipelineResult | None, Any]:
-    """Run every stop-check in order. Returns ``(blocking_result, mask)``.
+    force: bool = False,
+    stages: dict[str, int] | None = None,
+) -> tuple[PipelineResult | None, Any, np.ndarray]:
+    """Run every stop-check in order.
+
+    Returns ``(blocking_result_or_None, mask, rgb_for_abcde)``.
 
     Both backends call this so they cannot drift apart: the upload path once
     honoured ``strict_quality`` while the Pi path ignored it, which meant the
@@ -118,9 +175,23 @@ def _gate(
     Order is deliberate. "There is no skin here" is answered first because a
     photo of a wall also fails the focus check, and "hold the camera still" is
     useless advice for it.
+
+    ``force`` is the user saying "I have looked at this photo and I want it
+    read anyway" after a refusal. Every check still RUNS — the mask and the
+    frame check are still computed and returned, so the result screen can carry
+    the warning — but none of them stops the scan. Without this the gate is a
+    dead end, and a health worker holding a lesion the scanner will not look at
+    has no way forward. The caller is responsible for making the caveat visible.
+
+    The ABCDE enhancement is built HERE, after the two cheap stop-checks, and
+    handed back — it costs ~90 ms (≈1 s on a Pi 4) and used to be paid before
+    any check ran, so a photo of a wall was colour-corrected and de-haired
+    purely to be thrown away.
     """
-    no_skin, skin = check_skin(rgb_display)
-    if no_skin is not None:
+    st_ms = stages if stages is not None else {}
+    with _stage(st_ms, "skin"):
+        no_skin, skin = check_skin(rgb_display)
+    if no_skin is not None and not force:
         return {
             "blocked": True,
             "quality": q,
@@ -128,22 +199,26 @@ def _gate(
             "rgb": rgb_display,
             "scan_result": None,
             "verdict": no_lesion_verdict(no_skin.reasons),
-        }, None
+        }, None, rgb_display
 
-    if not q["ok"] or (q["reasons"] and strict_quality):
+    if (not q["ok"] or (q["reasons"] and strict_quality)) and not force:
         return {
             "blocked": True,
             "quality": q,
             "rgb": rgb_display,
             "scan_result": None,
             "verdict": retake_verdict(q),
-        }, None
+        }, None, rgb_display
 
-    mask = segment_safe(rgb_for_abcde)
+    with _stage(st_ms, "enhance"):
+        rgb_for_abcde = _analysis_rgb(rgb_display)
+    with _stage(st_ms, "segment"):
+        mask = segment_safe(rgb_for_abcde)
     # A 3-class softmax always sums to 1, so without this a photo of a bare
     # forearm comes back as a confident "benign".
-    frame = check_spot(rgb_display, mask, skin=skin)
-    if not frame.is_lesion_photo:
+    with _stage(st_ms, "spot"):
+        frame = check_spot(rgb_display, mask, skin=skin)
+    if not frame.is_lesion_photo and not force:
         return {
             "blocked": True,
             "quality": q,
@@ -151,8 +226,8 @@ def _gate(
             "rgb": rgb_display,
             "scan_result": None,
             "verdict": no_lesion_verdict(frame.reasons),
-        }, mask
-    return None, mask
+        }, mask, rgb_for_abcde
+    return None, mask, rgb_for_abcde
 
 
 def run_pipeline(
@@ -162,10 +237,12 @@ def run_pipeline(
     pixels_per_mm: float,
     strict_quality: bool = True,
     case_id: str | None = None,
+    force: bool = False,
     preprocess: bool = True,  # noqa: ARG001 — kept for API compat; session/env controls ABCDE enhance
 ) -> PipelineResult:
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
+    stages: dict[str, int] = {}
     # ``strict_quality`` now only decides whether *advisory* quality notes (a
     # slightly soft or dim photo) also block. It is no longer forced on for the
     # kiosk: services.lesion_gate is what keeps junk input from reaching the
@@ -207,32 +284,41 @@ def run_pipeline(
         }
         if rgb_before is not None:
             result["rgb_before"] = rgb_before
+        result["stage_ms"] = stages
+        _log_stages(stages)
         return result
 
     if image_bytes is not None:
         try:
-            rgb_display = decode_image_bytes_to_rgb(image_bytes)
+            with _stage(stages, "decode"):
+                rgb_display = decode_image_bytes_to_rgb(image_bytes)
         except ValueError as exc:
             return {"blocked": True, "error": str(exc), "scan_result": None, "verdict": retake_verdict(None)}
 
-        rgb_for_abcde = _analysis_rgb(rgb_display)
         rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
 
-        q = check_quality(rgb_display)
-        blocking, mask = _gate(rgb_display, rgb_for_abcde, q, strict_quality=strict_quality)
+        with _stage(stages, "quality"):
+            q = check_quality(rgb_display)
+        blocking, mask, rgb_for_abcde = _gate(
+            rgb_display, q, strict_quality=strict_quality, force=force, stages=stages
+        )
         if blocking is not None:
+            blocking["stage_ms"] = stages
+            _log_stages(stages)
             return blocking
 
         # Classifier always sees the original capture (matches HAM10000 / training preprocessing).
         model_jpg = image_bytes
         try:
-            scan_result = backend.scan(model_jpg)
+            with _stage(stages, "model"):
+                scan_result = backend.scan(model_jpg)
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             _log_pi_error(backend, msg)
             return {"blocked": False, "error": msg, "rgb": rgb_display, "mask": mask, "quality": q}
 
-        abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
+        with _stage(stages, "abcde"):
+            abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
         return _finish(
             rgb_display,
             rgb_for_abcde,
@@ -261,13 +347,18 @@ def run_pipeline(
         _log_pi_error(backend, msg)
         return {"blocked": False, "error": msg, "scan_result": scan_result}
 
-    rgb_for_abcde = _analysis_rgb(rgb_display)
     rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
-    q = check_quality(rgb_display)
-    blocking, mask = _gate(rgb_display, rgb_for_abcde, q, strict_quality=strict_quality)
+    with _stage(stages, "quality"):
+        q = check_quality(rgb_display)
+    blocking, mask, rgb_for_abcde = _gate(
+        rgb_display, q, strict_quality=strict_quality, force=force, stages=stages
+    )
     if blocking is not None:
+        blocking["stage_ms"] = stages
+        _log_stages(stages)
         return blocking
-    abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
+    with _stage(stages, "abcde"):
+        abcde = compute_abcde(rgb_for_abcde, mask, pixels_per_mm=pixels_per_mm) if mask is not None else None
     result = _finish(
         rgb_display,
         rgb_for_abcde,

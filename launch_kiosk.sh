@@ -37,10 +37,10 @@ sleep 1
 # Capture quality. These only decide whether a photo earns an advisory note —
 # a genuinely unreadable frame is caught by the separate hard thresholds, and
 # "this is not a skin spot" is services/lesion_gate.py, not these.
-# Focus is measured on a contrast- and size-normalised image; real dermoscopic
-# captures score in the hundreds (calibrated in services/quality.py against
-# the images in samples/; see tests/test_quality_levels.py).
-export SKIN_QUALITY_BLUR_MIN=120
+# Focus is left at the services/quality.py default, which is now calibrated
+# against real HAM10000 dermoscopy (median 79) rather than the synthetic
+# patches in samples/. The old export here was 120 — identical to the old
+# default, so the kiosk relaxed nothing while refusing 72% of real lesions.
 export SKIN_QUALITY_V_MIN=25
 export SKIN_QUALITY_V_MAX=235
 

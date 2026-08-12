@@ -80,7 +80,7 @@ These are tracked in the parent Notion v2 plan and were intentionally not
 shipped with the first online deployment:
 
 - ~~B.1 Fit `models/temperature.json`~~ **Done** — T=1.54 fitted and applied to *displayed* confidence only (`backend/tflite_shared.apply_temperature`); decisions stay on raw probs since the 0.11 threshold was tuned uncalibrated.
-- ~~B.2 Wire test-time augmentation~~ **Done** — 4-view TTA in `backend/tflite_shared.run_inference_on_rgb` (`SKIN_TTA`, off on Pi).
+- ~~B.2 Wire test-time augmentation~~ **Done** — 4-view TTA in `backend/tflite_shared.run_inference_on_rgb` (`SKIN_TTA`, **on everywhere, including the Pi**). This line previously said "off on Pi", which was both wrong for the kiosk (it runs the `local` backend in-process, so TTA was on) and wrong as an intention: `docs/METRICS.md` measured the deployed sensitivity of 0.911 *with* TTA, so running without it serves an unvalidated configuration. The extra passes cost ~0.6 s.
 - B.5 INT8 re-export: `scripts/export_tflite_int8.py` must add a `representative_dataset` (currently missing — the "int8" file is dynamic-range only). Re-export, check `scripts/eval_threshold.py --model models/skin_classifier_int8.tflite` parity (screening sensitivity within 1 pt of float), benchmark on the Pi, then switch via the existing `SKIN_MODEL` env in `scripts/pi_server.py`.
 - Tier-2: implement `frontend/services/uncertainty.py` (MC-Dropout) and `frontend/services/skintone.py` (Fitzpatrick/ITA).
 - Tier-3: implement `frontend/services/report.py` (PDF export).
