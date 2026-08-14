@@ -25,6 +25,7 @@ from components.prob_bars import render_seven_class_bars, render_three_class_pro
 from components.verdict_card import render_verdict_card
 from navigation import navigate
 from services.eigencam import cam_model_path
+from views.assistant_view import ask_about_last_result
 from services.kiosk import is_kiosk
 from services.pipeline import trust_line
 from services.scan_flow import build_attention_overlay
@@ -207,7 +208,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:
                 if st.button("Done", type="primary", key="res_home", use_container_width=True):
                     _go_home()
             if kb_is_live() and st.button("Ask a question about this", key="res_ask", use_container_width=True):
-                navigate("assistant")
+                ask_about_last_result()
 
         # A forced scan bypassed the checks that would have refused this photo,
         # so the reason it was refused has to travel with the result. Silently

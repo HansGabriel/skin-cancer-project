@@ -47,6 +47,13 @@ export SKIN_QUALITY_V_MAX=235
 # Tell the app it's in kiosk mode so it shows the on-screen Exit button.
 export SKIN_KIOSK=1
 
+# Show the assistant's answers before a clinician has signed them off. All 18
+# entries in data/assistant_kb.json lack reviewed_by/reviewed_date, so without
+# this the "Questions" tab and both "Ask about this" buttons hide themselves —
+# working as designed, not a bug. Demo only: fill in the review fields (or drop
+# this line) before the kiosk is used with real participants.
+export SKIN_KB_DEV=1
+
 # Staff passcode (locks History/Cases/Settings behind the on-screen keypad).
 # Read from a staff-held file that is NOT in git. Without it the staff area
 # stays closed rather than open — see enforce_staff_gate() in services/auth.py.

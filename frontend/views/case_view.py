@@ -4,12 +4,14 @@ import json
 
 import streamlit as st
 
+from backend.assistant import kb_is_live
 from components.mobile_frame import mobile_frame
 from components.primary_button import render_back_link
 from components.urgency_pill import render_verdict_pill
 from navigation import navigate
 from services.storage import get_storage
 from services.verdict import verdict_for_saved_scan
+from views.assistant_view import ask_about_saved_scan
 from theme.tokens import TOKENS as T
 
 
@@ -44,12 +46,23 @@ def render_case_view() -> None:
                 navigate("camera")
             return
         st.markdown("#### Timeline")
+        assist = kb_is_live()
         cols = st.columns(min(4, len(scans)))
         for i, s in enumerate(scans):
             with cols[i % len(cols)]:
                 st.image(str(store.root / s.image_path), use_container_width=True)
                 st.caption(s.taken_at[:10])
                 render_verdict_pill(verdict_for_saved_scan(s))
+                # Questions about a saved scan are the same questions as after a
+                # live one — a participant reviewing an old result has exactly
+                # the "what does this mean" problem the assistant exists for.
+                # Pinned per scan rather than per case: a case can hold several
+                # scans with different verdicts, and answering for the wrong one
+                # is the failure this avoids.
+                if assist and st.button(
+                    "Ask about this", key=f"case_ask_{s.id}", use_container_width=True
+                ):
+                    ask_about_saved_scan(s)
         if len(scans) >= 2:
             labels = [f"{s.taken_at[:10]}" for s in scans]
             d_vals, b_vals, a_vals = [], [], []

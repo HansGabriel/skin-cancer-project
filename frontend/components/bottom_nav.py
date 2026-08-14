@@ -50,6 +50,13 @@ def render_bottom_nav() -> None:
                 type="primary" if is_active else "secondary",
             ):
                 st.session_state.pop(_CONFIRM_KEY, None)
+                if route == "assistant":
+                    # The tab means "ask about what I have now". Buttons on a
+                    # specific scan pin that scan; the tab must unpin, or it
+                    # silently answers for a saved scan opened minutes ago.
+                    from views.assistant_view import clear_scan_context
+
+                    clear_scan_context()
                 navigate(route)
         if show_exit:
             _render_exit(cols[-1])
