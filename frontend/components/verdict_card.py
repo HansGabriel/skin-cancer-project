@@ -28,3 +28,21 @@ def render_verdict_card(v: UIVerdict) -> None:
         "</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_verdict_note(v: UIVerdict) -> None:
+    """The tinted panel under the result: what to do today / what to bring.
+
+    Separate from the card because it sits below the sign lines on the results
+    screen, and because a verdict without a note (there are none today, but the
+    dataclass allows it) must not leave an empty coloured box behind.
+    """
+    if not v.note:
+        return
+    ink, fill = tone_colors(v.tone)
+    st.markdown(
+        f'<div class="ds-note" style="background:{fill}">'
+        f'<div class="ds-note-label" style="color:{ink}">{v.note_label}</div>'
+        f'<div class="ds-note-body">{v.note}</div></div>',
+        unsafe_allow_html=True,
+    )

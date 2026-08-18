@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from components.mobile_frame import mobile_frame
-from components.primary_button import render_back_link
+from components.instrument import render_head
 from navigation import navigate
 from services.storage import get_storage
 
@@ -27,13 +26,17 @@ def render_folder_view() -> None:
     if not folder:
         navigate("history")
         return
-    with mobile_frame():
-        if render_back_link("History", key="fold_back"):
-            navigate("history")
-        st.markdown(f"### {folder.name}")
-        if st.button("+ New case"):
-            _new_case(fid)
-        for c in store.list_cases(fid):
-            n = len(store.list_scans(c.id))
-            if st.button(f"{c.name} ({n} scans)", key=f"fc_{c.id}", use_container_width=True):
-                navigate("case", selected_case_id=c.id, selected_folder_id=fid)
+    render_head("Saved spots · folder", folder.name)
+    for c in store.list_cases(fid):
+        n = len(store.list_scans(c.id))
+        if st.button(f"{c.name} ({n} scans)", key=f"fc_{c.id}", use_container_width=True):
+            navigate("case", selected_case_id=c.id, selected_folder_id=fid)
+
+    with st.container(key="epv-actions"):
+        back, new = st.columns([3, 2], gap="small")
+        with back:
+            if st.button("All saved spots", type="primary", key="fold_back", use_container_width=True):
+                navigate("history")
+        with new:
+            if st.button("New case", key="fold_new", use_container_width=True):
+                _new_case(fid)

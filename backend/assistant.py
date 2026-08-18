@@ -166,13 +166,56 @@ class Matcher:
         return best, best_score
 
 
+# Entries that answer about the person's OWN spot rather than the topic in
+# general ("why was my spot flagged?", "how big is it?"). The id prefix is the
+# marker, and it is defined here rather than in the view because it is a
+# property of the knowledge base: two things key off it, the ordering below and
+# the measured-sentence prefix in views/assistant_view.py.
+LESION_SPECIFIC_PREFIXES = ("why_flagged", "my_signs", "my_size", "my_change")
+
+
+def is_lesion_specific(entry_id: str) -> bool:
+    return entry_id.startswith(LESION_SPECIFIC_PREFIXES)
+
+
 def suggested_questions(kb: KnowledgeBase, band: str = "general", *, exclude_ids: set[str] | None = None, n: int = 4) -> list[tuple[str, str]]:
-    """Deterministic (entry_id, first question) pairs for tappable buttons —
-    band-specific entries first, then general."""
+    """Deterministic (entry_id, first question) pairs for tappable buttons.
+
+    Order: entries for this result band, then the ones about this specific spot,
+    then everything else general.
+
+    The middle group is why this is not a plain two-way sort. Those questions
+    are filed under ``general`` because they apply whatever the verdict was, but
+    they are the ones a person standing in front of their own result actually
+    asks — and with a four-button budget they were being crowded out by the
+    band's own entries plus whatever general entry happened to come first in the
+    file. "What is melanoma?" is a worse offer than "Why was my spot flagged?"
+    to someone looking at their spot.
+    """
     exclude = exclude_ids or set()
-    ranked = [e for e in kb.entries if e.result_band == band and e.id not in exclude]
-    ranked += [e for e in kb.entries if e.result_band == "general" and e.id not in exclude]
-    return [(e.id, e.questions[0]) for e in ranked[:n]]
+    available = [e for e in kb.entries if e.id not in exclude]
+    band_entries = [e for e in available if e.result_band == band]
+    lesion = [e for e in available if e.result_band == "general" and is_lesion_specific(e.id)]
+    other = [
+        e for e in available if e.result_band == "general" and not is_lesion_specific(e.id)
+    ]
+
+    # Reserve a slot for "about my spot" when the band would otherwise fill the
+    # whole budget. The malignant band has exactly four entries and n is four,
+    # so without this the verdict where someone most wants to ask "why was my
+    # spot flagged?" was the one verdict that never offered it.
+    ranked = band_entries
+    if lesion and len(band_entries) >= n:
+        ranked = band_entries[: n - 1] + lesion[:1] + band_entries[n - 1 :]
+    else:
+        ranked = band_entries + lesion
+    ranked = ranked + other
+
+    # A band entry is also reachable as "general" when band == "general"; keep
+    # the first occurrence so a question is never offered twice.
+    seen: set[str] = set()
+    unique = [e for e in ranked if not (e.id in seen or seen.add(e.id))]
+    return [(e.id, e.questions[0]) for e in unique[:n]]
 
 
 # ── Optional Gemma 3 270M layer (Ollama). Never authors facts. ──────────────────

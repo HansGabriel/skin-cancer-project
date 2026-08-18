@@ -40,14 +40,29 @@ class Tokens:
     text_muted: str = "#5B6675"
 
     # --- The instrument --------------------------------------------------
-    field: str = "#0B1220"  # the aperture's dark field — the ONE dark element
-    field_ink: str = "#E8EEF6"  # text/marks on the dark field
+    # The dark field is no longer just the aperture: it is the whole left band
+    # of the shell, which holds the instrument, its readout and the nav keys.
+    field: str = "#0B1220"  # the instrument band and the aperture's field
+    field_ink: str = "#E8EEF6"  # headings and marks on the dark band
+    field_muted: str = "#7C8AA0"  # eyebrows, timestamps, inactive nav keys
+    field_body: str = "#9FB0C4"  # running text on the dark band
+    field_rule: str = "rgba(232,238,246,.12)"  # hairlines on the dark band
     reticle: str = "#3DDBD9"  # graticule + focus marks. Never a button.
 
     # --- Verdict accents, after dermoscopic signs -------------------------
     erythema: str = "#C0362C"  # urgent
     melanin: str = "#7A4B2A"  # needs a check
     veil: str = "#4A6FB0"  # unsure (the blue-white veil)
+
+    # --- The same accents, lightened for the dark band --------------------
+    # The verdict inks above are chosen for contrast against white paper. On
+    # the #0B1220 field they sit at roughly 2:1 and the ABCDE rim marks read as
+    # muddy smears, so the instrument carries its own tints of the same three
+    # signs. Same meaning, legible ground — never used on white.
+    on_field_neutral: str = "#8C9BB0"
+    on_field_melanin: str = "#C79A6B"
+    on_field_erythema: str = "#E0645A"
+    on_field_veil: str = "#7E9BD0"
 
     # --- Legacy aliases --------------------------------------------------
     # Existing components refer to these names; they now resolve to the new
@@ -66,6 +81,17 @@ class Tokens:
     urgent_tint: str = "#FAECEA"
     info_tint: str = "#ECF1F9"
 
+    # --- Page band ---------------------------------------------------------
+    # The white half of the shell. Separate from `outline`/`surface` because
+    # those are also used inside cards; these two are the shell's own rules.
+    hairline: str = "#EDF0F5"  # the rules between list rows
+    border: str = "#D8DEE8"  # secondary button / input borders
+    chip: str = "#F1F4F8"  # step numerals, filter chips, quiet fills
+
+    # Plain-language sign lines ("Edges are uneven and blurred"). Tier 0 is
+    # grey rather than green for the reason in the module docstring.
+    sign_neutral: str = "#8B95A5"
+
     # --- Depth -----------------------------------------------------------
     # Restrained on purpose: shadows are a compositing cost on the Pi 4 GPU, so
     # only the aperture and raised buttons get one.
@@ -78,13 +104,21 @@ class Tokens:
     radius_pill: int = 999
 
     # --- Layout ----------------------------------------------------------
-    # Landscape two-pane: the 1024x600 panel is only 600px tall, so stacking
-    # the photo above the verdict forces scrolling on a kiosk nobody scrolls.
+    # Landscape two-band shell: the 1024x600 panel is only 600px tall, so
+    # stacking the photo above the verdict forces scrolling on a kiosk nobody
+    # scrolls. The instrument band is fixed at 45% and holds the aperture and
+    # the nav keys; the page band takes the rest, one job per screen.
     mobile_width: int = 1040  # frame width (name kept for existing components)
     pane_gap: int = 28
+    band_pct: int = 45  # instrument band width, % of the shell
+    nav_h: int = 68  # height of one nav key at the instrument's foot
+    band_pad_x: int = 30  # instrument band horizontal padding
+    page_pad_x: int = 46  # page band horizontal padding
     # Sized so a whole results screen — bar, aperture, verdict, actions, staff
-    # details, disclaimer and nav — fits 600px without scrolling.
-    aperture_px: int = 250  # diameter of the instrument circle
+    # details, disclaimer and nav — fits 600px without scrolling. Larger than
+    # it was: with nav moved into the instrument's foot the band has one job,
+    # and the design leans on the aperture being the screen's bold element.
+    aperture_px: int = 300  # diameter of the instrument circle
 
     space_2: int = 2
     space_4: int = 4
@@ -137,8 +171,14 @@ def _seven_inch(base: Tokens) -> Tokens:
     return replace(
         base,
         mobile_width=1000,
-        aperture_px=225,
+        # 45% of 1024 is a 461px band; the panel is 600px tall and the nav foot
+        # plus header take ~125px of it, so 290 is the largest circle that
+        # still leaves room for the caption underneath it.
+        aperture_px=290,
         pane_gap=24,
+        nav_h=74,  # >= touch_min, and the design's foot is the tallest target
+        band_pad_x=24,
+        page_pad_x=40,
         font_2xs=12,
         chip_font=13,
         pill_font=14,

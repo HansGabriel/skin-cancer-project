@@ -1,9 +1,21 @@
-"""Take the photo — and say whether it is good enough *before* scanning it.
+"""Take the photo, then say whether it is good enough *before* scanning it.
 
-The old flow accepted any photo, ran the whole pipeline, then came back with
-"image not clear" and no result. Here the three things that decide readability —
-light, focus, and whether there is skin in frame — are shown as soon as a photo
-exists, so a bad shot is retaken in two seconds instead of after a full scan.
+Two steps of the three-step flow live here, switched on whether a photo exists
+yet — the instrument band beside them shows the live preview or the capture, so
+this file only draws the page band.
+
+**Step 1 — frame.** How to hold the device.
+
+**Step 2 — check the photo.** The three things that decide readability (light,
+focus, and whether there is skin in frame) are shown as soon as a photo exists,
+so a bad shot is retaken in two seconds instead of after a full scan.
+
+Step 2 is also where an unclear photo is stopped. It is a *soft* gate: when the
+readings are poor the primary action becomes "Take another photo" and going on
+anyway is demoted to secondary. Deliberately not enforced in the pipeline —
+``strict_quality`` does that, and it was measured refusing **72% of genuine
+HAM10000 lesions** (see ``tests/test_gate_real_images.py``). Steering beats
+refusing when the cost of a wrong refusal is someone's melanoma.
 """
 
 from __future__ import annotations
@@ -14,22 +26,32 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
-from components.aperture import render_aperture, render_live_aperture
-from components.app_bar import render_disclaimer_footer
-from components.mobile_frame import mobile_frame
-from components.primary_button import render_back_link, render_primary_button
+from components.instrument import render_head
 from navigation import navigate
 from services.lesion_gate import has_skin
 from services.quality import focus_meter, light_meter
 from services.samples import list_sample_paths
-from services.scan_flow import run_scan_and_store
 from theme.tokens import TOKENS as T
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB — matches .streamlit/config.toml maxUploadSize
 
+# NOTE: the resolution cap deliberately does NOT live here. It used to, and
+# that silently broke the thing it was paired with: services.pipeline caps at
+# MAX_WORK_PX and compensates `pixels_per_mm` by the same factor, but a frame
+# already shrunk to 1024 here fails its `max(shape) > MAX_WORK_PX` test, so the
+# compensation never ran and every millimetre reading stayed wrong by the
+# resize factor. One place shrinks the image, and it is the one place that also
+# knows the scale.
+
 from services import pi_camera
 
 _PICAMERA2_AVAILABLE = pi_camera.AVAILABLE
+
+_FRAMING_TIPS = (
+    "Spot inside the ring, edges included",
+    "Even light — no shadow, no glare",
+    "Two seconds still, then tap",
+)
 
 
 def _capture_picamera2() -> bytes | None:
@@ -44,16 +66,11 @@ def _capture_picamera2() -> bytes | None:
         return None
 
 
-def _render_live_preview() -> None:
-    """Live preview inside the circular field, so framing matches the result."""
-    cam = pi_camera.get_camera()
-    if cam is None:
-        return
-    render_live_aperture(pi_camera.preview_url())
-
-
 def _sanitize_upload(raw: bytes) -> bytes | None:
-    """Re-encode user-supplied image bytes to JPEG, stripping EXIF and other metadata."""
+    """Re-encode user-supplied image bytes to JPEG, stripping EXIF and metadata.
+
+    Resolution is NOT capped here — see the note above ``MAX_UPLOAD_BYTES``.
+    """
     try:
         with Image.open(io.BytesIO(raw)) as img:
             rgb = img.convert("RGB")
@@ -88,46 +105,36 @@ def _meter(name: str, filled: int, value: str) -> str:
     )
 
 
-def _render_photo_check(image_bytes: bytes) -> bool:
-    """Show light / focus / skin readings for a captured photo.
-
-    Returns True when the photo looks good enough to be worth scanning.
-    """
+def _photo_readings(image_bytes: bytes) -> tuple[str, bool]:
+    """(meter markup, good enough) for a captured photo."""
     try:
         from backend.tflite_shared import decode_image_bytes_to_rgb
 
         rgb = decode_image_bytes_to_rgb(image_bytes)
     except Exception:  # noqa: BLE001 — never block capture on a preview check
-        return True
+        return "", True
     light_bars, light_word = light_meter(rgb)
     focus_bars, focus_word = focus_meter(rgb)
     # Asks the gate rather than repeating its threshold, so the meter can never
     # disagree with the check that actually blocks the scan.
     skin_ok = has_skin(rgb)
-    st.markdown('<p class="ds-section-title">How this photo looks</p>', unsafe_allow_html=True)
-    st.markdown(
-        _meter("Light", light_bars, light_word)
+    markup = (
+        '<div class="ds-mid">'
+        + _meter("Light", light_bars, light_word)
         + _meter("Focus", focus_bars, focus_word)
-        + _meter("Skin in frame", 3 if skin_ok else 0, "yes" if skin_ok else "not found"),
-        unsafe_allow_html=True,
+        + _meter("Skin in frame", 3 if skin_ok else 0, "yes" if skin_ok else "not found")
+        + "</div>"
     )
-    good = light_bars >= 2 and focus_bars >= 2 and skin_ok
-    if not good:
-        st.markdown(
-            f'<p class="ds-reason">You can still check this photo, but taking a '
-            f"better one will give a more reliable answer.</p>",
-            unsafe_allow_html=True,
-        )
-    return good
+    return markup, bool(light_bars >= 2 and focus_bars >= 2 and skin_ok)
 
 
 def _store_capture(data: bytes | None) -> None:
     """Save new capture bytes and re-render so the photo check appears at once.
 
-    The rerun matters: ``render_camera_view`` reads ``capture_image_bytes`` at
-    the top, before these widgets run, so without it a freshly chosen photo
-    would not show its light/focus/skin readings until the user touched
-    something else. Guarded on the value actually changing, so it cannot loop.
+    The rerun matters: the view reads ``capture_image_bytes`` at the top, before
+    these widgets run, so without it a freshly chosen photo would not show its
+    light/focus/skin readings until the user touched something else. Guarded on
+    the value actually changing, so it cannot loop.
     """
     if data is None or st.session_state.get("capture_image_bytes") == data:
         return
@@ -135,151 +142,177 @@ def _store_capture(data: bytes | None) -> None:
     st.rerun()
 
 
-def _persist_capture(*, camera_key: str, upload_key: str) -> bytes | None:
-    """Keep camera/upload bytes across Streamlit reruns (button clicks clear widget state)."""
-    shot = st.camera_input("Camera", key=camera_key, label_visibility="collapsed")
-    if shot is not None:
-        _store_capture(shot.getvalue())
-    up = st.file_uploader(
-        "Or choose a picture",
-        type=["jpg", "jpeg", "png"],
-        key=upload_key,
-        label_visibility="collapsed",
-    )
-    if up is not None:
-        _store_capture(_accept_upload(up))
-    return st.session_state.get("capture_image_bytes")
+def _render_step_two(kind: str) -> None:
+    """The photo exists: show what it looks like and whether to go on."""
+    captured = st.session_state["capture_image_bytes"]
+    meters, good = _photo_readings(captured)
+    if good:
+        render_head(
+            "Step 2 of 3 · check the photo",
+            "This photo can be read",
+            "All three readings are good enough for a reliable answer.",
+        )
+    else:
+        render_head(
+            "Step 2 of 3 · check the photo",
+            "This photo is hard to read",
+            "A better photo will give a more reliable answer. You can still go on.",
+        )
+    st.markdown(meters or '<div class="ds-mid"></div>', unsafe_allow_html=True)
 
-
-def render_camera_view(*, root: Path, backend, kind: str) -> None:
-    with mobile_frame():
-        if render_back_link("Back", key="cam_back"):
-            st.session_state.pop("capture_image_bytes", None)
-            navigate("home")
-        pixels = float(st.session_state.get("pixels_per_mm_ui", 10.0))
-        keras = str(st.session_state.get("SKIN_KERAS_PATH_UI", ""))
-        strict_q = bool(st.session_state.get("strict_quality_gate", False))
-        case_id = st.session_state.get("pending_case_id")
-        image_bytes: bytes | None = None
-        samples: list = []
-
-        # Use the Pi hardware camera (picamera2) whenever it's importable — this runs on the
-        # Pi itself, where the browser cannot reach the CSI camera. Independent of backend kind.
-        use_hw_camera = _PICAMERA2_AVAILABLE and kind in ("pi", "local")
-        captured = st.session_state.get("capture_image_bytes")
-
-        # "Check it anyway" on the refusal screen lands here: re-run the same
-        # photo with every stop-check bypassed. Handled at this level rather
-        # than in results_view because that view has no backend to scan with.
-        if st.session_state.pop("force_rescan", False) and captured:
-            _run(backend, captured, pixels, strict_q, keras, case_id, force=True)
-            return
-
-        left, right = st.columns([5, 6], gap="large")
-
-        with left:
-            if captured:
-                # Rendered through the aperture component, which embeds the image
-                # in its SVG. A bare <div> wrapper would not work: Streamlit
-                # closes each st.markdown block, so the image would land outside.
-                render_aperture(image=captured)
-            elif use_hw_camera:
-                _render_live_preview()
-            else:
-                render_aperture(hint="Put the spot inside the ring")
-
-        with right:
-            if captured:
-                image_bytes = captured
-                _render_photo_check(captured)
-                st.markdown('<div class="ds-gap"></div>', unsafe_allow_html=True)
-                if st.button("Take a different photo", key="cam_retake", use_container_width=True):
+    with st.container(key="epv-actions"):
+        first, second = st.columns([3, 2], gap="small")
+        if good:
+            with first:
+                if st.button(
+                    "Check this spot", type="primary", key="cam_scan", use_container_width=True
+                ):
+                    navigate("reading")
+            with second:
+                if st.button("Take another", key="cam_retake", use_container_width=True):
                     st.session_state.pop("capture_image_bytes", None)
                     st.rerun()
-            elif use_hw_camera:
-                st.markdown(
-                    f'<p style="font-size:{T.font_sm}px;color:{T.text_muted};margin:0 0 {T.space_12}px">'
-                    "Rest the camera on the skin so the spot sits inside the ring, "
-                    "then hold still.</p>",
-                    unsafe_allow_html=True,
-                )
-                if st.button("Take the photo", type="primary", key="pi_capture", use_container_width=True):
+        else:
+            # Order swapped, not the button removed: refusing outright is what
+            # the strict gate does, and it refuses real lesions.
+            with first:
+                if st.button(
+                    "Take another photo",
+                    type="primary",
+                    key="cam_retake_soft",
+                    use_container_width=True,
+                ):
+                    st.session_state.pop("capture_image_bytes", None)
+                    st.rerun()
+            with second:
+                if st.button("Check it anyway", key="cam_scan_soft", use_container_width=True):
+                    navigate("reading")
+
+
+def _render_step_one(root: Path, kind: str) -> None:
+    """No photo yet: how to frame it, and the controls to take one."""
+    use_hw_camera = _PICAMERA2_AVAILABLE and kind in ("pi", "local")
+
+    # Remote Pi with no local camera: the device captures and classifies in one
+    # call, so there is nothing to hold here and the scan starts with no bytes.
+    # Without this branch the "reading" route is unreachable on that backend and
+    # the Pi camera cannot be used from a PC session at all.
+    if kind == "pi" and not use_hw_camera:
+        render_head(
+            "Step 1 of 3 · frame the spot",
+            "Use the camera on the device",
+            "The scanner takes the photo itself. Rest it on the skin so the spot "
+            "sits in the middle of the ring, then start the check.",
+        )
+        pu = st.file_uploader(
+            "Or send a picture to the scanner",
+            type=["jpg", "jpeg", "png"],
+            key="pi_upload",
+            label_visibility="collapsed",
+        )
+        if pu is not None:
+            _store_capture(_accept_upload(pu))
+        with st.container(key="epv-actions"):
+            if st.button(
+                "Check this spot", type="primary", key="pi_scan", use_container_width=True
+            ):
+                navigate("reading")
+        return
+
+    render_head(
+        "Step 1 of 3 · frame the spot",
+        "Fill the ring, then hold still",
+        "Rest the camera on the skin so the spot sits in the middle of the ring.",
+    )
+
+    if use_hw_camera:
+        tips = "".join(
+            f'<div class="ds-row"><span class="ds-dot"></span>'
+            f'<span class="ds-row-grow">{tip}</span></div>'
+            for tip in _FRAMING_TIPS
+        )
+        st.markdown(f'<div class="ds-mid">{tips}</div>', unsafe_allow_html=True)
+        if st.session_state.get("cam_show_upload"):
+            up = st.file_uploader(
+                "Choose a picture",
+                type=["jpg", "jpeg", "png"],
+                key="hw_upload",
+                label_visibility="collapsed",
+            )
+            if up is not None:
+                _store_capture(_accept_upload(up))
+        with st.container(key="epv-actions"):
+            first, second = st.columns([3, 2], gap="small")
+            with first:
+                if st.button(
+                    "Take the photo", type="primary", key="pi_capture", use_container_width=True
+                ):
                     with st.spinner("Taking the photo…"):
                         shot = _capture_picamera2()
                     if shot is not None:
                         st.session_state["capture_image_bytes"] = shot
                         st.rerun()
-                up = st.file_uploader(
-                    "Or choose a picture",
-                    type=["jpg", "jpeg", "png"],
-                    key="hw_upload",
-                    label_visibility="collapsed",
-                )
-                if up is not None:
-                    _store_capture(_accept_upload(up))
-            elif kind == "pi":
-                st.info("Press Check this spot to take a photo with the Pi camera.")
-                pu = st.file_uploader(
-                    "Or send a picture to the Pi",
-                    type=["jpg", "jpeg", "png"],
-                    key="pi_upload",
-                    label_visibility="collapsed",
-                )
-                if pu is not None:
-                    _store_capture(_accept_upload(pu))
-            else:
-                st.markdown(
-                    f'<p style="font-size:{T.font_sm}px;color:{T.text_muted};margin:0 0 {T.space_8}px">'
-                    "Use the camera below, or choose a picture from this device.</p>",
-                    unsafe_allow_html=True,
-                )
-                image_bytes = _persist_capture(camera_key="local_camera", upload_key="cam_upload")
-                if kind == "mock":
-                    samples = list_sample_paths(root)
-                    if samples and image_bytes is None:
-                        pick = st.selectbox("Or try an example", [l for l, _ in samples], key="mock_sample_pick")
-                        chosen = dict(samples).get(pick)
-                        if chosen:
-                            st.image(str(chosen), width="stretch")
+            with second:
+                if st.button("Choose a picture", key="hw_pick", use_container_width=True):
+                    st.session_state["cam_show_upload"] = True
+                    st.rerun()
+        return
 
-            st.markdown('<div class="ds-gap"></div>', unsafe_allow_html=True)
-            if render_primary_button("Check this spot", key="cam_scan"):
-                if kind == "mock" and image_bytes is None and samples:
-                    pick = st.session_state.get("mock_sample_pick")
-                    p = dict(samples).get(pick) if pick else None
-                    if p:
-                        image_bytes = p.read_bytes()
-                if use_hw_camera and image_bytes is None:
-                    st.error("Take the photo first.")
-                elif kind in ("mock", "local") and image_bytes is None:
-                    st.error("Take a photo, choose a picture, or try an example first.")
-                elif kind == "pi" and image_bytes is None:
-                    _run(backend, None, pixels, strict_q, keras, case_id)
-                else:
-                    _run(backend, image_bytes, pixels, strict_q, keras, case_id)
+    # PC: the capture control is the widget itself, so it lives in the middle
+    # of the screen and the action row switches which one is showing.
+    source = st.session_state.setdefault("cam_source", "camera")
+    with st.container(key="epv-capture"):
+        if source == "camera":
+            shot = st.camera_input("Camera", key="local_camera", label_visibility="collapsed")
+            if shot is not None:
+                _store_capture(_sanitize_upload(shot.getvalue()))
+        else:
+            up = st.file_uploader(
+                "Choose a picture",
+                type=["jpg", "jpeg", "png"],
+                key="cam_upload",
+                label_visibility="collapsed",
+            )
+            if up is not None:
+                _store_capture(_accept_upload(up))
+            if kind == "mock":
+                _render_samples(root)
 
-        render_disclaimer_footer()
+    with st.container(key="epv-actions"):
+        first, second = st.columns(2, gap="small")
+        with first:
+            if st.button(
+                "Use the camera",
+                type="primary" if source == "camera" else "secondary",
+                key="cam_src_cam",
+                use_container_width=True,
+            ):
+                st.session_state["cam_source"] = "camera"
+                st.rerun()
+        with second:
+            if st.button(
+                "Choose a picture",
+                type="primary" if source == "upload" else "secondary",
+                key="cam_src_up",
+                use_container_width=True,
+            ):
+                st.session_state["cam_source"] = "upload"
+                st.rerun()
 
 
-def _run(backend, image_bytes, pixels, strict_q, keras, case_id, *, force: bool = False) -> None:
-    with st.spinner("Checking the spot…"):
-        pl = run_scan_and_store(
-            backend,
-            image_bytes,
-            pixels_per_mm=pixels,
-            strict_quality=strict_q,
-            keras_path=keras,
-            case_id=str(case_id) if case_id else None,
-            force=force,
-        )
-    # Keep the photo when the scan was refused: the result screen offers "Check
-    # it anyway", and that retry needs the original bytes. Discard it otherwise,
-    # so a finished scan leaves no skin photo in session state (docs/PRIVACY.md).
-    if pl.get("blocked"):
-        st.session_state["capture_image_bytes"] = image_bytes
+def _render_samples(root: Path) -> None:
+    """Demo images, on the mock backend only."""
+    samples = list_sample_paths(root)
+    if not samples:
+        return
+    pick = st.selectbox("Or try an example", [label for label, _ in samples], key="mock_sample_pick")
+    chosen = dict(samples).get(pick)
+    if chosen and st.button("Use this example", key="mock_sample_use", use_container_width=True):
+        _store_capture(_sanitize_upload(Path(chosen).read_bytes()))
+
+
+def render_camera_view(*, root: Path, backend, kind: str) -> None:  # noqa: ARG001 — scan runs in reading_view
+    if st.session_state.get("capture_image_bytes"):
+        _render_step_two(kind)
     else:
-        st.session_state.pop("capture_image_bytes", None)
-    if force:
-        pl["forced"] = True
-    st.session_state["last_result"] = pl
-    navigate("results")
+        _render_step_one(root, kind)

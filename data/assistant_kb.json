@@ -239,6 +239,62 @@
       "always_append_disclaimer": false,
       "reviewed_by": null,
       "reviewed_date": null
+    },
+    {
+      "id": "why_flagged_general",
+      "result_band": "general",
+      "questions": [
+        "Why was my spot flagged?",
+        "Why did it pick out my spot?",
+        "What did the scan find on my spot?",
+        "Why did I get this result?"
+      ],
+      "answer": "The scan measures the same five things a doctor looks at — how even the two halves are, how clear the edge is, how many colours are in it, how wide it is, and whether it has changed since last time. The measurements above are what it found on your spot. Any of them standing out is a reason to have the spot looked at, not a diagnosis on its own.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "my_signs_general",
+      "result_band": "general",
+      "questions": [
+        "Which warning signs did it find?",
+        "What are the ABCDE results for my spot?",
+        "What did it measure on mine?",
+        "Which of the five checks stood out?"
+      ],
+      "answer": "Those are the five checks, measured on your own photo. A check that stands out does not mean the spot is dangerous — plenty of harmless moles have an uneven edge or more than one colour. It means a person should look at it rather than a machine deciding on its own.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "my_size_general",
+      "result_band": "general",
+      "questions": [
+        "How big is my spot?",
+        "What size is it?",
+        "How wide is my mole?",
+        "Is my spot too big?"
+      ],
+      "answer": "Size on its own does not decide anything, but it is one of the five checks. Doctors pay more attention to spots wider than about 6 mm — roughly a pencil eraser — and to any spot that is getting wider, whatever size it started at.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "my_change_general",
+      "result_band": "general",
+      "questions": [
+        "Has my spot changed?",
+        "Is it bigger than last time?",
+        "Has it changed since the last check?",
+        "What does evolving mean for my spot?"
+      ],
+      "answer": "Change over time is the single most useful sign, which is why saving a scan matters — it gives the next check something to compare against. A spot that is growing, changing shape, changing colour, itching or bleeding should be seen by a health worker even if every other check looks ordinary.",
+      "always_append_disclaimer": true,
+      "reviewed_by": null,
+      "reviewed_date": null
     }
   ]
 }

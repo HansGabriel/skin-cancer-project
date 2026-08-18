@@ -23,6 +23,13 @@ def finalize_pipeline_result(pl: dict, keras_path: str, *, want_overlay: bool = 
     rgb = pl.get("rgb")
     if rgb is None:
         return
+    # A refused scan has no result to explain, so there is nothing for an
+    # attention map to attend to. It used to run anyway — every blocked result
+    # carries `rgb` — and because @st.cache_resource does not cache raises, a
+    # machine with TensorFlow installed retried a full Keras load on every
+    # rejected photo. The one case that has to stay fast paid the most.
+    if pl.get("blocked") and not want_overlay:
+        return
     t0 = time.perf_counter()
     if keras_path and Path(keras_path).is_file():
         try:
@@ -52,7 +59,7 @@ def build_attention_overlay(pl: dict, keras_path: str) -> None:
     finalize_pipeline_result(pl, keras_path, want_overlay=True)
 
 
-def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False) -> dict:
+def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False, on_stage=None) -> dict:
     backend_id = getattr(backend, "backend_id", "?")
     logger.info(
         "starting scan backend=%s upload=%s force=%s",
@@ -67,10 +74,14 @@ def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: flo
         strict_quality=strict_quality,
         case_id=case_id,
         force=force,
+        on_stage=on_stage,
     )
     finalize_pipeline_result(pl, keras_path)
     _apply_out_of_distribution(pl)
-    pl["pixels_per_mm"] = pixels_per_mm
+    # run_pipeline already records the scale it measured at, which differs
+    # from the requested one when the frame was resolution-capped. Only fill
+    # it in for paths that returned before setting it (blocked scans).
+    pl.setdefault("pixels_per_mm", pixels_per_mm)
     return pl
 
 

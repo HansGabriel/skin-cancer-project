@@ -30,7 +30,11 @@ _LETTERS = ("A", "B", "C", "D", "E")
 # ABCDE severity → rim colour. Tier 0 is deliberately colourless, for the same
 # reason a clean verdict is (see theme.tokens): a green tick invites people to
 # read "safe", and five green ticks read as a clean bill of health.
-_TIER_INK = {0: T.text_muted, 1: T.melanin, 2: T.erythema}
+#
+# These are the on_field_* tints, not the paper inks. The rim sits on #0B1220,
+# where T.melanin (#7A4B2A) and T.erythema (#C0362C) fall to roughly 2:1 and
+# the five marks read as mud rather than as three distinct severities.
+_TIER_INK = {0: T.on_field_neutral, 1: T.on_field_melanin, 2: T.on_field_erythema}
 
 _FIELD_R = 46.0  # the dark field
 # The specimen inside it. The photo renders at (2 * _PHOTO_R / 104) *
@@ -89,9 +93,9 @@ def _abcde_marks(abcde: dict[str, Any] | None) -> str:
     for i, letter in enumerate(_LETTERS):
         d = abcde.get(letter) or {}
         if d.get("verdict") == "needs history":
-            ink, opacity = T.info, 0.9
+            ink, opacity = T.on_field_veil, 0.9
         else:
-            ink, opacity = _TIER_INK.get(int(d.get("tier", 0) or 0), T.outline), 0.9
+            ink, opacity = _TIER_INK.get(int(d.get("tier", 0) or 0), T.on_field_neutral), 0.9
         start = i * span + 3.0
         end = (i + 1) * span - 3.0
         parts.append(
@@ -137,6 +141,7 @@ def aperture_svg(
     verdict: UIVerdict | None = None,
     abcde: dict[str, Any] | None = None,
     dashed: bool = False,
+    working: bool = False,
 ) -> str:
     """Build the aperture markup. See the module docstring for the four states."""
     uri = _data_uri(image)
@@ -186,6 +191,23 @@ def aperture_svg(
             f'<circle cx="50" cy="50" r="{_FIELD_R + 1.5}" fill="none" stroke="{ring_ink}" '
             f'stroke-width="{1.5 if quiet else 3}" opacity="{.45 if quiet else .95}"/>'
         )
+
+    # "Working": a quarter-arc sweeping the rim while the scan runs. Drawn as
+    # one rotating path rather than a spinner glyph so the instrument keeps
+    # being the thing that reports state — the reading screen beside it says
+    # what is happening in words.
+    working_arc = ""
+    if working:
+        working_arc = (
+            f'<g style="transform-box:view-box;transform-origin:50px 50px;'
+            f'animation:dsSpin 1.5s linear infinite">'
+            f'<path d="{_arc(50, 50, _FIELD_R - .5, 0, 45)}" fill="none" '
+            f'stroke="{T.reticle}" stroke-width="2.6" stroke-linecap="round"/></g>'
+            f'<text x="50" y="50" fill="{T.field_ink}" font-size="4.4" font-weight="600" '
+            f'letter-spacing=".8" text-anchor="middle" dominant-baseline="central" '
+            f'font-family="{T.font_family}">READING</text>'
+        )
+
     return (
         f'<div class="ds-aperture-wrap" style="max-width:{T.aperture_px}px;margin:0 auto">'
         f'<svg viewBox="-2 -2 104 104" width="100%" role="img" '
@@ -196,7 +218,7 @@ def aperture_svg(
         f'stroke-width="{1 if dashed else 1.5}" opacity="{.55 if dashed else .7}"{rim_dash}/>'
         f"{_reticle() if not abcde else ''}"
         f"{_abcde_marks(abcde)}"
-        f"{outer}"
+        f"{outer}{working_arc}"
         f"</svg></div>"
     )
 
@@ -217,9 +239,15 @@ def live_aperture_html(stream_url: str) -> str:
     ticks = "".join(
         f'<span class="ds-tick ds-tick-{side}"></span>' for side in ("t", "b", "l", "r")
     )
+    # The LIVE badge is the one thing that distinguishes this from a still: on
+    # the Pi the preview is smooth enough that people held the device against
+    # their arm waiting for a frozen frame to appear.
+    badge = (
+        '<span class="ds-aperture-badge"><span class="ds-aperture-live"></span>LIVE</span>'
+    )
     return (
         f'<div class="ds-aperture"><img src="{html.escape(stream_url, quote=True)}" alt="live camera view"/>'
-        f'<div class="ds-aperture-ring"></div>{ticks}</div>'
+        f'<div class="ds-aperture-ring"></div>{ticks}{badge}</div>'
     )
 
 

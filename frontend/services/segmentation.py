@@ -101,8 +101,15 @@ def _grabcut_center_mask(rgb: np.ndarray) -> np.ndarray:
     return _largest_component_mask(binm)
 
 
-def segment(image_rgb: np.ndarray) -> np.ndarray:
+def segment(image_rgb: np.ndarray, *, use_grabcut: bool = True) -> np.ndarray:
     """Return binary uint8 mask (0/255) using the best-scoring grayscale candidate.
+
+    ``use_grabcut=False`` runs the cheap candidates only. That is not a quality
+    setting — it is for the pipeline's pre-check, which needs a coarse mask to
+    decide whether the frame holds a lesion *at all* before paying for the real
+    thing. Never use it for a mask whose measurements will be displayed: the
+    skip predicate below exists precisely because GrabCut is what rescues the
+    cases the cheap candidates get wrong.
 
     GrabCut is computed **last and only when the cheap candidates are not
     already good enough**. It used to run unconditionally and it dominated the
@@ -152,7 +159,7 @@ def segment(image_rgb: np.ndarray) -> np.ndarray:
             best_score = s
             best = m
 
-    if best_score > _GRABCUT_SKIP_SCORE:
+    if use_grabcut and best_score > _GRABCUT_SKIP_SCORE:
         gc = _grabcut_center_mask(image_rgb)
         if _score_mask(_foreground_fraction(gc)) < best_score:
             best = gc
@@ -172,9 +179,9 @@ def _center_circle_mask(image_rgb: np.ndarray, radius_frac: float = 0.35) -> np.
     return mask
 
 
-def segment_safe(image_rgb: np.ndarray) -> np.ndarray | None:
+def segment_safe(image_rgb: np.ndarray, *, use_grabcut: bool = True) -> np.ndarray | None:
     """Return mask if plausible; else center-circle fallback (ABCDE never crashes)."""
-    mask = segment(image_rgb)
+    mask = segment(image_rgb, use_grabcut=use_grabcut)
     frac = _foreground_fraction(mask)
     if _FRAC_MIN <= frac <= _FRAC_MAX:
         return mask

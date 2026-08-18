@@ -1,9 +1,12 @@
-"""The result: one photo, one verdict, side by side.
+"""The result: what to do next, and what the scan actually saw.
 
-Landscape two-pane because the kiosk panel is 1024x600 — stacking the photo
-above the verdict pushes the answer below the fold on a screen nobody scrolls.
-The aperture on the left carries the ABCDE marks on its rim, so the lesion and
-its five measurements read as one object instead of two competing blocks.
+The photo, its verdict ring and the five ABCDE marks live in the instrument
+band beside this screen, so the page band is free to be one column of prose:
+headline, why, the sentence addressed to a person, then the three findings in
+plain words and the panel that says what to do about them.
+
+Everything technical moved to the ``staff`` route. It used to be an expander
+here, open to anyone, while the saved photos next door sat behind a passcode.
 """
 
 from __future__ import annotations
@@ -15,28 +18,14 @@ import streamlit as st
 
 from backend.assistant import kb_is_live
 from backend.contracts import ScanResult
-from components.abcde_row import render_abcde_row
-from components.aperture import render_aperture
-from components.app_bar import render_disclaimer_footer
-from components.image_compare import render_image_compare
-from components.mobile_frame import mobile_frame
-from components.primary_button import render_back_link
-from components.prob_bars import render_seven_class_bars, render_three_class_probs
-from components.verdict_card import render_verdict_card
+from components.instrument import render_head
+from components.verdict_card import render_verdict_card, render_verdict_note
 from navigation import navigate
-from services.eigencam import cam_model_path
-from views.assistant_view import ask_about_last_result
+from services.format import sign_ink, tone_chip, tone_colors
 from services.kiosk import is_kiosk
-from services.pipeline import trust_line
-from services.scan_flow import build_attention_overlay
 from services.storage import get_storage
-from services.verdict import resolve_verdict, retake_verdict
-from theme.tokens import TOKENS as T
-
-
-def cam_available() -> bool:
-    """Whether an attention view could be built at all on this device."""
-    return cam_model_path().is_file()
+from services.verdict import resolve_verdict, retake_verdict, scan_signs
+from views.assistant_view import ask_about_last_result
 
 
 @st.dialog("Save this scan")
@@ -102,40 +91,28 @@ def _go_home() -> None:
     session state, one Back tap from the next person.
     """
     st.session_state.pop("last_result", None)
+    st.session_state.pop("capture_image_bytes", None)
     navigate("home")
 
 
-def _render_abcde_legend(abcde: dict | None) -> None:
-    """Say what the five marks around the ring mean.
-
-    Without this the rim is five coloured arcs a visitor cannot read. The
-    wording stays plain — "the five things doctors look at" rather than the
-    asymmetry/border/colour/diameter/evolving vocabulary, which is in the staff
-    section where it belongs.
-    """
-    if not abcde:
+def _render_signs(abcde: dict | None) -> None:
+    """The three findings, in words a visitor can check against their own skin."""
+    signs = scan_signs(abcde)
+    if not signs:
         st.markdown(
-            f'<p style="text-align:center;font-size:{T.font_2xs}px;color:{T.text_muted};'
-            f'margin-top:{T.space_8}px">The spot could not be outlined, so the five '
-            "checks were skipped.</p>",
+            '<div class="ds-mid"><p class="ds-reason">The spot could not be outlined, '
+            "so the five checks were skipped.</p></div>",
             unsafe_allow_html=True,
         )
         return
-    keys = (("Normal", T.text_muted), ("Borderline", T.melanin), ("Stands out", T.erythema))
-    swatches = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:4px">'
-        f'<span style="width:12px;height:3px;border-radius:2px;background:{ink};'
-        'display:inline-block"></span>'
-        f"<span>{label}</span></span>"
-        for label, ink in keys
+    rows = "".join(
+        f'<div class="ds-sign"><span class="ds-sign-mark" style="background:{sign_ink(s.tier)}">'
+        f'</span><span class="ds-row-grow">{s.text}</span></div>'
+        for s in signs
     )
     st.markdown(
-        f'<p style="text-align:center;font-size:{T.font_2xs}px;color:{T.text_muted};'
-        f'letter-spacing:.1em;text-transform:uppercase;margin:{T.space_12}px 0 {T.space_4}px">'
-        "A B C D E · the five things doctors look at</p>"
-        f'<div style="display:flex;justify-content:center;gap:{T.space_12}px;'
-        f'font-size:{T.font_2xs}px;color:{T.text_muted};margin-bottom:{T.space_16}px">'
-        f"{swatches}</div>",
+        '<div class="ds-mid"><p class="ds-section-title">What the scan saw</p>'
+        f"{rows}</div>",
         unsafe_allow_html=True,
     )
 
@@ -143,126 +120,112 @@ def _render_abcde_legend(abcde: dict | None) -> None:
 def _render_stopped(pl: dict) -> None:
     """No usable scan: the photo could not be read, or holds no skin spot."""
     v = pl.get("verdict") or retake_verdict(pl.get("quality"))
-    left, right = st.columns([5, 6], gap="large")
-    with left:
-        render_aperture(image=pl.get("rgb"), verdict=v, dashed=True)
-    with right:
-        render_verdict_card(v)
-        st.markdown('<div class="ds-gap"></div>', unsafe_allow_html=True)
-        if st.button("Take another photo", type="primary", key="stop_retry", use_container_width=True):
-            st.session_state.pop("last_result", None)
-            navigate("camera")
-        # A refusal must not be a dead end. Taking a better photo is the right
-        # first answer, but when the scanner is simply wrong about the photo —
-        # it does happen — the person holding the lesion needs a way through.
-        if st.session_state.get("capture_image_bytes") and st.button(
-            "Check it anyway", key="stop_force", use_container_width=True
-        ):
-            st.session_state["force_rescan"] = True
-            st.session_state.pop("last_result", None)
-            navigate("camera")
-        if st.button("Back to start", key="stop_home", use_container_width=True):
-            _go_home()
-    render_disclaimer_footer()
+    ink, fill = tone_colors(v.tone)
+    chip = (
+        f'<span class="ds-pill" style="background:{fill};color:{ink}">'
+        f"{tone_chip(v.tone)}</span>"
+    )
+    render_head("Result · nothing was read", "", extra=chip)
+    render_verdict_card(v)
+    render_verdict_note(v)
 
-
-def render_results_view(*, root: Path, model_path: str) -> None:
-    with mobile_frame():
-        pl = st.session_state.get("last_result")
-        if not pl:
-            st.info("Take a photo first.")
-            if render_back_link("Back to start", key="res_empty_home"):
-                navigate("home")
-            return
-        if pl.get("blocked") and not pl.get("scan_result"):
-            _render_stopped(pl)
-            return
-        if pl.get("error") and not pl.get("scan_result"):
-            st.error(pl["error"])
-            if st.button("Back to start", key="res_err_home", use_container_width=True):
-                _go_home()
-            return
-
-        sr = pl.get("scan_result")
-        if not isinstance(sr, ScanResult):
-            st.error("That scan did not finish. Please take another photo.")
-            if st.button("Back to start", key="res_bad_home", use_container_width=True):
-                _go_home()
-            return
-
-        v = pl.get("verdict") or resolve_verdict(sr, pl.get("quality"))
-        left, right = st.columns([5, 6], gap="large")
-        with left:
-            # The verdict card is the ONLY risk-language element on this screen —
-            # every message comes from services.verdict.
-            render_aperture(image=pl.get("rgb"), verdict=v, abcde=pl.get("abcde"))
-            _render_abcde_legend(pl.get("abcde"))
-        with right:
-            render_verdict_card(v)
-            st.markdown('<div class="ds-gap"></div>', unsafe_allow_html=True)
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Save this scan", key="res_save", use_container_width=True):
-                    _save_dialog(model_path)
-            with b2:
-                if st.button("Done", type="primary", key="res_home", use_container_width=True):
+    with st.container(key="epv-actions"):
+        first, second = st.columns([3, 2], gap="small")
+        with first:
+            if st.button(
+                "Take another photo", type="primary", key="stop_retry", use_container_width=True
+            ):
+                st.session_state.pop("last_result", None)
+                st.session_state.pop("capture_image_bytes", None)
+                navigate("camera")
+        with second:
+            # A refusal must not be a dead end. Taking a better photo is the
+            # right first answer, but when the scanner is simply wrong about
+            # the photo — it does happen — the person holding the lesion needs
+            # a way through.
+            if st.session_state.get("capture_image_bytes"):
+                if st.button("Check it anyway", key="stop_force", use_container_width=True):
+                    st.session_state["force_rescan"] = True
+                    st.session_state.pop("last_result", None)
+                    navigate("reading")
+            else:
+                # Only reachable when the bytes are gone; a blocked scan keeps
+                # them, so this used to be an `elif` that never ran. The nav
+                # keys are the way out either way, but a screen that offers no
+                # exit of its own is a dead end on a kiosk.
+                if st.button("Back to start", key="stop_home", use_container_width=True):
                     _go_home()
-            if kb_is_live() and st.button("Ask a question about this", key="res_ask", use_container_width=True):
+
+
+def render_results_view(*, root: Path, model_path: str) -> None:  # noqa: ARG001 — root used by staff view
+    pl = st.session_state.get("last_result")
+    if not pl:
+        render_head("Result", "No scan yet", "Take a photo to see a result here.")
+        with st.container(key="epv-actions"):
+            if st.button(
+                "Start a skin check", type="primary", key="res_empty_home", use_container_width=True
+            ):
+                navigate("camera")
+        return
+    if pl.get("blocked") and not pl.get("scan_result"):
+        _render_stopped(pl)
+        return
+    if pl.get("error") and not pl.get("scan_result"):
+        render_head("Result", "That scan did not finish", pl["error"])
+        with st.container(key="epv-actions"):
+            if st.button("Back to start", type="primary", key="res_err_home", use_container_width=True):
+                _go_home()
+        return
+
+    sr = pl.get("scan_result")
+    if not isinstance(sr, ScanResult):
+        render_head("Result", "That scan did not finish", "Please take another photo.")
+        with st.container(key="epv-actions"):
+            if st.button("Back to start", type="primary", key="res_bad_home", use_container_width=True):
+                _go_home()
+        return
+
+    # The verdict is the ONLY risk-language element on this screen — every
+    # message comes from services.verdict.
+    v = pl.get("verdict") or resolve_verdict(sr, pl.get("quality"))
+    ink, fill = tone_colors(v.tone)
+    chip = (
+        f'<span class="ds-pill" style="background:{fill};color:{ink}">{tone_chip(v.tone)}</span>'
+    )
+    render_head("Result · what to do next", "", extra=chip)
+    render_verdict_card(v)
+    _render_signs(pl.get("abcde"))
+    render_verdict_note(v)
+
+    # A forced scan bypassed the checks that would have refused this photo, so
+    # the reason it was refused has to travel with the result. Silently showing
+    # a normal-looking verdict for a photo the scanner could not read is exactly
+    # the false confidence this app is built to avoid.
+    if pl.get("forced"):
+        fc = pl.get("frame_check")
+        why = "; ".join(getattr(fc, "reasons", ()) or ()) if fc else ""
+        st.warning(
+            "This photo did not pass the usual checks"
+            + (f" ({why})" if why else "")
+            + " and was read anyway. Treat the result with extra caution."
+        )
+    for _code, label, _sev in pl.get("quality", {}).get("reason_details", []):
+        st.warning(label)
+
+    with st.container(key="epv-actions"):
+        done, save = st.columns(2, gap="small")
+        with done:
+            if st.button("Done", type="primary", key="res_home", use_container_width=True):
+                _go_home()
+        with save:
+            if st.button("Save this scan", key="res_save", use_container_width=True):
+                _save_dialog(model_path)
+        ask, staff = st.columns(2, gap="small")
+        with ask:
+            if kb_is_live() and st.button(
+                "Ask a question about this", key="res_ask", use_container_width=True
+            ):
                 ask_about_last_result()
-
-        # A forced scan bypassed the checks that would have refused this photo,
-        # so the reason it was refused has to travel with the result. Silently
-        # showing a normal-looking verdict for a photo the scanner could not
-        # read is exactly the false confidence this app is built to avoid.
-        if pl.get("forced"):
-            fc = pl.get("frame_check")
-            why = "; ".join(getattr(fc, "reasons", ()) or ()) if fc else ""
-            st.warning(
-                "This photo did not pass the usual checks"
-                + (f" ({why})" if why else "")
-                + " and was read anyway. Treat the result with extra caution."
-            )
-
-        for _code, label, _sev in pl.get("quality", {}).get("reason_details", []):
-            st.warning(label)
-
-        # Everything technical lives in ONE collapsed section — the screen above
-        # stays in plain language for visitors and health workers.
-        with st.expander("Details for staff"):
-            render_abcde_row(pl.get("abcde"), show_values=True)
-            # The heatmap is built on request, not on every scan: it costs a
-            # second full model pass plus a full-resolution blend, and this
-            # panel is collapsed by default. st.expander is not lazy — its body
-            # runs on every rerun — so the button is what defers the work.
-            if pl.get("attention_overlay_jpg"):
-                render_image_compare(
-                    pl.get("rgb"), pl.get("attention_overlay_jpg"), note=pl.get("attention_note")
-                )
-            elif not cam_available():
-                st.caption("The attention view is not available on this device.")
-            elif st.button("Show where the scanner looked", key="res_attention"):
-                with st.spinner("Building the attention view…"):
-                    build_attention_overlay(pl, str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))
-                st.session_state["last_result"] = pl
-                st.rerun()
-            render_three_class_probs(sr.probs)
-            render_seven_class_bars(pl.get("seven_class_probs"))
-            line = trust_line(pl)
-            if line:
-                st.caption(line)
-            t_path = Path(model_path).resolve().parent / "temperature.json"
-            if not t_path.is_file():
-                t_path = root / "models" / "temperature.json"
-            if t_path.is_file():
-                t_val = json.loads(t_path.read_text()).get("T", 1.0)
-                if t_val and float(t_val) != 1.0:
-                    # Displayed confidence IS calibrated (backend/tflite_shared.apply_temperature);
-                    # the screening decision itself still uses raw probabilities.
-                    st.caption(f"Confidence calibrated with temperature scaling (T = {float(t_val):.2f})")
-            if pl.get("rgb_before") is not None and pl.get("rgb_analysis") is not None:
-                st.markdown("**Preprocessing (before / after — ABCDE path only)**")
-                c1, c2 = st.columns(2)
-                c1.image(pl["rgb_before"], caption="Original (classifier input)", width="stretch")
-                c2.image(pl["rgb_analysis"], caption="Enhanced (ABCDE/segmentation)", width="stretch")
-
-        render_disclaimer_footer()
+        with staff:
+            if st.button("Details for staff →", key="res_staff", use_container_width=True):
+                navigate("staff")

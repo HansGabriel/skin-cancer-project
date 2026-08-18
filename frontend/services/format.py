@@ -39,6 +39,41 @@ def tier_label(tier: int, *, evolving: bool = False) -> tuple[str, str]:
     return labels.get(tier, ("—", T.outline))
 
 
+# Tier → ink for the plain-language sign lines on white paper. Tier 0 is grey,
+# not green, for the reason in theme.tokens: five green ticks read as a clean
+# bill of health, which is the one thing a screening result must not promise.
+_SIGN_INK = {0: T.sign_neutral, 1: T.melanin, 2: T.erythema}
+
+# The same three tiers as they appear on the instrument's dark field. Kept
+# apart from _SIGN_INK because the paper inks sit at about 2:1 against #0B1220
+# and the rim marks turn to mud; see the on_field_* tokens.
+_FIELD_INK = {0: T.on_field_neutral, 1: T.on_field_melanin, 2: T.on_field_erythema}
+
+
+def sign_ink(tier: int) -> str:
+    """Ink for a ``services.verdict.ScanSign`` rendered on the page band."""
+    return _SIGN_INK.get(int(tier), _SIGN_INK[0])
+
+
+def field_ink(tier: int) -> str:
+    """Ink for the same tier rendered on the dark instrument band."""
+    return _FIELD_INK.get(int(tier), _FIELD_INK[0])
+
+
+# The short badge beside the "RESULT" eyebrow. Keyed off the tone rather than
+# the label so it can never disagree with the colour it is printed in.
+_TONE_CHIP = {
+    "neutral": "LOW CONCERN",
+    "info": "CHECK THE PHOTO",
+    "warning": "IMPORTANT",
+    "urgent": "URGENT",
+}
+
+
+def tone_chip(tone: str) -> str:
+    return _TONE_CHIP.get(tone, _TONE_CHIP["info"])
+
+
 def tone_colors(tone: str) -> tuple[str, str]:
     """Resolve a ``UIVerdict.tone`` to its ``(ink, fill)`` pair.
 

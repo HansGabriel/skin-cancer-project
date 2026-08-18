@@ -62,7 +62,14 @@ def test_benign_confident_is_low_concern_with_safety_line() -> None:
     assert v.state == "low_concern"
     # Deliberately colourless: a clean screen must not be styled as an all-clear.
     assert v.tone == "neutral"
-    assert LOW_RISK_SAFETY_LINE in v.advice
+    # The safety line moved out of `advice`, where it trailed "no action needed
+    # now" and read as a footnote, into the panel of its own that the results
+    # screen renders under the findings. It is the more important half of a
+    # clean result, so what matters is that it is still said — and still
+    # reachable through text(), which every copy invariant below runs over.
+    assert LOW_RISK_SAFETY_LINE in v.note
+    assert LOW_RISK_SAFETY_LINE in v.text()
+    assert v.note_label
 
 
 def test_benign_unconfident_is_uncertain() -> None:

@@ -62,7 +62,12 @@ def enforce_passcode_gate() -> None:
 
 # Routes that expose saved body photos or destructive actions. When a passcode is
 # configured these are staff-only; Scan/Results stay open so visitors never need a code.
-STAFF_ROUTES = ("history", "folder", "case", "settings")
+#
+# "staff" is the clinical readout — raw ABCDE scores, class confidences, model
+# version and timings. It used to be an expander on the results screen, open to
+# anyone, while the saved photos next door were gated; the screen it lives on
+# calls itself STAFF ONLY, so it is enforced here rather than only labelled.
+STAFF_ROUTES = ("history", "folder", "case", "settings", "staff")
 
 
 # A kiosk browser session lasts the whole event, so one staff unlock would
@@ -99,6 +104,22 @@ def lock_staff_area() -> None:
     """Drop staff access immediately (timeout, or the Lock button in Settings)."""
     st.session_state.pop("_staff_ok", None)
     st.session_state.pop("_staff_ok_at", None)
+
+
+def staff_area_reachable() -> bool:
+    """True when a staff route would open right now without asking for a code.
+
+    Used to decide whether a screen should *offer* a shortcut into the saved
+    scans. The nav key is always there for staff, who know the code; a button
+    on the visitor's home screen that leads straight to a keypad is just a
+    locked door with a handle on it.
+    """
+    expected = _configured_passcode()
+    if expected is None:
+        # No passcode configured: open on a PC, deliberately closed on an
+        # unattended kiosk (see enforce_staff_gate).
+        return not is_kiosk()
+    return _staff_unlocked()
 
 
 def enforce_staff_gate(route: str) -> None:

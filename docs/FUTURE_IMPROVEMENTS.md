@@ -14,11 +14,36 @@ Both capture paths now discard only **2** warmup frames
 `pi_server.py` was still on 8 when this item was first marked done, so the
 standalone Flask path kept the ~1–2s dead time; that is fixed.
 
-### 2. Keep TTA off on the Pi (already correct)
-Test-time augmentation runs the model 4× and averages — the single biggest
-inference cost. It's already disabled for the Pi backend by default. Leave it off.
+### 2. ⚠️ Superseded — TTA is now ON for every backend
+This item used to read "keep TTA off on the Pi (already correct)". That is no
+longer true and was not a good recommendation. `frontend/app.py` forces
+`SKIN_TTA=1` for every backend, because `docs/METRICS.md` validated the deployed
+**0.911 cancer sensitivity with 4-view TTA on** — switching it off for the Pi
+served a configuration nobody had measured. It is also not where the time goes:
+the three extra passes cost ~0.6 s of what used to be a 30-second scan, against
+segmentation's ~25 s. Staff can still turn it off in Settings; that is a
+deliberate, visible act.
 
-### 3. Profile CLAHE + unsharp mask if captures feel slow
+Note `scripts/pi_server.py` (the standalone Flask path) still runs a single
+`invoke()` with no TTA, so it serves the unmeasured configuration. The kiosk is
+unaffected — it runs the in-process `local` backend.
+
+### 3. ✅ Done — the real latency bug was found and fixed
+Not CLAHE. Measured 2026-08-19: a skin-coloured frame with **no lesion in it**
+took **107 s** at 12 MP before refusing — `enhance` 3.7 s plus `segment` 103 s,
+with the model never running. A non-lesion frame produces degenerate threshold
+candidates, which is the one condition that forces GrabCut to run, at native
+resolution. Two fixes, both in `frontend/services/pipeline.py`:
+
+- **Working resolution is capped** at `MAX_WORK_PX` (1024 long edge), matching
+  the Pi camera's own centre crop, so uploads cost what device captures cost.
+- **A cheap pre-check** (`lesion_gate.quick_reject`) answers the obvious
+  non-lesion cases from a 384px copy before `enhance` or `segment` run.
+
+Measured after, same machine: bare skin 12 MP **107 s → 0.28 s**, real lesion
+12 MP **17.6 s → 0.77 s**. Pinned by `tests/test_gate_cost.py`.
+
+### 3b. Profile CLAHE + unsharp mask if captures feel slow
 `pi_camera.py` `_enhance()` runs CLAHE + unsharp mask on the 1024px crop on every
 capture (pure OpenCV on an ARM core). Cheap-ish, but a candidate to profile if
 capture latency matters.

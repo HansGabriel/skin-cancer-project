@@ -15,7 +15,7 @@ from backend.contracts import ScanResult
 from backend.tflite_shared import decode_image_bytes_to_rgb
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
-from services.lesion_gate import FrameCheck, check_skin, check_spot
+from services.lesion_gate import FrameCheck, check_skin, check_spot, quick_reject
 from services.preprocess import enhance_lesion_image
 from services.quality import check_quality
 from services.risk import composite_risk_score, risk_band
@@ -23,7 +23,30 @@ from services.segmentation import segment_safe
 from services.verdict import UIVerdict, no_lesion_verdict, resolve_verdict, retake_verdict
 
 APP_VERSION = "0.4.0"
+
+# Longest edge the pipeline will work at. Mirrors the Pi camera's fixed 1024
+# centre crop (services/pi_camera.py) so an upload and a device capture cost the
+# same and are measured the same way. See the resize in run_pipeline.
+MAX_WORK_PX = int(os.environ.get("SKIN_MAX_WORK_PX", "1024"))
+
 logger = logging.getLogger("dermascan.pipeline")
+
+
+class Stages(dict):
+    """Stage timings, plus an optional "I am starting X now" callback.
+
+    A plain dict works everywhere this is used; the callback exists so the
+    reading screen can tick its checklist as the work happens instead of
+    animating a guess. It is carried on the dict rather than threaded through
+    ``_stage``'s signature so the twenty-odd call sites stay untouched, and it
+    is per-call state rather than a module global — Streamlit runs each session
+    on its own thread, and a global would let two visitors' scans drive each
+    other's progress.
+    """
+
+    def __init__(self, on_enter=None) -> None:
+        super().__init__()
+        self.on_enter = on_enter
 
 
 @contextmanager
@@ -36,6 +59,9 @@ def _stage(stages: dict[str, int], name: str) -> Iterator[None]:
     number sent people looking at the classifier when ~85% of the time was in
     segmentation. Measure the whole thing or the measurement misleads.
     """
+    on_enter = getattr(stages, "on_enter", None)
+    if on_enter is not None:
+        on_enter(name)
     t0 = time.perf_counter()
     try:
         yield
@@ -210,6 +236,25 @@ def _gate(
             "verdict": retake_verdict(q),
         }, None, rgb_display
 
+    # Stop-check C, cheap half. A frame with no lesion in it is the one that
+    # used to pay the most: it makes the cheap segmentation candidates score out
+    # of band, which is the single condition that forces GrabCut to run — at
+    # native resolution, after a full colour-constancy and hair-removal pass.
+    # Measured at 12 MP that was 107 s of work to reach a refusal. This answers
+    # the obvious cases from a 384px copy in a few milliseconds, and returns
+    # None whenever it is not sure (see lesion_gate.quick_reject).
+    with _stage(st_ms, "prespot"):
+        early = quick_reject(rgb_display, skin=skin)
+    if early is not None and not force:
+        return {
+            "blocked": True,
+            "quality": q,
+            "frame_check": early,
+            "rgb": rgb_display,
+            "scan_result": None,
+            "verdict": no_lesion_verdict(early.reasons),
+        }, None, rgb_display
+
     with _stage(st_ms, "enhance"):
         rgb_for_abcde = _analysis_rgb(rgb_display)
     with _stage(st_ms, "segment"):
@@ -239,10 +284,11 @@ def run_pipeline(
     case_id: str | None = None,
     force: bool = False,
     preprocess: bool = True,  # noqa: ARG001 — kept for API compat; session/env controls ABCDE enhance
+    on_stage=None,
 ) -> PipelineResult:
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
-    stages: dict[str, int] = {}
+    stages: dict[str, int] = Stages(on_enter=on_stage)
     # ``strict_quality`` now only decides whether *advisory* quality notes (a
     # slightly soft or dim photo) also block. It is no longer forced on for the
     # kiosk: services.lesion_gate is what keeps junk input from reaching the
@@ -284,6 +330,11 @@ def run_pipeline(
         }
         if rgb_before is not None:
             result["rgb_before"] = rgb_before
+        # The scale the ABCDE numbers were actually measured at, which is not
+        # the caller's value once the frame has been capped (see the resize in
+        # run_pipeline). Storage persists this, so a saved scan records how it
+        # was measured rather than what was requested.
+        result["pixels_per_mm"] = pixels_per_mm
         result["stage_ms"] = stages
         _log_stages(stages)
         return result
@@ -294,6 +345,37 @@ def run_pipeline(
                 rgb_display = decode_image_bytes_to_rgb(image_bytes)
         except ValueError as exc:
             return {"blocked": True, "error": str(exc), "scan_result": None, "verdict": retake_verdict(None)}
+
+        # Cap the working resolution. Every stage after this scales with pixel
+        # count — enhance measured 3.6 s and segmentation 13.6 s on a 12 MP
+        # frame — while the Pi's own captures are a fixed 1024 centre crop
+        # (services/pi_camera.py), so the device was always cheap and only
+        # uploads were not. Capping HERE rather than only in the upload widget
+        # means no caller can route around it.
+        #
+        # The classifier sees the capped frame too: it is re-encoded below so
+        # the pixels the model reads are the pixels that were measured. It then
+        # resizes to 224 regardless, and INTER_AREA matches the reduction in
+        # backend/preprocessing.py, so this is one extra area-average step and
+        # not a different image.
+        if max(rgb_display.shape[:2]) > MAX_WORK_PX:
+            with _stage(stages, "resize"):
+                h, w = rgb_display.shape[:2]
+                scale = MAX_WORK_PX / float(max(h, w))
+                rgb_display = cv2.resize(
+                    rgb_display,
+                    (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+                    interpolation=cv2.INTER_AREA,
+                )
+                image_bytes = _rgb_to_jpeg_bytes(rgb_display)
+                # The scale MUST travel with the image. `pixels_per_mm` is a
+                # property of the capture, so shrinking the frame without
+                # shrinking it makes every millimetre measurement wrong by the
+                # resize factor — measured, the same lesion read 80.28 mm at
+                # full size and 25.58 mm capped, which moves the D tier, the
+                # composite risk score, and the "About N mm across" line a
+                # visitor reads.
+                pixels_per_mm = pixels_per_mm * scale
 
         rgb_before = rgb_display.copy() if _preprocess_debug() and _preprocess_for_abcde() else None
 
@@ -307,7 +389,9 @@ def run_pipeline(
             _log_stages(stages)
             return blocking
 
-        # Classifier always sees the original capture (matches HAM10000 / training preprocessing).
+        # Classifier sees the capture as-is (matches HAM10000 / training
+        # preprocessing) — resolution-capped above, never enhanced. The ABCDE
+        # path gets the colour-corrected, de-haired copy; the model does not.
         model_jpg = image_bytes
         try:
             with _stage(stages, "model"):
@@ -330,8 +414,17 @@ def run_pipeline(
             model_jpg=model_jpg,
         )
 
+    # NOTE: on this path the stop-checks below run *after* inference, unlike the
+    # upload path where they run before it. That is not an oversight that can be
+    # fixed here: `POST /scan` on the Pi captures and classifies in one call
+    # (scripts/pi_server.py), so there is no way to get the frame without also
+    # paying for the model. Splitting it needs a capture-only endpoint on the
+    # device. Timed so the cost is at least visible in the staff readout, which
+    # it was not before — neither this call nor the decode below was wrapped, so
+    # the Pi path's dominant stage was missing from every `scan stages` line.
     try:
-        scan_result = backend.scan(None)
+        with _stage(stages, "capture+model"):
+            scan_result = backend.scan(None)
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)
         _log_pi_error(backend, msg)
@@ -341,7 +434,8 @@ def run_pipeline(
         _log_pi_error(backend, msg)
         return {"blocked": False, "error": msg, "scan_result": scan_result}
     try:
-        rgb_display = decode_image_bytes_to_rgb(scan_result.image_jpg_bytes)
+        with _stage(stages, "decode"):
+            rgb_display = decode_image_bytes_to_rgb(scan_result.image_jpg_bytes)
     except ValueError as exc:
         msg = str(exc)
         _log_pi_error(backend, msg)
