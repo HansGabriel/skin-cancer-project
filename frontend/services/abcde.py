@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
+
+# See services/pipeline.py: NotRequired is 3.11+, and the deployed
+# interpreter is not guaranteed to be. typing_extensions ships with Streamlit.
+try:  # pragma: no cover - trivial version shim
+    from typing import NotRequired
+except ImportError:  # Python < 3.11
+    from typing_extensions import NotRequired
 
 import cv2
 import numpy as np

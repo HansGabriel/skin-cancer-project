@@ -6,7 +6,16 @@ import logging
 import os
 import time
 from contextlib import contextmanager
-from typing import Any, Iterator, NotRequired, TypedDict
+from typing import Any, Iterator, TypedDict
+
+# NotRequired moved into typing only in 3.11. Streamlit Community Cloud picks
+# its own interpreter unless runtime.txt pins one, so importing it from typing
+# made the whole app fail to start there with a redacted ImportError that
+# pointed at an unrelated module. typing_extensions ships with Streamlit.
+try:  # pragma: no cover - trivial version shim
+    from typing import NotRequired
+except ImportError:  # Python < 3.11
+    from typing_extensions import NotRequired
 
 import cv2
 import numpy as np
