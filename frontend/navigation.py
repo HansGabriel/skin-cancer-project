@@ -61,9 +61,42 @@ def _discard_result_on_leave(target: Route) -> None:
         # same boundary or the next visitor lands in step 2 on the previous
         # visitor's photo.
         st.session_state.pop("capture_image_bytes", None)
+        _drop_photo_caches()
+
+
+# The live preview is the most expensive thing the device does, and only one
+# screen shows it.
+_NEEDS_CAMERA: tuple[Route, ...] = ("camera",)
+
+
+def _release_camera_on_leave(target: Route) -> None:
+    """Hand the camera back when the screen that needs it is left behind."""
+    if st.session_state.get("route") in _NEEDS_CAMERA and target not in _NEEDS_CAMERA:
+        from services.pi_camera import release_camera
+
+        release_camera()
+
+
+def _drop_photo_caches() -> None:
+    """Forget every memoised copy of the photo.
+
+    The capture readings and the aperture thumbnail are both memoised on the
+    raw JPEG bytes, which means an lru_cache holds a participant's skin after
+    session state has dropped it. docs/PRIVACY.md promises otherwise, so the
+    caches clear on the same boundary.
+
+    Delegated to ``services.photo_cache`` rather than importing the two cache
+    owners by name. The router has no business knowing which components memoise
+    a capture, and the "Take another" buttons inside the camera view need the
+    same call without going near this module.
+    """
+    from services.photo_cache import forget_photos
+
+    forget_photos()
 
 
 def navigate(route: Route, *, rerun: bool = True, **session_updates: object) -> None:
+    _release_camera_on_leave(route)
     _discard_result_on_leave(route)
     st.session_state["route"] = route
     for key, value in session_updates.items():

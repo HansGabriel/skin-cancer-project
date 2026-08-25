@@ -6,7 +6,10 @@ Tested host for the public smoke-test deployment.
 
 ### 1. Prepare the repo
 
-- Branch with the v2 UI (e.g. `feat/new-design`) pushed to GitHub.
+- The branch you are deploying pushed to GitHub. This is `main` — `feat/new-design`
+  is from 2026-06 and contains no `launch_kiosk.sh`, `run_pi.sh`, `EPIVUE.desktop`
+  or systemd unit at all, so a Pi checked out there cannot run the kiosk.
+  Check with `git rev-parse --abbrev-ref HEAD` on the Pi before debugging anything else.
 - Confirm the slim deps file exists at repo root: `streamlit-requirements.txt`.
 - Confirm `.streamlit/config.toml` caps uploads at 8 MB.
 
@@ -142,7 +145,9 @@ systemctl --user enable dermascan-kiosk.service
 
 - `Restart=on-failure` + `RestartSec=5` relaunch the kiosk if it exits nonzero
   (e.g. `launch_kiosk.sh`'s 40s Streamlit watchdog) — but not after a clean exit
-  via the on-screen Exit button.
+  via **Settings -> Exit**, which is behind the staff passcode. There is no Exit
+  key in the bottom navigation: a sixth key left ~77px each on the 1024px panel,
+  which is narrower than "New check" renders.
 - The unit is `WantedBy=graphical-session.target`, so it starts with the desktop
   and `PartOf=` stops it when the session ends. **That target has to be
   activated by the session**, via labwc's documented bridge line. labwc runs

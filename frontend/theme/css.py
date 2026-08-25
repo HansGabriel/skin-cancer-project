@@ -76,8 +76,17 @@ def inject_global_css() -> None:
    eyebrow. Neither belongs on a device a member of the public walks up to. The
    sidebar's collapsed control is a separate element and is left alone, so the
    power-user sidebar is still reachable on a PC. */
-[data-testid="stToolbar"],[data-testid="stStatusWidget"],
-[data-testid="stDecoration"]{{display:none!important;}}
+[data-testid="stToolbar"],[data-testid="stDecoration"]{{display:none!important;}}
+/* The running indicator stays. On the Pi a rerun can take seconds, and hiding it
+   left a tap with no acknowledgement at all — so people tapped again, which is
+   most of the "buttons need two taps" report. Restyled to the instrument palette
+   and made inert so nobody can tap the Stop control it carries. */
+[data-testid="stStatusWidget"]{{display:flex!important;pointer-events:none!important;
+  background:{T.field}!important;border:1px solid {T.field_rule}!important;
+  border-radius:999px!important;box-shadow:none!important;opacity:.94!important;
+  font-family:{T.font_family}!important;font-size:{T.font_2xs}px!important;
+  letter-spacing:.1em!important;}}
+[data-testid="stStatusWidget"] *{{color:{T.field_ink}!important;fill:{T.field_ink}!important;}}
 .stApp a{{color:{T.violet};}}
 h1,h2,h3,h4,h5{{font-family:{T.font_family}!important;color:{T.text}!important;
   letter-spacing:-.015em;font-weight:700;}}
@@ -168,10 +177,12 @@ hr{{margin:{T.space_8}px 0!important;}}
 .st-key-epv-page-dark .ds-foot-tag{{color:{T.field_ink}!important;}}
 .st-key-epv-page-dark .ds-foot-text,.st-key-epv-page-dark .stCaption,
 .st-key-epv-page-dark [data-testid="stCaptionContainer"]{{color:{T.field_muted}!important;}}
-.st-key-epv-page-dark .stButton>button{{background:none!important;color:{T.field_ink}!important;
+.st-key-epv-page-dark .stButton button{{background:none!important;color:{T.field_ink}!important;
   border-color:rgba(232,238,246,.22)!important;}}
-.st-key-epv-page-dark .stButton>button:hover{{border-color:{T.reticle}!important;
-  color:{T.field_ink}!important;}}
+@media (hover:hover){{
+  .st-key-epv-page-dark .stButton button:hover{{border-color:{T.reticle}!important;
+    color:{T.field_ink}!important;}}
+}}
 .st-key-epv-page-dark [data-testid="stExpander"]{{background:none!important;
   border-color:{T.field_rule}!important;}}
 .st-key-epv-page-dark [data-testid="stExpander"] summary{{color:{T.field_muted}!important;}}
@@ -186,8 +197,8 @@ hr{{margin:{T.space_8}px 0!important;}}
    the contract:
 
      .st-key-epv-band  -> [header] [instrument body] [nav]
-     .st-key-epv-page  -> [screen] [safety strip]
-     .st-key-epv-body  -> [...screen content..., actions last]
+     .st-key-epv-page  -> [screen] [actions] [safety strip]
+     .st-key-epv-body  -> [...screen content...]
 
    Growing the middle child is what pins the ones after it. */
 .st-key-epv-band > *:nth-child(2){{flex:1 1 auto!important;min-height:0!important;}}
@@ -202,27 +213,53 @@ hr{{margin:{T.space_8}px 0!important;}}
    here rather than on the band keeps the strip pinned and visible. */
 .st-key-epv-body{{min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;}}
 .st-key-epv-inst-body{{justify-content:center!important;gap:{T.space_12}px!important;}}
-/* The actions row is always the last thing a screen renders. */
-.st-key-epv-body > *:last-child{{margin-top:auto!important;}}
+
+/* The actions row is a sibling of the scroll box, not its last child. It used
+   to sit inside, pinned with margin-top:auto — which meant that after a rerun
+   the browser scrolled the just-tapped button back into view and dragged the
+   panel to the bottom, so the results screen opened past its own headline.
+   Outside the scrollport it cannot be scrolled away from, and the buttons stay
+   reachable on a screen taller than the panel. */
+.st-key-epv-actions{{flex:0 0 auto!important;padding-top:{T.space_12}px!important;}}
+
+/* A real scrollbar rather than an overlay one: on a touchscreen with no wheel
+   and no hover, it is the only thing that says "there is more below". Narrow
+   enough not to be a target, visible enough to be a cue.
+
+   Both syntaxes are set on purpose. `scrollbar-width`/`scrollbar-color` are the
+   standard properties and are what WebKitGTK honours; the ::-webkit- rules are
+   what Chrome uses. Neither alone covers both the kiosk and the web app.
+
+   The bottom padding stops the last card being sheared flush against the
+   actions row, which reads as a rendering fault rather than as more content. */
+.st-key-epv-body{{scrollbar-width:thin!important;
+  scrollbar-color:{T.border} transparent!important;
+  padding-bottom:{T.space_8}px!important;}}
+.st-key-epv-page-dark .st-key-epv-body{{scrollbar-color:rgba(232,238,246,.28) transparent!important;}}
+.st-key-epv-body::-webkit-scrollbar{{width:6px;}}
+.st-key-epv-body::-webkit-scrollbar-track{{background:transparent;}}
+.st-key-epv-body::-webkit-scrollbar-thumb{{background:{T.border};border-radius:999px;}}
+.st-key-epv-page-dark .st-key-epv-body::-webkit-scrollbar-thumb{{
+  background:rgba(232,238,246,.28);}}
 
 /* ---------- Instrument band internals ---------- */
 .ds-inst-head{{display:flex;align-items:center;justify-content:space-between;
   gap:{T.space_12}px;padding:0 {T.band_pad_x}px;}}
 .ds-inst-brand{{display:flex;align-items:center;gap:{T.space_8}px;font-weight:700;
-  letter-spacing:.17em;color:{T.field_ink};font-size:{T.font_sm}px;}}
+  letter-spacing:.17em;color:{T.field_ink};font-size:{T.font_sm}px!important;}}
 .ds-inst-dot{{width:9px;height:9px;border-radius:999px;background:{T.reticle};
   box-shadow:0 0 0 4px rgba(61,219,217,.16);}}
 .ds-inst-meta{{display:flex;align-items:center;gap:{T.space_8}px;color:{T.field_muted};
-  font-size:{T.font_xs}px;white-space:nowrap;}}
+  font-size:{T.font_xs}px!important;white-space:nowrap;}}
 .ds-inst-pill{{border:1px solid rgba(232,238,246,.18);border-radius:999px;
-  padding:3px 9px;font-weight:600;letter-spacing:.13em;font-size:{T.font_2xs}px;}}
+  padding:3px 9px;font-weight:600;letter-spacing:.13em;font-size:{T.font_2xs}px!important;}}
 .ds-inst-body{{flex:1;min-height:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:{T.space_12}px;
   padding:{T.space_8}px {T.band_pad_x}px;}}
 .ds-inst-caption{{color:{T.field_muted};font-weight:600;letter-spacing:.16em;
-  text-align:center;font-size:{T.font_2xs}px;text-transform:uppercase;}}
+  text-align:center;font-size:{T.font_2xs}px!important;text-transform:uppercase;}}
 .ds-inst-legend{{display:flex;justify-content:center;gap:{T.space_12}px;
-  color:{T.field_body};font-size:{T.font_2xs}px;margin-top:{T.space_4}px;}}
+  color:{T.field_body};font-size:{T.font_2xs}px!important;margin-top:{T.space_4}px;}}
 .ds-inst-legend span{{display:inline-flex;align-items:center;gap:4px;}}
 .ds-inst-swatch{{width:14px;height:3px;border-radius:2px;display:inline-block;}}
 /* The saved-spot timeline: one dot per scan, the newest in reticle cyan. */
@@ -235,98 +272,139 @@ hr{{margin:{T.space_8}px 0!important;}}
 /* Nav keys live at the instrument's foot: flat, no fill, a cyan cap when live. */
 .st-key-epv-nav{{border-top:1px solid {T.field_rule};}}
 .st-key-epv-nav [data-testid="stHorizontalBlock"]{{gap:0!important;}}
-.st-key-epv-nav .stButton>button{{
+.st-key-epv-nav .stButton button{{
   height:{T.nav_h}px!important;min-height:{T.nav_h}px!important;width:100%!important;
   background:none!important;border:0!important;border-radius:0!important;
   border-left:1px solid {T.field_rule}!important;border-top:2px solid transparent!important;
   color:{T.field_muted}!important;font-weight:600!important;letter-spacing:.04em!important;
   font-size:{T.font_sm}px!important;box-shadow:none!important;padding:0 4px!important;
-  white-space:nowrap!important;}}
-.st-key-epv-nav [data-testid="stColumn"]:first-child .stButton>button{{border-left:0!important;}}
-.st-key-epv-nav .stButton>button:hover{{color:{T.field_ink}!important;
-  background:rgba(232,238,246,.05)!important;}}
-.st-key-epv-nav .stButton>button[kind="primary"]{{
+  /* A label must never be able to overflow into the next key. `nowrap` with no
+     overflow rule is what produced "New checkSaved": at 5 keys across a 461px
+     band each key is ~92px, and "New check" sets ~88px before letter-spacing.
+     Wrapping into the 74px key is the graceful answer; overflow:hidden is the
+     guarantee that no future label can collide however long it gets. */
+  white-space:normal!important;overflow:hidden!important;line-height:1.15!important;
+  hyphens:none!important;display:flex!important;align-items:center!important;
+  justify-content:center!important;text-align:center!important;}}
+.st-key-epv-nav [data-testid="stColumn"]:first-child .stButton button{{border-left:0!important;}}
+@media (hover:hover){{
+  .st-key-epv-nav .stButton button:hover{{color:{T.field_ink}!important;
+    background:rgba(232,238,246,.05)!important;}}
+}}
+/* Touch has no hover, so the press state carries the whole acknowledgement. It
+   paints on touchstart, client-side, so it lands instantly even while the
+   script thread is blocked by a scan. */
+.st-key-epv-nav .stButton button:active{{color:{T.field_ink}!important;
+  background:rgba(232,238,246,.12)!important;}}
+.st-key-epv-nav .stButton button[kind="primary"]{{
   color:#FFFFFF!important;border-top:2px solid {T.reticle}!important;background:none!important;}}
-.st-key-epv-nav .stButton>button:focus-visible{{outline:3px solid {T.reticle}!important;
+.st-key-epv-nav .stButton button:focus-visible{{outline:3px solid {T.reticle}!important;
   outline-offset:-3px!important;}}
 
 /* ---------- Page band internals ---------- */
+/* Every .ds-* font-size carries !important, and for some of them it is
+   load-bearing. Streamlit's markdown wrapper ships
+   `p,ol,ul,dl{{font-size:inherit}}` scoped by one emotion class — specificity
+   (0,1,1), which beats every single-class rule in this file. Measured on the
+   panel: .ds-verdict-head, sized 36px here, computed to 16px, and .ds-advice at
+   22px did the same. The whole page-band type scale collapsed to one size,
+   which is most of why the screens read as flat and crowded.
+
+   It is applied to the classes rendered as <span> or <div> too, where that
+   Streamlit rule cannot reach them and the !important therefore changes
+   nothing today. That is deliberate: which element a component emits is a
+   detail of the component, not of the type scale, and a class quietly becoming
+   a <p> should not silently resize it. The font-family declarations a hundred
+   lines up already carry !important for the same reason. */
+
 .ds-eyebrow{{font-weight:600;letter-spacing:.18em;color:{T.text_muted};
-  font-size:{T.font_xs}px;text-transform:uppercase;margin:0;}}
+  font-size:{T.font_xs}px!important;text-transform:uppercase;margin:0;}}
 .ds-title{{margin:{T.space_12}px 0 0;font-weight:700;letter-spacing:-.022em;
-  line-height:1.05;color:{T.text};font-size:{T.font_2xl}px;}}
+  line-height:1.05;color:{T.text};font-size:{T.font_2xl}px!important;}}
 .ds-lede{{margin:{T.space_12}px 0 0;color:{T.text_muted};line-height:1.5;
-  max-width:42ch;font-size:{T.font_md}px;}}
+  max-width:42ch;font-size:{T.font_md}px!important;}}
 /* The middle region of a screen: centred in whatever space the eyebrow/title
    above and the pinned actions below leave over. */
 .ds-mid{{padding:{T.space_12}px 0 0;margin:0;width:100%;box-sizing:border-box;
   display:flex;flex-direction:column;}}
 .ds-row{{width:100%;box-sizing:border-box;display:flex;align-items:center;
   gap:{T.space_16}px;padding:{T.space_12}px 0;border-top:1px solid {T.hairline};
-  font-size:{T.font_sm}px;}}
+  font-size:{T.font_sm}px!important;}}
 .ds-row:last-child{{border-bottom:1px solid {T.hairline};}}
 .ds-row-num{{flex:0 0 auto;width:32px;height:32px;border-radius:999px;background:{T.chip};
   color:{T.violet};display:flex;align-items:center;justify-content:center;
-  font-weight:700;font-size:{T.font_xs}px;}}
+  font-weight:700;font-size:{T.font_xs}px!important;}}
 .ds-row-grow{{flex:1;min-width:0;}}
 .ds-dot{{width:7px;height:7px;border-radius:999px;background:{T.reticle};flex:0 0 auto;}}
 .ds-note{{margin-top:{T.space_12}px;padding:{T.space_12}px {T.space_16}px;
   border-radius:{T.radius_md}px;}}
-.ds-note-label{{font-weight:600;letter-spacing:.16em;font-size:{T.font_2xs}px;
+.ds-note-label{{font-weight:600;letter-spacing:.16em;font-size:{T.font_2xs}px!important;
   text-transform:uppercase;}}
-.ds-note-body{{margin-top:{T.space_4}px;color:{T.text};line-height:1.45;font-size:{T.font_sm}px;}}
+.ds-note-body{{margin-top:{T.space_4}px;color:{T.text};line-height:1.45;font-size:{T.font_sm}px!important;}}
 .ds-sign{{width:100%;box-sizing:border-box;display:flex;align-items:center;
   gap:{T.space_12}px;padding:{T.space_8}px 0;border-bottom:1px solid {T.hairline};
-  font-size:{T.font_sm}px;}}
+  font-size:{T.font_sm}px!important;}}
 .ds-sign-mark{{flex:0 0 auto;width:14px;height:3px;border-radius:2px;}}
 .ds-chiprow{{display:flex;gap:{T.space_8}px;padding-top:{T.space_12}px;flex-wrap:wrap;}}
 .ds-chip{{padding:6px 13px;border-radius:999px;background:{T.chip};color:{T.text_muted};
-  font-weight:600;font-size:{T.font_xs}px;}}
+  font-weight:600;font-size:{T.font_xs}px!important;}}
 .ds-chip.is-on{{background:{T.violet};color:#FFFFFF;}}
 
 /* The permanent safety strip at the foot of the page band. */
 .ds-foot{{width:100%;box-sizing:border-box;display:flex;align-items:center;
   gap:{T.space_8}px;padding:{T.space_12}px 0;border-top:1px solid {T.hairline};}}
 .ds-foot-tag{{flex:0 0 auto;font-weight:700;letter-spacing:.14em;white-space:nowrap;
-  color:{T.text};font-size:{T.font_2xs}px;text-transform:uppercase;}}
-.ds-foot-text{{color:{T.text_muted};line-height:1.4;font-size:{T.font_xs}px;}}
+  color:{T.text};font-size:{T.font_2xs}px!important;text-transform:uppercase;}}
+.ds-foot-text{{color:{T.text_muted};line-height:1.4;font-size:{T.font_xs}px!important;}}
 
 /* ---------- The staff readout ---------- */
 .ds-staff-row{{width:100%;box-sizing:border-box;display:flex;align-items:center;
   gap:{T.space_12}px;padding:{T.space_8}px 0;border-top:1px solid {T.field_rule};
-  font-size:{T.font_sm}px;}}
+  font-size:{T.font_sm}px!important;}}
 .ds-staff-letter{{flex:0 0 auto;width:26px;color:{T.reticle};font-weight:700;}}
 .ds-staff-name{{flex:1;min-width:0;color:{T.field_body};}}
 .ds-staff-value{{flex:0 0 auto;min-width:72px;text-align:right;color:{T.field_ink};
   font-weight:700;font-variant-numeric:tabular-nums;}}
 .ds-staff-pill{{flex:0 0 auto;min-width:140px;text-align:right;font-weight:700;
-  letter-spacing:.08em;font-size:{T.font_2xs}px;}}
+  letter-spacing:.08em;font-size:{T.font_2xs}px!important;}}
 .ds-staff-track{{flex:1;height:8px;border-radius:999px;background:rgba(232,238,246,.12);
   overflow:hidden;}}
 .ds-staff-fill{{display:block;height:100%;border-radius:999px;}}
 .ds-staff-meta{{color:{T.field_muted};line-height:1.5;font-variant-numeric:tabular-nums;
-  font-size:{T.font_2xs}px;padding:{T.space_8}px 0 {T.space_12}px;}}
+  font-size:{T.font_2xs}px!important;padding:{T.space_8}px 0 {T.space_12}px;}}
 
 /* ---------- Buttons ---------- */
-.stButton>button{{border-radius:{T.radius_sm}px!important;background:{T.bg}!important;
+.stButton button{{border-radius:{T.radius_sm}px!important;background:{T.bg}!important;
   color:{T.text}!important;border:1px solid {T.border}!important;
   min-height:{T.touch_min}px!important;font-family:{T.font_family}!important;
   font-size:{T.font_base}px!important;font-weight:600!important;letter-spacing:.01em!important;
-  padding:10px 18px!important;box-shadow:none!important;transition:border-color .15s ease;}}
-.stButton>button:hover{{border-color:{T.violet}!important;color:{T.violet}!important;}}
-.stButton>button:focus-visible{{outline:3px solid {T.reticle}!important;outline-offset:2px!important;}}
-.stButton>button[kind="primary"]{{background:{T.violet}!important;color:#fff!important;
+  padding:10px 18px!important;box-shadow:none!important;
+  /* `manipulation` drops the 300ms double-tap-zoom wait and stops a tap with a
+     few pixels of finger travel being claimed as a pan by the scroll container
+     one level up. Both were costing taps on the panel. */
+  touch-action:manipulation!important;-webkit-tap-highlight-color:transparent!important;
+  transition:border-color .15s ease,background-color .1s ease;}}
+@media (hover:hover){{
+  .stButton button:hover{{border-color:{T.violet}!important;color:{T.violet}!important;}}
+}}
+.stButton button:active{{background:{T.violet_tint}!important;border-color:{T.violet}!important;
+  color:{T.violet}!important;}}
+.stButton button:focus-visible{{outline:3px solid {T.reticle}!important;outline-offset:2px!important;}}
+.stButton button[kind="primary"]{{background:{T.violet}!important;color:#fff!important;
   border:1px solid {T.violet}!important;box-shadow:{T.shadow_sm}!important;}}
-.stButton>button[kind="primary"]:hover{{background:{T.violet_strong}!important;color:#fff!important;}}
-.stButton>button:disabled{{opacity:.45!important;}}
+@media (hover:hover){{
+  .stButton button[kind="primary"]:hover{{background:{T.violet_strong}!important;color:#fff!important;}}
+}}
+.stButton button[kind="primary"]:active{{background:{T.violet_strong}!important;color:#fff!important;}}
+.stButton button:disabled{{opacity:.45!important;}}
 /* The two pinned actions are the tallest targets on a screen. */
-.st-key-epv-actions .stButton>button{{min-height:{T.touch_min + 8}px!important;
+.st-key-epv-actions .stButton button{{min-height:{T.touch_min + 8}px!important;
   border-radius:{T.radius_md}px!important;font-size:{T.font_md}px!important;}}
 
 /* ---------- Structure ---------- */
 .ds-card{{background:{T.bg};border:1px solid {T.outline};border-radius:{T.radius_md}px;
   padding:{T.space_16}px;margin:{T.space_12}px 0;}}
-.ds-section-title{{font-size:{T.font_2xs}px;letter-spacing:.14em;text-transform:uppercase;
+.ds-section-title{{font-size:{T.font_2xs}px!important;letter-spacing:.14em;text-transform:uppercase;
   color:{T.text_muted};font-weight:700;margin:0 0 {T.space_8}px;}}
 .ds-rule{{border:0;border-top:1px solid {T.outline};margin:{T.space_16}px 0;}}
 .ds-empty{{text-align:center;color:{T.text_muted};padding:{T.space_24}px;}}
@@ -341,7 +419,7 @@ hr{{margin:{T.space_8}px 0!important;}}
 .ds-aperture-ring.is-empty{{border-style:dashed;}}
 .ds-aperture-verdict{{position:absolute;inset:-6px;border-radius:50%;pointer-events:none;
   border:4px solid currentColor;}}
-.ds-aperture-hint{{color:{T.field_ink};font-size:{T.font_sm}px;text-align:center;
+.ds-aperture-hint{{color:{T.field_ink};font-size:{T.font_sm}px!important;text-align:center;
   padding:0 {T.space_24}px;line-height:1.5;opacity:.85;}}
 /* Reticle ticks: four short marks at the cardinal points, like a graticule. */
 .ds-tick{{position:absolute;background:{T.reticle};opacity:.75;}}
@@ -353,28 +431,28 @@ hr{{margin:{T.space_8}px 0!important;}}
 .ds-aperture-badge{{position:absolute;left:50%;bottom:6%;transform:translateX(-50%);
   display:flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;
   background:rgba(2,6,13,.6);color:{T.field_ink};font-weight:600;letter-spacing:.14em;
-  font-size:{T.font_2xs}px;}}
+  font-size:{T.font_2xs}px!important;}}
 .ds-aperture-live{{width:6px;height:6px;border-radius:999px;background:{T.reticle};
   animation:dsPulse 1.4s ease-in-out infinite;}}
 @keyframes dsPulse{{0%,100%{{opacity:1;}}50%{{opacity:.3;}}}}
 @keyframes dsSpin{{to{{transform:rotate(360deg);}}}}
 
 /* ---------- Verdict ---------- */
-.ds-verdict-head{{font-size:{T.verdict_font}px;font-weight:700;letter-spacing:-.024em;
+.ds-verdict-head{{font-size:{T.verdict_font}px!important;font-weight:700;letter-spacing:-.024em;
   line-height:1.02;margin:0;padding-top:{T.space_12}px;}}
 .ds-verdict-mark{{width:44px;height:4px;border-radius:2px;margin:{T.space_8}px 0 {T.space_12}px;}}
-.ds-verdict-body{{font-size:{T.font_base}px;color:{T.text_muted};margin:0 0 {T.space_8}px;line-height:1.45;}}
+.ds-verdict-body{{font-size:{T.font_base}px!important;color:{T.text_muted};margin:0 0 {T.space_8}px;line-height:1.45;}}
 /* The one serif element: the sentence addressed to a person. Capped at a
    comfortable measure — the page band is wide enough to run to 100 characters
    a line, which is past the point where the eye loses the next line. */
-.ds-advice{{font-family:{T.serif_family};font-size:{T.advice_font}px;line-height:1.45;
+.ds-advice{{font-family:{T.serif_family};font-size:{T.advice_font}px!important;line-height:1.45;
   color:{T.text};margin:0;max-width:44ch;}}
 .ds-gap{{height:{T.space_16}px;}}
-.ds-reason{{font-size:{T.font_sm}px;color:{T.text_muted};margin-top:{T.space_8}px;}}
+.ds-reason{{font-size:{T.font_sm}px!important;color:{T.text_muted};margin-top:{T.space_8}px;}}
 
 /* ---------- Live capture meters ---------- */
 .ds-meter{{display:flex;align-items:center;gap:{T.space_16}px;padding:{T.space_12}px 0;
-  font-size:{T.font_sm}px;color:{T.text_muted};border-top:1px solid {T.hairline};}}
+  font-size:{T.font_sm}px!important;color:{T.text_muted};border-top:1px solid {T.hairline};}}
 .ds-meter-name{{flex:0 0 auto;min-width:110px;}}
 .ds-meter-bars{{flex:1;display:flex;gap:4px;}}
 .ds-meter-bar{{flex:1;height:7px;border-radius:3px;background:{T.hairline};}}
@@ -386,7 +464,7 @@ hr{{margin:{T.space_8}px 0!important;}}
   background:{T.hairline};overflow:hidden;}}
 .ds-progress-fill{{height:100%;background:{T.violet};}}
 .ds-step{{display:flex;align-items:center;gap:{T.space_12}px;padding:{T.space_8}px 0;
-  font-size:{T.font_sm}px;}}
+  font-size:{T.font_sm}px!important;}}
 .ds-step-dot{{width:9px;height:9px;border-radius:999px;background:{T.outline};flex:0 0 auto;}}
 .ds-step.is-done .ds-step-dot{{background:{T.success};}}
 .ds-step.is-now{{color:{T.text_muted};}}
@@ -394,9 +472,9 @@ hr{{margin:{T.space_8}px 0!important;}}
 
 /* ---------- Lists ---------- */
 .ds-case-row,.ds-scan-row{{padding:{T.space_12}px 0;border-bottom:1px solid {T.outline};
-  font-size:{T.font_sm}px;}}
+  font-size:{T.font_sm}px!important;}}
 .ds-folder-card{{border:1px solid {T.outline};border-radius:{T.radius_sm}px;
-  padding:{T.space_12}px {T.space_12}px;margin-bottom:{T.space_4}px;font-size:{T.font_sm}px;}}
+  padding:{T.space_12}px {T.space_12}px;margin-bottom:{T.space_4}px;font-size:{T.font_sm}px!important;}}
 .ds-history-scroll{{display:flex;flex-wrap:nowrap;gap:{T.space_12}px;overflow-x:auto;
   padding:{T.space_8}px 0 {T.space_16}px;-webkit-overflow-scrolling:touch;}}
 .ds-history-scroll .ds-folder-card{{min-width:120px;flex:0 0 auto;}}
@@ -407,22 +485,22 @@ hr{{margin:{T.space_8}px 0!important;}}
 .ds-thumb{{flex:0 0 auto;width:46px;height:46px;border-radius:999px;background:{T.field};
   background-size:cover;background-position:center;}}
 .ds-pill{{flex:0 0 auto;padding:5px 11px;border-radius:999px;font-weight:700;
-  letter-spacing:.06em;font-size:{T.font_2xs}px;white-space:nowrap;}}
+  letter-spacing:.06em;font-size:{T.font_2xs}px!important;white-space:nowrap;}}
 
 /* ---------- Brand bar (legacy screens) ---------- */
 .ds-brand{{display:flex;align-items:center;gap:{T.space_8}px;font-weight:700;
-  font-size:{T.font_md}px;color:{T.text};letter-spacing:.02em;}}
+  font-size:{T.font_md}px!important;color:{T.text};letter-spacing:.02em;}}
 .ds-brand-dot{{width:10px;height:10px;border-radius:999px;background:{T.reticle};
   box-shadow:0 0 0 3px {T.violet_tint};}}
-.ds-brand-sub{{font-size:{T.font_xs}px;color:{T.text_muted};font-weight:400;}}
+.ds-brand-sub{{font-size:{T.font_xs}px!important;color:{T.text_muted};font-weight:400;}}
 .ds-offline-pill{{margin-left:{T.space_8}px;padding:2px 10px;border-radius:999px;
-  background:{T.surface};color:{T.text_muted};font-size:{T.pill_font}px;font-weight:600;
+  background:{T.surface};color:{T.text_muted};font-size:{T.pill_font}px!important;font-weight:600;
   letter-spacing:.06em;vertical-align:middle;}}
 .ds-iconbtn{{display:flex;justify-content:center;color:{T.text_muted};}}
-.ds-disclaimer{{font-size:{T.font_2xs}px;letter-spacing:.14em;text-transform:uppercase;
+.ds-disclaimer{{font-size:{T.font_2xs}px!important;letter-spacing:.14em;text-transform:uppercase;
   color:{T.text_muted};text-align:center;}}
-.ds-disclaimer-sub{{font-size:{T.font_sm}px;color:{T.text_muted};text-align:center;}}
-.ds-app-bar-time{{font-size:{T.font_xs}px;color:{T.text_muted};text-align:right;}}
+.ds-disclaimer-sub{{font-size:{T.font_sm}px!important;color:{T.text_muted};text-align:center;}}
+.ds-app-bar-time{{font-size:{T.font_xs}px!important;color:{T.text_muted};text-align:right;}}
 .ds-rec-card{{background:{T.surface};border:1px solid {T.outline};
   border-radius:{T.radius_md}px;padding:{T.space_16}px;margin:{T.space_16}px 0;}}
 
@@ -447,7 +525,7 @@ hr{{margin:{T.space_8}px 0!important;}}
   .st-key-epv-shell > div[data-testid="stHorizontalBlock"],
   .st-key-epv-shell > div > div[data-testid="stHorizontalBlock"]{{flex-direction:column!important;}}
   .st-key-epv-shell [data-testid="stColumn"]{{width:100%!important;flex:1 1 100%!important;}}
-  .ds-verdict-head{{font-size:{T.font_xl}px;}}
+  .ds-verdict-head{{font-size:{T.font_xl}px!important;}}
   .ds-aperture{{max-width:240px;}}
 }}
 @media (prefers-reduced-motion:reduce){{

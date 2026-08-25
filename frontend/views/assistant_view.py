@@ -37,6 +37,7 @@ from backend.assistant import (
     suggested_questions,
 )
 from backend.contracts import ScanResult
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
 from services.format import tone_chip, tone_colors
@@ -289,7 +290,7 @@ def render_assistant_view() -> None:
         if typed:
             _ask(typed.strip())
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         back, clear = st.columns([3, 2], gap="small")
         with back:
             has_result = isinstance(st.session_state.get("last_result"), dict)

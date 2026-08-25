@@ -17,6 +17,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
 from services.format import tone_colors
@@ -75,7 +76,7 @@ def render_history_view() -> None:
             'choose "Save this scan" to keep a photo to compare against later.</p></div>',
             unsafe_allow_html=True,
         )
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button(
                 "Add a new check", type="primary", key="hist_new", use_container_width=True
             ):
@@ -117,7 +118,7 @@ def render_history_view() -> None:
     if not shown:
         st.markdown('<p class="ds-reason">No spots match that search.</p>', unsafe_allow_html=True)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         add, folder_btn = st.columns([3, 2], gap="small")
         with add:
             if st.button(

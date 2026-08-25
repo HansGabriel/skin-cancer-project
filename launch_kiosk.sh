@@ -44,7 +44,18 @@ sleep 1
 export SKIN_QUALITY_V_MIN=25
 export SKIN_QUALITY_V_MAX=235
 
-# Tell the app it's in kiosk mode so it shows the on-screen Exit button.
+# No file watcher. `fileWatcherType` is unset by default, which resolves to
+# "auto" — and because watchdog is not in requirements-pi.txt, Streamlit falls
+# back to a polling watcher that stats every source file on a 0.2s cycle, off
+# the SD card, for the life of the process. A device that is not being edited
+# gains nothing from it. Set here rather than in .streamlit/config.toml so the
+# Mac keeps hot reload and Streamlit Cloud is untouched.
+# Editing code on the Pi now needs a restart, which it effectively did anyway.
+export STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+
+# Kiosk mode: staff passcode defaults, no free-text inputs, offline pill, and
+# the Exit control in Settings. (There is no longer an Exit key in the nav —
+# see components/bottom_nav.py for why.)
 export SKIN_KIOSK=1
 
 # Show the assistant's answers before a clinician has signed them off. All 18
