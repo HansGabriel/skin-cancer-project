@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from typing import Literal
 from functools import lru_cache
 from pathlib import Path
 
@@ -66,8 +67,128 @@ _MIN_CONTRAST = float(os.environ.get("SKIN_GATE_MIN_CONTRAST", "5.0"))
 # every image, and any fixed number is meaningless against a covariance that
 # depends on which images the stats were built from.
 _MAX_OOD_ENV = os.environ.get("SKIN_GATE_MAX_OOD")
+# How far past the furthest *training* image a photo has to sit before it is
+# called out-of-distribution.
+#
+# The threshold used to be p99 x 1.1, which is the statistically tidy answer and
+# the wrong one here. The statistics are built from HAM10000 — contact
+# dermatoscope, polarised or oil-immersion, a 15-20mm field. The kiosk is a bare
+# fixed-focus camera module under room light. Its captures are genuinely further
+# from that centroid than a held-out dermoscopy image is, so a line drawn just
+# past p99 would refuse real spots on day one.
+#
+# So the line is drawn past the *furthest image the model was actually trained
+# on* (the 100th percentile), with a margin on top. That only catches gross
+# outliers — a face, a wall, a screen — which is what this stage is for; the
+# cheap checks above handle the rest. Raise or lower it with SKIN_GATE_MAX_OOD
+# once real captures have been logged; every scan records its distance.
+_OOD_MARGIN = float(os.environ.get("SKIN_GATE_OOD_MARGIN", "1.25"))
 
 _WORK_PX = 384  # analysis resolution — keeps the gate fast on the Pi
+
+# --- "one spot, or a scene?" ------------------------------------------------
+# A lesion is one dark region on skin. A face is several — eyes, nostrils, lips
+# — and that is the whole reason a face passes every other check here: stage 2
+# asks "is there a distinct dark blob on this skin", and a face answers yes
+# emphatically. Measured on a real portrait the segmenter landed on 0.176 of the
+# frame against an ideal lesion size of 0.18, and a Lab contrast of 63 against a
+# threshold of 5. It thought it had found a textbook lesion.
+#
+# So the discriminator is not size or contrast, it is *how the dark area is
+# distributed*: one blob holding essentially all of it, or several sharing it.
+# Dominance (largest blob's share of dark-blob area) is used rather than a raw
+# count because it is robust to threshold noise — a single lesion scores 1.00
+# whether or not speckle adds blobs around it.
+#
+# Measured, synthetic fixtures plus a real portrait:
+#
+#   single lesion            1 blob   dominance 1.00
+#   multi-lobed melanoma     1 blob             1.00
+#   lesion + one satellite   2 blobs            0.92
+#   lesion under heavy hair  1 blob             1.00
+#   lesion on dark skin      1 blob             1.00
+#   five blobs on skin       3 blobs            0.58   <- refused
+#   real face                10 blobs           0.50   <- refused
+#   real face, tight crop    5 blobs            0.57   <- refused
+#
+# Both conditions must hold, and the contrast floor is the third guard: without
+# it a frame with no real structure at all — bare skin, or a pale lesion barely
+# distinguishable from skin — thresholds into a scatter of noise blobs with low
+# dominance and would be refused. Measured there: bare skin 0.4, a pale lesion
+# 2.2, every genuine spot above 27. The floor of 8 is comfortably between them.
+_STRUCTURE_MIN_BLOBS = int(os.environ.get("SKIN_GATE_STRUCTURE_BLOBS", "3"))
+_STRUCTURE_MAX_DOMINANCE = float(os.environ.get("SKIN_GATE_STRUCTURE_DOMINANCE", "0.65"))
+_STRUCTURE_MIN_CONTRAST = float(os.environ.get("SKIN_GATE_STRUCTURE_CONTRAST", "8.0"))
+# Blobs outside this size band are speckle or the background, not features.
+_STRUCTURE_MIN_BLOB_FRAC = 0.004
+_STRUCTURE_MAX_BLOB_FRAC = 0.60
+
+# --- "a screen, or skin?" ---------------------------------------------------
+# A display or a printed halftone carries a regular grid; skin does not. The
+# grid shows up as one sharp peak in the frequency domain, far above the smooth
+# falloff a photograph produces.
+#
+# This runs at native resolution on purpose. Measured first on the 384px working
+# copy, where a screen grid scored 18 — indistinguishable from skin — because
+# the resize had already thrown the grid away. Moire lives in exactly the high
+# frequencies a downscale removes.
+#
+# Measured, worst case per class:
+#
+#   lesion + ruler in frame           17
+#   single lesion                     18
+#   multi-lobed melanoma              34
+#   lesion under heavy hair           46
+#   real face                         50
+#   real cat / coffee photo           67
+#   real face, tight crop            101
+#   lesion + dermatoscope reticle    136   <- worst photograph of anything
+#   ---------------------------------------
+#   grid pitch 12px                  270
+#   grid pitch 10px                  309
+#   grid pitch  8px                  358
+#   grid pitch  6px                  458
+#   grid pitch  5px                  570
+#   grid pitch  4px                  759
+#   grid pitch  3px                  851
+#   photograph OF a screen           931
+#
+# 400 sits 2.9x above the worst photograph and below every screen pitch a camera
+# actually resolves. That margin is what makes a HARD refusal defensible here:
+# the case worth fearing is a dermatoscope reticle or a ruler being called a
+# screen, and the reticle — the closest any photograph came — is still a third
+# of the line. Set against that, coarse grids (8px and wider) fall below it and
+# are missed; so is a printed halftone at 134. The semantic stage is the backstop
+# for those, and the alternative — dropping to 300 to catch them — would leave a
+# real dermoscopy image barely 2x clear of a refusal it could not override.
+_MOIRE_MAX_PEAK_RATIO = float(os.environ.get("SKIN_GATE_MOIRE_RATIO", "400"))
+_MOIRE_PX = 512
+
+# --- "is that the size of a skin spot?" -------------------------------------
+# A mole is millimetres across. A face at arm's length is not. Once the housing
+# fixes the working distance the field of view is a constant, so a measured
+# width becomes a real check rather than a display value.
+#
+# This stage is OFF unless the scale has actually been measured. `pixels_per_mm`
+# defaults to 10.0, which is a placeholder nobody derived from optics — the
+# "About 46 mm across" on the results screen was that placeholder, not a
+# measurement. Refusing a photo on the strength of it would be inventing a
+# reason. Two conditions gate it, both required:
+#
+#   * the capture came from the fixed-optics device camera, not an upload
+#     (a web-app upload has no knowable scale at all), and
+#   * SKIN_PIXELS_PER_MM has been set from a ruler photograph
+#     (scripts/calibrate_scale.py).
+#
+# 20 mm is deliberately generous: the ABCDE "D" cue is 6 mm, large lesions reach
+# 15 mm, and this is meant to catch a face or a forearm, not to second-guess a
+# dermatologist.
+_MAX_LESION_MM = float(os.environ.get("SKIN_GATE_MAX_LESION_MM", "20.0"))
+
+
+# Two values, and the difference decides whether a person can get past a
+# refusal — worth the reader not having to grep for the spellings in use.
+Severity = Literal["soft", "hard"]
 
 
 @dataclass(frozen=True)
@@ -79,10 +200,30 @@ class FrameCheck:
     lesion_fraction: float
     lesion_contrast: float
     reasons: tuple[str, ...] = ()
+    # A stable identifier for *why*, so the result screen can say something
+    # specific without matching on the sentence. "NO SKIN SPOT FOUND" is a fine
+    # headline for a wall and nonsense for a photograph of a face.
+    code: str = ""
+    # "soft" refusals offer "Check it anyway"; "hard" ones do not.
+    #
+    # Every refusal that predates this field is soft, and deliberately stays
+    # soft: each one is a framing or contrast judgement that can be wrong about
+    # an unusual real lesion, and the cost of being wrong there is a missed
+    # melanoma. Hard is reserved for the refusals that are about the *subject*
+    # rather than the photo's quality — this is not one spot, this is not skin
+    # at a spot's scale — where forcing the scan through would put a verdict on
+    # something the classifier has no business reading. Its three classes are
+    # benign, pre-cancerous and malignant; there is no "not a lesion" among them,
+    # so anything that reaches it gets one of those three whatever it is.
+    severity: Severity = "soft"
 
     @property
     def has_skin(self) -> bool:
         return self.skin_fraction >= _SKIN_MIN
+
+    @property
+    def can_override(self) -> bool:
+        return self.severity != "hard"
 
 
 def _work_size(image_rgb: np.ndarray) -> np.ndarray:
@@ -254,9 +395,14 @@ def _ood_threshold() -> float | None:
             return float(_MAX_OOD_ENV)
         except ValueError:
             return None
-    stats = _feature_stats() or {}
-    p99 = (stats.get("train_distance_percentiles") or {}).get("99")
-    return float(p99) * 1.1 if p99 else None
+    pct = (_feature_stats() or {}).get("train_distance_percentiles") or {}
+    furthest = pct.get("100")
+    if furthest:
+        return float(furthest) * _OOD_MARGIN
+    p99 = pct.get("99")
+    # No 100th percentile in an older stats file: approximate the same intent
+    # rather than falling back to the tight p99 x 1.1 line.
+    return float(p99) * 2.0 if p99 else None
 
 
 def ood_stage_available() -> bool:
@@ -268,6 +414,17 @@ def ood_stage_available() -> bool:
     safety gate, and with it the cost is paid only when the gate is real.
     """
     return _ood_threshold() is not None
+
+
+def ood_report(features: np.ndarray) -> tuple[float | None, float | None]:
+    """``(distance, threshold)`` for logging, either of which may be ``None``.
+
+    Exposed so every scan can record where it actually landed. Without a number
+    in the log there is no way to tell a correctly-refused face from a threshold
+    set too tight for this camera, and no way to tune SKIN_GATE_MAX_OOD except
+    by guessing.
+    """
+    return feature_distance(features), _ood_threshold()
 
 
 def is_out_of_distribution(features: np.ndarray) -> bool | None:
@@ -299,31 +456,52 @@ def check_skin(image_rgb: np.ndarray) -> tuple[FrameCheck | None, float]:
     skin = float(np.count_nonzero(skin_mask(small))) / float(small.shape[0] * small.shape[1])
     if skin >= _SKIN_MIN:
         return None, skin
-    return FrameCheck(False, skin, 0.0, 0.0, ("No skin was found in this photo.",)), skin
+    return FrameCheck(
+        False, skin, 0.0, 0.0, ("No skin was found in this photo.",), code="no_skin"
+    ), skin
 
 
-def check_spot(image_rgb: np.ndarray, mask: np.ndarray | None, *, skin: float = 1.0) -> FrameCheck:
+def check_spot(
+    image_rgb: np.ndarray,
+    mask: np.ndarray | None,
+    *,
+    skin: float = 1.0,
+    mask_is_a_guess: bool = False,
+) -> FrameCheck:
     """Stage 2 alone: is there a distinct spot on skin already known to be there?
 
     ``skin`` is passed in by callers that already measured it (the pipeline),
     so the mask and colour work is not repeated once per scan.
+
+    ``mask_is_a_guess`` is ``segment_or_fallback``'s flag: the outline is a
+    circle drawn in the middle of the frame because nothing plausible was found.
+    Measuring contrast on it compares skin against skin, so it must not be
+    allowed to answer "there is a spot here" — before this flag existed the
+    "no spot" branch below could not be reached through the pipeline at all.
     """
     reasons: list[str] = []
+    if mask_is_a_guess:
+        reasons.append("No spot could be picked out on the skin.")
+        return FrameCheck(False, skin, 0.0, 0.0, tuple(reasons), code="no_spot")
     if mask is None or not (mask > 0).any():
         reasons.append("No spot could be picked out on the skin.")
-        return FrameCheck(False, skin, 0.0, 0.0, tuple(reasons))
+        return FrameCheck(False, skin, 0.0, 0.0, tuple(reasons), code="no_spot")
 
     frac = float(np.count_nonzero(mask > 0)) / float(mask.size)
     contrast = lesion_contrast(image_rgb, mask)
 
+    code = ""
     if frac < _LESION_MIN_FRAC:
         reasons.append("The spot is too small in the frame. Move the camera closer.")
+        code = "too_small"
     elif frac > _LESION_MAX_FRAC or _touches_all_borders(mask):
         reasons.append("The spot fills the whole photo. Move the camera back a little.")
+        code = "fills_frame"
     elif contrast < _MIN_CONTRAST:
         reasons.append("This looks like plain skin with no clear spot on it.")
+        code = "plain_skin"
 
-    return FrameCheck(not reasons, skin, frac, contrast, tuple(reasons))
+    return FrameCheck(not reasons, skin, frac, contrast, tuple(reasons), code=code)
 
 
 # Lab-L spread (99.5th minus 0.5th percentile, after a median blur) below which
@@ -349,6 +527,139 @@ def _tone_spread(image_rgb: np.ndarray) -> float:
     lab_l = _lab(_normalise_exposure(image_rgb))[:, :, 0]
     smooth = cv2.medianBlur(lab_l, 5).astype(np.float32)
     return float(np.percentile(smooth, 99.5) - np.percentile(smooth, 0.5))
+
+
+def dark_structure(image_rgb: np.ndarray) -> tuple[int, float, float]:
+    """``(blob count, dominance, contrast)`` for the dark regions of a frame.
+
+    *Dominance* is the largest dark blob's share of all dark-blob area: 1.0 when
+    one region holds everything, falling toward 1/n as several share it.
+    *Contrast* is the Lab distance between the dark set and everything else, and
+    exists to say whether there is any real structure here at all.
+
+    Only the largest connected component survives ``services.segmentation``, so
+    by the time the existing stage-2 check sees a mask the "several regions"
+    signal has already been thrown away. This measures it before that happens.
+    """
+    work = _work_size(image_rgb)
+    normalised = _normalise_exposure(work)
+    lab_l = cv2.cvtColor(normalised, cv2.COLOR_RGB2LAB)[:, :, 0]
+    # Median blur first: per-pixel capture noise otherwise fragments one blob
+    # into dozens and would make every frame look like a scene.
+    smooth = cv2.medianBlur(lab_l, 5)
+    _, dark = cv2.threshold(255 - smooth, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, k, iterations=1)
+    dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, k, iterations=1)
+
+    is_dark = dark > 0
+    if not is_dark.any() or is_dark.all():
+        return 0, 1.0, 0.0
+    lab_f = _lab(normalised)
+    contrast = float(np.linalg.norm(lab_f[is_dark].mean(axis=0) - lab_f[~is_dark].mean(axis=0)))
+
+    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(dark, connectivity=8)
+    total = float(dark.size)
+    areas = sorted(
+        (
+            int(a)
+            for a in stats[1:, cv2.CC_STAT_AREA]
+            if _STRUCTURE_MIN_BLOB_FRAC * total <= a <= _STRUCTURE_MAX_BLOB_FRAC * total
+        ),
+        reverse=True,
+    )
+    if not areas:
+        return 0, 1.0, contrast
+    return len(areas), areas[0] / float(sum(areas)), contrast
+
+
+def check_structure(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | None:
+    """Refuse a frame holding several separate dark marks rather than one spot."""
+    blobs, dominance, contrast = dark_structure(image_rgb)
+    if (
+        blobs >= _STRUCTURE_MIN_BLOBS
+        and dominance < _STRUCTURE_MAX_DOMINANCE
+        and contrast >= _STRUCTURE_MIN_CONTRAST
+    ):
+        return FrameCheck(
+            False,
+            skin,
+            0.0,
+            contrast,
+            ("This photo has several dark marks in it, not one spot.",),
+            code="structure",
+            severity="hard",
+        )
+    return None
+
+
+def check_scale(
+    mask: np.ndarray | None, pixels_per_mm: float | None, *, skin: float = 1.0
+) -> FrameCheck | None:
+    """Refuse a spot measuring far wider than any skin lesion.
+
+    ``pixels_per_mm`` of ``None`` means the scale is not trustworthy for this
+    capture, and the check does not run. That is the normal case for the web
+    app, where an uploaded photo carries no scale at all.
+    """
+    if mask is None or not pixels_per_mm or pixels_per_mm <= 0:
+        return None
+    from services.abcde import diameter_mm
+
+    mm = diameter_mm(mask, pixels_per_mm)
+    if mm <= _MAX_LESION_MM:
+        return None
+    return FrameCheck(
+        False,
+        skin,
+        0.0,
+        0.0,
+        (f"What is in the ring measures about {mm:.0f} mm across.",),
+        code="too_large",
+        severity="hard",
+    )
+
+
+def _periodicity(image_rgb: np.ndarray) -> float:
+    """Sharpest repeating pattern in the frame, relative to its typical detail.
+
+    Runs on a native-resolution centre crop rather than the working copy: the
+    downscale that makes the rest of the gate cheap is exactly what removes the
+    high frequencies a screen grid lives in.
+    """
+    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    h, w = gray.shape[:2]
+    if min(h, w) < _MOIRE_PX:
+        crop = cv2.resize(gray, (_MOIRE_PX, _MOIRE_PX), interpolation=cv2.INTER_AREA)
+    else:
+        y, x = (h - _MOIRE_PX) // 2, (w - _MOIRE_PX) // 2
+        crop = gray[y : y + _MOIRE_PX, x : x + _MOIRE_PX]
+    # Hann window, or the crop's own edges ring across the whole spectrum.
+    window = np.outer(np.hanning(_MOIRE_PX), np.hanning(_MOIRE_PX)).astype(np.float32)
+    spectrum = np.abs(np.fft.fftshift(np.fft.fft2((crop - crop.mean()) * window)))
+    centre = _MOIRE_PX // 2
+    rows, cols = np.ogrid[:_MOIRE_PX, :_MOIRE_PX]
+    radius = np.hypot(rows - centre, cols - centre)
+    # Skip the centre (overall brightness) and the corners (beyond Nyquist).
+    band = (radius > _MOIRE_PX * 0.05) & (radius < _MOIRE_PX * 0.48)
+    values = spectrum[band]
+    median = float(np.median(values)) or 1e-6
+    return float(values.max() / median)
+
+
+def check_screen(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | None:
+    """Refuse a photograph of a display or a printed picture."""
+    if _periodicity(image_rgb) > _MOIRE_MAX_PEAK_RATIO:
+        return FrameCheck(
+            False,
+            skin,
+            0.0,
+            0.0,
+            ("This looks like a photo of a screen or a printed picture.",),
+            code="screen",
+            severity="hard",
+        )
+    return None
 
 
 def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | None:
@@ -394,7 +705,21 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
             0.0,
             0.0,
             ("This looks like plain skin with no clear spot on it.",),
+            code="plain_skin",
         )
+
+    # Both of these are cheap and neither needs a mask, so they run before any
+    # segmentation work. Order matters only for which sentence the user reads:
+    # the spread check above claims genuinely flat frames first, so "several
+    # dark marks" cannot be said about bare skin.
+    structure = check_structure(work, skin=skin)
+    if structure is not None:
+        return structure
+
+    # Native resolution, not `work` — see _periodicity.
+    screen = check_screen(image_rgb, skin=skin)
+    if screen is not None:
+        return screen
 
     # segment(), not segment_safe(): see the docstring — the "safe" wrapper's
     # centre-circle fallback is not something to draw conclusions from.
@@ -413,6 +738,7 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
             frac,
             0.0,
             ("The spot fills the whole photo. Move the camera back a little.",),
+            code="fills_frame",
         )
     return None
 

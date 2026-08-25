@@ -179,13 +179,39 @@ def _center_circle_mask(image_rgb: np.ndarray, radius_frac: float = 0.35) -> np.
     return mask
 
 
-def segment_safe(image_rgb: np.ndarray, *, use_grabcut: bool = True) -> np.ndarray | None:
-    """Return mask if plausible; else center-circle fallback (ABCDE never crashes)."""
+def segment_or_fallback(
+    image_rgb: np.ndarray, *, use_grabcut: bool = True
+) -> tuple[np.ndarray, bool]:
+    """``(mask, is_a_guess)`` — whether the mask was found or invented.
+
+    When no candidate is plausible this returns a plain circle in the middle of
+    the frame. That keeps ABCDE from crashing, which is why it exists, but it is
+    a placeholder and not a lesion outline: every measurement taken from it —
+    asymmetry, border, diameter — describes a circle someone drew, not anything
+    in the photo.
+
+    ``segment_safe`` threw the distinction away, so no caller could tell the two
+    apart. The consequence was measurable: ``lesion_gate.check_spot`` has a
+    branch for "No spot could be picked out on the skin", and because it was
+    only ever handed a mask that existed, **that branch was unreachable through
+    the pipeline**. Every frame got a plausible-looking outline whatever was in
+    it, which is the same failure mode as a face being read as a lesion, one
+    layer down.
+    """
     mask = segment(image_rgb, use_grabcut=use_grabcut)
     frac = _foreground_fraction(mask)
     if _FRAC_MIN <= frac <= _FRAC_MAX:
-        return mask
-    fallback = _center_circle_mask(image_rgb)
-    if _FRAC_MIN <= _foreground_fraction(fallback) <= _FRAC_MAX:
-        return fallback
-    return fallback
+        return mask, False
+    return _center_circle_mask(image_rgb), True
+
+
+def segment_safe(image_rgb: np.ndarray, *, use_grabcut: bool = True) -> np.ndarray | None:
+    """Return mask if plausible; else center-circle fallback (ABCDE never crashes).
+
+    Kept for callers that only want a mask to measure and have already decided
+    a guess is acceptable — ``services.evolving`` re-measuring an old saved
+    photo, for instance. Anything deciding whether to *show a verdict* should
+    call :func:`segment_or_fallback` and look at the flag.
+    """
+    mask, _is_a_guess = segment_or_fallback(image_rgb, use_grabcut=use_grabcut)
+    return mask

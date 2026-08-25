@@ -18,6 +18,7 @@ import streamlit as st
 
 from backend.assistant import kb_is_live
 from backend.contracts import ScanResult
+from components.actions import actions_slot
 from components.instrument import render_head
 from components.verdict_card import render_verdict_card, render_verdict_note
 from navigation import navigate
@@ -129,7 +130,7 @@ def _render_stopped(pl: dict) -> None:
     render_verdict_card(v)
     render_verdict_note(v)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         first, second = st.columns([3, 2], gap="small")
         with first:
             if st.button(
@@ -143,16 +144,25 @@ def _render_stopped(pl: dict) -> None:
             # right first answer, but when the scanner is simply wrong about
             # the photo — it does happen — the person holding the lesion needs
             # a way through.
-            if st.session_state.get("capture_image_bytes"):
+            #
+            # Except when the refusal was about the *subject* rather than the
+            # photo. "This is not one spot" and "this is not something it can
+            # read" are hard: the classifier only knows benign, pre-cancerous
+            # and malignant, so forcing a face through does not produce a
+            # cautious answer, it produces a confident wrong one. Every refusal
+            # about framing, focus or light stays overridable — those are the
+            # ones that could be wrong about a real lesion.
+            check = pl.get("frame_check")
+            can_override = getattr(check, "can_override", True)
+            if can_override and st.session_state.get("capture_image_bytes"):
                 if st.button("Check it anyway", key="stop_force", use_container_width=True):
                     st.session_state["force_rescan"] = True
                     st.session_state.pop("last_result", None)
                     navigate("reading")
             else:
-                # Only reachable when the bytes are gone; a blocked scan keeps
-                # them, so this used to be an `elif` that never ran. The nav
-                # keys are the way out either way, but a screen that offers no
-                # exit of its own is a dead end on a kiosk.
+                # Reached when the bytes are gone, and now also when the refusal
+                # is hard. The nav keys are the way out either way, but a screen
+                # that offers no exit of its own is a dead end on a kiosk.
                 if st.button("Back to start", key="stop_home", use_container_width=True):
                     _go_home()
 
@@ -161,7 +171,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:  # noqa: ARG001
     pl = st.session_state.get("last_result")
     if not pl:
         render_head("Result", "No scan yet", "Take a photo to see a result here.")
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button(
                 "Start a skin check", type="primary", key="res_empty_home", use_container_width=True
             ):
@@ -172,7 +182,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:  # noqa: ARG001
         return
     if pl.get("error") and not pl.get("scan_result"):
         render_head("Result", "That scan did not finish", pl["error"])
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button("Back to start", type="primary", key="res_err_home", use_container_width=True):
                 _go_home()
         return
@@ -180,7 +190,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:  # noqa: ARG001
     sr = pl.get("scan_result")
     if not isinstance(sr, ScanResult):
         render_head("Result", "That scan did not finish", "Please take another photo.")
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button("Back to start", type="primary", key="res_bad_home", use_container_width=True):
                 _go_home()
         return
@@ -212,7 +222,7 @@ def render_results_view(*, root: Path, model_path: str) -> None:  # noqa: ARG001
     for _code, label, _sev in pl.get("quality", {}).get("reason_details", []):
         st.warning(label)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         done, save = st.columns(2, gap="small")
         with done:
             if st.button("Done", type="primary", key="res_home", use_container_width=True):

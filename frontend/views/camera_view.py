@@ -21,13 +21,16 @@ refusing when the cost of a wrong refusal is someone's melanoma.
 from __future__ import annotations
 
 import io
+from functools import lru_cache
 from pathlib import Path
 
 import streamlit as st
 from PIL import Image
 
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
+from services import photo_cache
 from services.lesion_gate import has_skin
 from services.quality import focus_meter, light_meter
 from services.samples import list_sample_paths
@@ -105,8 +108,18 @@ def _meter(name: str, filled: int, value: str) -> str:
     )
 
 
+@lru_cache(maxsize=2)
 def _photo_readings(image_bytes: bytes) -> tuple[str, bool]:
-    """(meter markup, good enough) for a captured photo."""
+    """(meter markup, good enough) for a captured photo.
+
+    Memoised on the bytes. Step 2 recomputes this on every rerun, and it costs a
+    full JPEG decode plus a 512px Laplacian plus a skin-mask pass — on the screen
+    people tap the most, on the slowest machine this runs on. The readings are a
+    pure function of the photo, so the second and later reruns are free.
+
+    Cleared when the photo leaves session state (``navigation._drop_photo_caches``)
+    so no participant's capture outlives their session in this cache.
+    """
     try:
         from backend.tflite_shared import decode_image_bytes_to_rgb
 
@@ -128,6 +141,27 @@ def _photo_readings(image_bytes: bytes) -> tuple[str, bool]:
     return markup, bool(light_bars >= 2 and focus_bars >= 2 and skin_ok)
 
 
+def forget_photo_readings() -> None:
+    """Drop every cached reading. Called when the photo leaves session state."""
+    _photo_readings.cache_clear()
+
+
+photo_cache.register(forget_photo_readings)
+
+
+def _discard_capture() -> None:
+    """Throw the photo away and go back to step 1.
+
+    These buttons never navigate — they drop the bytes and rerun into step 1 of
+    the same screen — so the router's clearing never ran for them and the
+    memoised copies survived a boundary docs/PRIVACY.md names by name.
+    """
+    st.session_state.pop("capture_image_bytes", None)
+    st.session_state.pop("capture_from_device", None)
+    photo_cache.forget_photos()
+    st.rerun()
+
+
 def _store_capture(data: bytes | None) -> None:
     """Save new capture bytes and re-render so the photo check appears at once.
 
@@ -139,6 +173,11 @@ def _store_capture(data: bytes | None) -> None:
     if data is None or st.session_state.get("capture_image_bytes") == data:
         return
     st.session_state["capture_image_bytes"] = data
+    # Everything arriving here is an upload, a browser camera or a demo file:
+    # photographed at an unknown distance through unknown optics, so its
+    # real-world scale is not knowable. Only the device camera at its fixed
+    # working distance sets this True (see the picamera2 path below).
+    st.session_state["capture_from_device"] = False
     st.rerun()
 
 
@@ -160,7 +199,7 @@ def _render_step_two(kind: str) -> None:
         )
     st.markdown(meters or '<div class="ds-mid"></div>', unsafe_allow_html=True)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         first, second = st.columns([3, 2], gap="small")
         if good:
             with first:
@@ -170,8 +209,7 @@ def _render_step_two(kind: str) -> None:
                     navigate("reading")
             with second:
                 if st.button("Take another", key="cam_retake", use_container_width=True):
-                    st.session_state.pop("capture_image_bytes", None)
-                    st.rerun()
+                    _discard_capture()
         else:
             # Order swapped, not the button removed: refusing outright is what
             # the strict gate does, and it refuses real lesions.
@@ -182,8 +220,7 @@ def _render_step_two(kind: str) -> None:
                     key="cam_retake_soft",
                     use_container_width=True,
                 ):
-                    st.session_state.pop("capture_image_bytes", None)
-                    st.rerun()
+                    _discard_capture()
             with second:
                 if st.button("Check it anyway", key="cam_scan_soft", use_container_width=True):
                     navigate("reading")
@@ -212,7 +249,7 @@ def _render_step_one(root: Path, kind: str) -> None:
         )
         if pu is not None:
             _store_capture(_accept_upload(pu))
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button(
                 "Check this spot", type="primary", key="pi_scan", use_container_width=True
             ):
@@ -241,7 +278,7 @@ def _render_step_one(root: Path, kind: str) -> None:
             )
             if up is not None:
                 _store_capture(_accept_upload(up))
-        with st.container(key="epv-actions"):
+        with actions_slot():
             first, second = st.columns([3, 2], gap="small")
             with first:
                 if st.button(
@@ -251,6 +288,9 @@ def _render_step_one(root: Path, kind: str) -> None:
                         shot = _capture_picamera2()
                     if shot is not None:
                         st.session_state["capture_image_bytes"] = shot
+                        # Fixed lens, fixed working distance: this is the one
+                        # capture path whose millimetres mean anything.
+                        st.session_state["capture_from_device"] = True
                         st.rerun()
             with second:
                 if st.button("Choose a picture", key="hw_pick", use_container_width=True):
@@ -278,7 +318,7 @@ def _render_step_one(root: Path, kind: str) -> None:
             if kind == "mock":
                 _render_samples(root)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         first, second = st.columns(2, gap="small")
         with first:
             if st.button(

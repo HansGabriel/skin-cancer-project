@@ -22,6 +22,7 @@ reproducible, and small enough that the suite stays fast.
 from __future__ import annotations
 
 import glob
+import os
 import random
 from pathlib import Path
 
@@ -33,7 +34,18 @@ from services.lesion_gate import has_skin, skin_fraction
 from services.quality import check_quality
 
 ROOT = Path(__file__).resolve().parent.parent
-_PATTERN = str(ROOT / "datasets" / "ham10000" / "HAM10000_images_part_*" / "*.jpg")
+# Both spellings, and an override. models/test_split.csv records the training
+# machine's paths as ``ham10000_images_part_1`` in lower case while this pattern
+# was upper — and glob is case-sensitive on Linux, which is where the dataset
+# actually lives. The test would have skipped silently on the one machine able
+# to run it. SKIN_HAM10000_DIR points somewhere else entirely if needed.
+_ROOTS = [Path(d) for d in (os.environ.get("SKIN_HAM10000_DIR"),) if d]
+_ROOTS += [ROOT / "datasets" / "ham10000"]
+_PATTERNS = [
+    str(base / part / "*.jpg")
+    for base in _ROOTS
+    for part in ("HAM10000_images_part_*", "ham10000_images_part_*", "*")
+]
 
 # Ceilings, not targets. They sit well above the rates measured on 2026-08-13
 # (hard-quality 1.0%, no-skin 2.0%) so ordinary jitter does not fail the build,
@@ -44,7 +56,11 @@ _MAX_NO_SKIN_REJECT = 0.10
 
 
 def _sample_paths() -> list[str]:
-    files = sorted(glob.glob(_PATTERN))
+    files: list[str] = []
+    for pattern in _PATTERNS:
+        files = sorted(glob.glob(pattern))
+        if files:
+            break
     if not files:
         return []
     return random.Random(42).sample(files, min(_SAMPLE_N, len(files)))
@@ -109,4 +125,62 @@ def test_skin_fraction_separates_real_skin_from_neutral_surfaces() -> None:
     assert median > _SKIN_MIN * 3, (
         f"median real skin_fraction {median:.3f} is not comfortably above "
         f"_SKIN_MIN {_SKIN_MIN:.3f} — the gate has no margin left"
+    )
+
+
+# --------------------------------------------------------------------------
+# The checks added to stop a face being read as a lesion. Both refuse a photo
+# outright, and the structure one refuses it with no way through — so the
+# false-rejection rate on real dermoscopy is the number that matters, and it is
+# the number that cannot be measured on the machine they were written on.
+#
+# They were calibrated against synthetic lesion variants (single, multi-lobed,
+# satellite, heavy hair, dark skin, pale) plus one real photograph for the
+# reject side. This file is where that calibration meets real lesions.
+# --------------------------------------------------------------------------
+
+# Ceilings, not targets. A real lesion is one region on skin, so the structure
+# check should essentially never fire on this dataset; anything above a couple
+# of percent means the dominance threshold is wrong for real dermoscopy.
+_MAX_STRUCTURE_REJECT = 0.02
+_MAX_SCREEN_REJECT = 0.02
+
+
+def test_real_lesions_are_not_refused_as_scenes() -> None:
+    """"This photo has several dark marks in it" must be rare on real lesions."""
+    from services.lesion_gate import check_structure
+
+    refused = [p for p in _PATHS if check_structure(_load(p)) is not None]
+    rate = len(refused) / len(_PATHS)
+    assert rate <= _MAX_STRUCTURE_REJECT, (
+        f"structure check refused {rate:.0%} of real lesions "
+        f"({len(refused)}/{len(_PATHS)}); raise SKIN_GATE_STRUCTURE_DOMINANCE or "
+        f"SKIN_GATE_STRUCTURE_CONTRAST. Examples: {refused[:3]}"
+    )
+
+
+def test_real_lesions_are_not_mistaken_for_screens() -> None:
+    """Dermatoscope reticles and rulers are the plausible false positive here."""
+    from services.lesion_gate import check_screen
+
+    refused = [p for p in _PATHS if check_screen(_load(p)) is not None]
+    rate = len(refused) / len(_PATHS)
+    assert rate <= _MAX_SCREEN_REJECT, (
+        f"screen check refused {rate:.0%} of real lesions "
+        f"({len(refused)}/{len(_PATHS)}); raise SKIN_GATE_MOIRE_RATIO. "
+        f"Examples: {refused[:3]}"
+    )
+
+
+def test_the_structure_signal_separates_lesions_from_scenes() -> None:
+    """Report the margin, so a threshold change can be judged rather than guessed."""
+    from services.lesion_gate import _STRUCTURE_MAX_DOMINANCE, dark_structure
+
+    dominances = [dark_structure(_load(p))[1] for p in _PATHS]
+    median = float(np.median(dominances))
+    worst = float(np.min(dominances))
+    assert median > _STRUCTURE_MAX_DOMINANCE, (
+        f"real lesions have a median dominance of {median:.2f}, at or below the "
+        f"{_STRUCTURE_MAX_DOMINANCE} threshold — the signal does not separate "
+        f"them from scenes on this data (worst {worst:.2f})"
     )

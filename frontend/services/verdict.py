@@ -94,19 +94,98 @@ def retake_verdict(quality: dict | None) -> UIVerdict:
     )
 
 
-def no_lesion_verdict(reasons: tuple[str, ...] | list[str] | None = None) -> UIVerdict:
+# One headline, body and instruction per refusal cause. A single message had to
+# cover all of them, and "NO SKIN SPOT FOUND" is accurate for a wall and
+# nonsense for a photograph of someone's face — which is the case that prompted
+# this. Every entry says the same two things in its own words: this is not a
+# spot the scanner can read, and here is what to do instead.
+#
+# Keep these free of jargon; tests/test_lesion_gate.py enforces the ban.
+_NO_LESION_COPY: dict[str, tuple[str, str, str]] = {
+    "no_skin": (
+        "NO SKIN IN THIS PHOTO",
+        "The scanner could not find skin in this photo.",
+        "Point the camera at a mole or mark on skin, fill the ring with it, and "
+        "take a new photo.",
+    ),
+    "structure": (
+        "THIS IS NOT ONE SPOT",
+        "This photo has several dark marks in it, so it is not a single spot on "
+        "skin the scanner can read.",
+        "Move in close to one mole or mark until it fills the ring, then take a "
+        "new photo.",
+    ),
+    "screen": (
+        "THAT LOOKS LIKE A SCREEN",
+        "This looks like a photo of a screen or a printed picture rather than "
+        "real skin.",
+        "Point the camera at the skin itself and take a new photo.",
+    ),
+    "plain_skin": (
+        "NO SPOT ON THIS SKIN",
+        "The scanner found skin, but no clear mark on it to read.",
+        "Put the ring over a mole or mark, or move closer if the spot is small.",
+    ),
+    "too_small": (
+        "THE SPOT IS TOO SMALL",
+        "The mark is too small in this photo for the scanner to read it.",
+        "Move the camera closer until the spot fills the ring, then take a new "
+        "photo.",
+    ),
+    "fills_frame": (
+        "TOO CLOSE TO READ",
+        "The mark fills the whole photo, so the scanner cannot see where it ends.",
+        "Move the camera back a little so a ring of plain skin shows around the "
+        "spot.",
+    ),
+    "too_large": (
+        "TOO BIG TO BE A SPOT",
+        "What is inside the ring measures far wider than a skin spot, so this is "
+        "probably not one.",
+        "Move in close to a single mole or mark until it fills the ring.",
+    ),
+    "ood": (
+        "NOT SOMETHING IT CAN READ",
+        "This does not look like the skin spots the scanner was taught to read.",
+        "Point the camera at a mole or mark on skin, fill the ring with it, and "
+        "take a new photo.",
+    ),
+}
+
+_NO_LESION_DEFAULT = (
+    "NO SKIN SPOT FOUND",
+    "This photo does not show a spot on skin that the scanner can read.",
+    "Point the camera at a mole or mark on skin, fill the ring with it, and take "
+    "a new photo.",
+)
+
+
+def no_lesion_verdict(
+    reasons: tuple[str, ...] | list[str] | None = None, *, code: str = ""
+) -> UIVerdict:
     """Nothing on screen to screen — the input is not a photo of a skin spot.
 
     Kept apart from :func:`retake_verdict` on purpose: "I cannot read this
     photo" and "this is not a skin spot" are different problems, and telling
     someone to fix the lighting when they photographed a wall is useless.
+
+    ``code`` comes from ``lesion_gate.FrameCheck.code`` and selects the wording.
+    An unknown or missing code falls back to the original general message, so a
+    new gate check cannot ship a blank screen.
     """
+    specific = _NO_LESION_COPY.get(code)
+    headline, body, advice = specific or _NO_LESION_DEFAULT
+    # When the copy is already specific to this cause, the gate's own sentence
+    # says the same thing twice on screen — "several dark marks in it" appeared
+    # in both the body and the reason line underneath it. The general fallback
+    # still shows it, because there it is the only specific thing said.
+    if specific is not None:
+        reasons = ()
     return UIVerdict(
         state="no_lesion",
-        headline="NO SKIN SPOT FOUND",
-        body="This photo does not show a spot on skin that the scanner can read.",
-        advice="Point the camera at a mole or mark on skin, fill the ring with it, "
-        "and take a new photo.",
+        headline=headline,
+        body=body,
+        advice=advice,
         tone="info",
         reasons=tuple(reasons or ()),
         note_label="WHAT TO POINT AT",
