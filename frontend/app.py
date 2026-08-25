@@ -21,6 +21,7 @@ sys.path.insert(0, str(FRONTEND))
 from backend.contracts import BackendKind
 from logging_config import configure_logging
 from navigation import current_route, init_navigation, navigate
+from services.scale import default_pixels_per_mm
 from services.auth import (
     STAFF_ROUTES,
     enforce_passcode_gate,
@@ -30,6 +31,7 @@ from services.auth import (
 from services.inference import get_inference_backend
 from theme.css import inject_global_css
 from theme.tokens import TOKENS
+from components.actions import open_actions_slot
 from components.instrument import render_disclaimer_strip, render_instrument
 from views.assistant_view import render_assistant_view
 from views.camera_view import render_camera_view
@@ -61,7 +63,7 @@ def _init_session() -> None:
         st.session_state["SKIN_KERAS_PATH_UI"] = os.environ.get(
             "SKIN_KERAS_PATH", str(ROOT / "models" / "skin_classifier_full.keras")
         )
-    st.session_state.setdefault("pixels_per_mm_ui", 10.0)
+    st.session_state.setdefault("pixels_per_mm_ui", default_pixels_per_mm())
     # Off by default — settings_view.py has always *said* this, but the default
     # here was True, so an advisory ("slightly blurry") blocked the scan
     # outright. Measured against real HAM10000 dermoscopy that refused 72% of
@@ -143,18 +145,29 @@ def main() -> None:
             # The staff readout takes the band dark — that is the design's
             # overlay, achieved by being a route rather than by stacking.
             with st.container(key="epv-page-dark" if route == "staff" else "epv-page"):
-                # Two children, and theme/css.py depends on it being exactly
-                # two: the screen (which grows to fill) and the safety strip
-                # (which therefore ends up at the foot). Streamlit wraps every
-                # container in an anonymous element, so the only way to pin
-                # anything is to make position in this list meaningful.
-                with st.container(key="epv-body"):
+                # Three children, and theme/css.py depends on it being exactly
+                # three, in this order: the screen (which grows to fill and is
+                # the only thing that scrolls), the pinned actions row, and the
+                # safety strip. Streamlit wraps every container in an anonymous
+                # element, so the only way to pin anything is to make position
+                # in this list meaningful.
+                #
+                # All three are created here, before the screen is dispatched,
+                # because DOM order follows creation order — but a container can
+                # be filled later. That is what keeps the action buttons out of
+                # the scrolling region while still letting each view own them.
+                body = st.container(key="epv-body")
+                open_actions_slot()
+                # Rendered now rather than after dispatch so that a screen which
+                # ends the script early — the staff gate calls st.stop() — cannot
+                # take the mandated safety line down with it.
+                render_disclaimer_strip()
+                with body:
                     # Renders its own screen and stops the script when locked.
                     # It runs inside the page band so the keypad appears where
                     # every other screen does, instrument still beside it.
                     enforce_staff_gate(route)
                     _dispatch(route, backend=backend, kind=kind)
-                render_disclaimer_strip()
 
 
 def _dispatch(route: str, *, backend, kind: BackendKind) -> None:

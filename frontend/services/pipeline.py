@@ -24,11 +24,11 @@ from backend.contracts import ScanResult
 from backend.tflite_shared import decode_image_bytes_to_rgb
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
-from services.lesion_gate import FrameCheck, check_skin, check_spot, quick_reject
+from services.lesion_gate import FrameCheck, check_skin, check_spot, quick_reject, check_scale
 from services.preprocess import enhance_lesion_image
 from services.quality import check_quality
 from services.risk import composite_risk_score, risk_band
-from services.segmentation import segment_safe
+from services.segmentation import segment_or_fallback
 from services.verdict import UIVerdict, no_lesion_verdict, resolve_verdict, retake_verdict
 
 APP_VERSION = "0.4.0"
@@ -198,6 +198,7 @@ def _gate(
     strict_quality: bool,
     force: bool = False,
     stages: dict[str, int] | None = None,
+    trusted_pixels_per_mm: float | None = None,
 ) -> tuple[PipelineResult | None, Any, np.ndarray]:
     """Run every stop-check in order.
 
@@ -233,7 +234,7 @@ def _gate(
             "frame_check": no_skin,
             "rgb": rgb_display,
             "scan_result": None,
-            "verdict": no_lesion_verdict(no_skin.reasons),
+            "verdict": no_lesion_verdict(no_skin.reasons, code=no_skin.code),
         }, None, rgb_display
 
     if (not q["ok"] or (q["reasons"] and strict_quality)) and not force:
@@ -261,17 +262,24 @@ def _gate(
             "frame_check": early,
             "rgb": rgb_display,
             "scan_result": None,
-            "verdict": no_lesion_verdict(early.reasons),
+            "verdict": no_lesion_verdict(early.reasons, code=early.code),
         }, None, rgb_display
 
     with _stage(st_ms, "enhance"):
         rgb_for_abcde = _analysis_rgb(rgb_display)
     with _stage(st_ms, "segment"):
-        mask = segment_safe(rgb_for_abcde)
+        mask, mask_is_a_guess = segment_or_fallback(rgb_for_abcde)
     # A 3-class softmax always sums to 1, so without this a photo of a bare
     # forearm comes back as a confident "benign".
     with _stage(st_ms, "spot"):
-        frame = check_spot(rgb_display, mask, skin=skin)
+        frame = check_spot(rgb_display, mask, skin=skin, mask_is_a_guess=mask_is_a_guess)
+    # Size is only meaningful once the optics are fixed and measured; see
+    # lesion_gate.check_scale. `None` on every other path, including uploads.
+    if frame.is_lesion_photo:
+        too_big = check_scale(mask, trusted_pixels_per_mm, skin=skin)
+        if too_big is not None:
+            frame = too_big
+
     if not frame.is_lesion_photo and not force:
         return {
             "blocked": True,
@@ -279,7 +287,7 @@ def _gate(
             "frame_check": frame,
             "rgb": rgb_display,
             "scan_result": None,
-            "verdict": no_lesion_verdict(frame.reasons),
+            "verdict": no_lesion_verdict(frame.reasons, code=frame.code),
         }, mask, rgb_for_abcde
     return None, mask, rgb_for_abcde
 
@@ -294,7 +302,16 @@ def run_pipeline(
     force: bool = False,
     preprocess: bool = True,  # noqa: ARG001 — kept for API compat; session/env controls ABCDE enhance
     on_stage=None,
+    trusted_pixels_per_mm: float | None = None,
 ) -> PipelineResult:
+    """``trusted_pixels_per_mm`` is a scale the size check may refuse a photo on.
+
+    Separate from ``pixels_per_mm``, which is only ever measured-or-guessed for
+    display and may carry a staff override. ``None`` — the default — means no
+    size check at all, which is correct for every upload: a photograph taken at
+    an unknown distance has no scale, whatever the device it is uploaded to
+    knows about its own lens. See services/scale.py.
+    """
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
     stages: dict[str, int] = Stages(on_enter=on_stage)
@@ -391,7 +408,12 @@ def run_pipeline(
         with _stage(stages, "quality"):
             q = check_quality(rgb_display)
         blocking, mask, rgb_for_abcde = _gate(
-            rgb_display, q, strict_quality=strict_quality, force=force, stages=stages
+            rgb_display,
+            q,
+            strict_quality=strict_quality,
+            force=force,
+            stages=stages,
+            trusted_pixels_per_mm=trusted_pixels_per_mm,
         )
         if blocking is not None:
             blocking["stage_ms"] = stages
@@ -454,7 +476,12 @@ def run_pipeline(
     with _stage(stages, "quality"):
         q = check_quality(rgb_display)
     blocking, mask, rgb_for_abcde = _gate(
-        rgb_display, q, strict_quality=strict_quality, force=force, stages=stages
+        rgb_display,
+        q,
+        strict_quality=strict_quality,
+        force=force,
+        stages=stages,
+        trusted_pixels_per_mm=trusted_pixels_per_mm,
     )
     if blocking is not None:
         blocking["stage_ms"] = stages

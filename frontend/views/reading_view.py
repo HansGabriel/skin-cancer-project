@@ -24,11 +24,18 @@ import streamlit as st
 
 from components.instrument import render_head
 from navigation import navigate
+from services.scale import default_pixels_per_mm, trusted_pixels_per_mm
 from services.scan_flow import run_scan_and_store
 
 # Pipeline stage → which of the three visible steps it belongs to. The names
 # come from services.pipeline._stage; anything not listed (decode) is folded
 # into the first step, which is already showing by the time it runs.
+#
+# The last step is the one that reads oddly if it is left out. The semantic
+# check needs the model's own features, so it can only run *after* the model
+# has — which means a refusal can arrive when the analysis has visibly finished.
+# Without a step of its own that looks like the app changing its mind; with one
+# it reads as a check that did not pass.
 _STEP_OF_STAGE = {
     "quality": 0,
     "skin": 0,
@@ -37,12 +44,14 @@ _STEP_OF_STAGE = {
     "spot": 1,
     "model": 2,
     "abcde": 2,
+    "ood": 3,
 }
 
 _STEP_TEXT = (
     "Checked the photo and found skin",
     "Found the spot and drew its outline",
     "Compared it with the on-device model",
+    "Made sure this is a spot it can read",
 )
 
 
@@ -90,7 +99,13 @@ def render_reading_view(*, backend, kind: str) -> None:  # noqa: ARG001 — kind
     _render_checklist(checklist, 0)
 
     # Streamlit has flushed everything above by now; the scan blocks below it.
-    pixels = float(st.session_state.get("pixels_per_mm_ui", 10.0))
+    pixels = float(st.session_state.get("pixels_per_mm_ui", default_pixels_per_mm()))
+    # Deliberately not `pixels`: that one carries the staff override from
+    # Settings, and a hand-typed number must not be able to arm a hard refusal.
+    # See services/scale.py.
+    trusted = trusted_pixels_per_mm(
+        from_device_camera=bool(st.session_state.get("capture_from_device"))
+    )
     keras = str(st.session_state.get("SKIN_KERAS_PATH_UI", ""))
     strict_q = bool(st.session_state.get("strict_quality_gate", False))
     case_id = st.session_state.get("pending_case_id")
@@ -112,6 +127,7 @@ def render_reading_view(*, backend, kind: str) -> None:  # noqa: ARG001 — kind
         case_id=str(case_id) if case_id else None,
         force=forced,
         on_stage=_on_stage,
+        trusted_pixels_per_mm=trusted,
     )
 
     # Keep the photo when the scan was refused: the result screen offers "Check

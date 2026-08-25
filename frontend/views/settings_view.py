@@ -6,8 +6,10 @@ from pathlib import Path
 import streamlit as st
 
 from backend import pi_backend_enabled
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
+from services.scale import default_pixels_per_mm
 from services.kiosk import is_kiosk, request_quit
 from services.storage import data_dir, get_storage
 from theme.tokens import TOKENS
@@ -86,7 +88,7 @@ def render_settings_view(*, root: Path) -> None:
             )
         st.text_input("SKIN_KERAS_PATH", key="SKIN_KERAS_PATH_UI")
         if "pixels_per_mm_ui" not in st.session_state:
-            st.session_state["pixels_per_mm_ui"] = 10.0
+            st.session_state["pixels_per_mm_ui"] = default_pixels_per_mm()
         st.number_input("pixels_per_mm", 0.1, 100.0, step=0.5, key="pixels_per_mm_ui")
         st.toggle(
             "Enhance image for ABCDE only (color + hair removal)",
@@ -130,7 +132,7 @@ def render_settings_view(*, root: Path) -> None:
     else:
         wipe_armed = False
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         lock, wipe = st.columns(2, gap="small")
         with lock:
             # Lock the staff area back up without waiting for the timeout — the
@@ -140,8 +142,11 @@ def render_settings_view(*, root: Path) -> None:
             # Not an if/elif pair: reaching Settings at all means the staff gate
             # is open, so `_staff_ok` is effectively always true here and an
             # `elif` made the kiosk Exit button dead in every configuration.
-            # Exit also lives in the nav, but Settings is where staff look for
-            # it, so both are offered.
+            #
+            # This is now the ONLY way out of the kiosk: the nav key was removed
+            # (see components/bottom_nav.py). One tap rather than two is fine
+            # here — the staff passcode is already the guard against a stray
+            # touch, which is what the old two-tap confirm was standing in for.
             if st.session_state.get("_staff_ok") and st.button(
                 "Lock the staff area", key="staff_lock", use_container_width=True
             ):

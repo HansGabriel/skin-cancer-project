@@ -123,7 +123,7 @@ def enrich_with_eigencam(result: dict[str, Any], *, want_overlay: bool = False) 
     rgb = result.get("rgb")
     if rgb is None or not cam_model_path().is_file():
         return
-    from services.lesion_gate import is_out_of_distribution, ood_stage_available
+    from services.lesion_gate import ood_report, ood_stage_available
 
     if not want_overlay and not ood_stage_available():
         return
@@ -144,6 +144,13 @@ def enrich_with_eigencam(result: dict[str, Any], *, want_overlay: bool = False) 
         # services.lesion_gate: the conv features it needs are this model's
         # output, which has just been computed. Doing it in the gate would mean
         # a second full inference. ``None`` when models/feature_stats.json is absent.
-        result["out_of_distribution"] = is_out_of_distribution(feat.mean(axis=(0, 1)))
+        distance, threshold = ood_report(feat.mean(axis=(0, 1)))
+        # Recorded whether or not the stage fires: these two numbers are the
+        # only evidence available for whether the threshold suits this camera.
+        result["ood_distance"] = distance
+        result["ood_threshold"] = threshold
+        result["out_of_distribution"] = (
+            None if (distance is None or threshold is None) else distance > threshold
+        )
     except Exception:  # noqa: BLE001 — explanation is optional; never break a scan
         return

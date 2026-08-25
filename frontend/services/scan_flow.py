@@ -19,7 +19,9 @@ def load_keras_vis_cached(path: str):
     return load_keras_model(path)
 
 
-def finalize_pipeline_result(pl: dict, keras_path: str, *, want_overlay: bool = False) -> None:
+def finalize_pipeline_result(
+    pl: dict, keras_path: str, *, want_overlay: bool = False, on_stage=None
+) -> None:
     rgb = pl.get("rgb")
     if rgb is None:
         return
@@ -45,7 +47,15 @@ def finalize_pipeline_result(pl: dict, keras_path: str, *, want_overlay: bool = 
     if not pl.get("attention_overlay_jpg"):
         from services.eigencam import enrich_with_eigencam
 
+        # The reading screen's last checklist step. Announced before the work
+        # rather than after, so the step is lit while it is happening.
+        if on_stage is not None:
+            on_stage("ood")
+        t_ood = time.perf_counter()
         enrich_with_eigencam(pl, want_overlay=want_overlay)
+        ood_ms = int((time.perf_counter() - t_ood) * 1000)
+        if ood_ms >= 1:
+            pl.setdefault("stage_ms", {})["ood"] = ood_ms
     ms = int((time.perf_counter() - t0) * 1000)
     if ms >= 1:
         pl.setdefault("stage_ms", {})["attention"] = ms
@@ -59,7 +69,7 @@ def build_attention_overlay(pl: dict, keras_path: str) -> None:
     finalize_pipeline_result(pl, keras_path, want_overlay=True)
 
 
-def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False, on_stage=None) -> dict:
+def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False, on_stage=None, trusted_pixels_per_mm: float | None = None) -> dict:
     backend_id = getattr(backend, "backend_id", "?")
     logger.info(
         "starting scan backend=%s upload=%s force=%s",
@@ -75,8 +85,9 @@ def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: flo
         case_id=case_id,
         force=force,
         on_stage=on_stage,
+        trusted_pixels_per_mm=trusted_pixels_per_mm,
     )
-    finalize_pipeline_result(pl, keras_path)
+    finalize_pipeline_result(pl, keras_path, on_stage=on_stage)
     _apply_out_of_distribution(pl)
     # run_pipeline already records the scale it measured at, which differs
     # from the requested one when the frame was resolution-capped. Only fill
@@ -95,13 +106,41 @@ def _apply_out_of_distribution(pl: dict) -> None:
     check did not run (no models/feature_stats.json) — treated as "not checked",
     never as a pass.
     """
+    distance = pl.get("ood_distance")
+    threshold = pl.get("ood_threshold")
+    # Logged on every scan, refused or not. Tuning SKIN_GATE_MAX_OOD for this
+    # camera is guesswork without a record of where real captures actually land,
+    # and the statistics behind the threshold come from dermoscopy rather than
+    # from this lens.
+    if distance is not None:
+        logger.info(
+            "feature distance %.1f (threshold %s) blocked=%s",
+            distance,
+            f"{threshold:.1f}" if threshold is not None else "not set",
+            pl.get("out_of_distribution") is True,
+        )
+
     if pl.get("out_of_distribution") is not True or pl.get("scan_result") is None:
         return
+    from services.lesion_gate import FrameCheck
     from services.verdict import no_lesion_verdict
 
     logger.info("scan withdrawn: features are unlike the training data")
     pl["blocked"] = True
     pl["scan_result"] = None
-    pl["verdict"] = no_lesion_verdict(
-        ("This does not look like the skin spots the scanner was taught to read.",)
+    reason = "This does not look like the skin spots the scanner was taught to read."
+    pl["verdict"] = no_lesion_verdict((reason,), code="ood")
+    # A FrameCheck so the result screen applies the same rule it applies to
+    # every other refusal — and this one is hard. There is no cautious answer
+    # available by forcing it: the classifier's three labels are benign,
+    # pre-cancerous and malignant, so whatever this is would be called one of
+    # them.
+    pl["frame_check"] = FrameCheck(
+        False,
+        float(pl.get("frame_check").skin_fraction) if pl.get("frame_check") else 1.0,
+        0.0,
+        0.0,
+        (reason,),
+        code="ood",
+        severity="hard",
     )
