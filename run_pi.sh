@@ -1,9 +1,16 @@
 #!/bin/bash
-# Quality gates: relaxed enough for real close-up camera shots, but still strict
-# enough to reject an all-black/blank/blown-out frame.
-export SKIN_QUALITY_BLUR_MIN=8
-export SKIN_QUALITY_V_MIN=15
-export SKIN_QUALITY_V_MAX=245
+# Quality gates. These must match launch_kiosk.sh, or testing here proves
+# nothing about the device people actually use.
+#
+# SKIN_QUALITY_BLUR_MIN used to be exported as 8 here — five times below the
+# calibrated default, and never set in launch_kiosk.sh at all, so the kiosk
+# silently ran 40 while this script ran 8. It only moves the *advisory*
+# threshold (the hard floor is 20 and is what actually blocks), so all it did
+# was hide "slightly blurry" during dev and show it on the demo. It is dropped
+# rather than copied across: soft close-ups are a fixed-focus IMX219 focused for
+# ~1m, and the fix is refocusing the lens for ~6cm, not lowering the bar.
+export SKIN_QUALITY_V_MIN=25
+export SKIN_QUALITY_V_MAX=235
 # No skin-gate override. This file used to export SKIN_QUALITY_SKIN_MIN=0.03,
 # which nothing reads — the real name is SKIN_GATE_SKIN_MIN — so the Pi silently
 # ran the strict default for its whole life. Rather than resurrect it, the
@@ -27,5 +34,22 @@ export SKIN_KB_DEV=1
 # touch targets). Tokens are read at import — export BEFORE streamlit run.
 export SKIN_NUM_THREADS=4
 export SKIN_DISPLAY=7in
+
+# No file watcher. `fileWatcherType` is unset by default, which resolves to
+# "auto" — and because watchdog is not in requirements-pi.txt, Streamlit falls
+# back to a polling watcher that stats every source file on a 0.2s cycle, off
+# the SD card, for the life of the process. A device that is not being edited
+# gains nothing from it. Set here rather than in .streamlit/config.toml so the
+# Mac keeps hot reload and Streamlit Cloud is untouched.
+# Editing code on the Pi now needs a restart, which it effectively did anyway.
+export STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+
+# Use the project venv, not whatever streamlit happens to be on PATH. Without
+# this the script launched the system interpreter, which has no ai-edge-litert.
+VENV="$(cd "$(dirname "$0")" && pwd)/venv"
+if [ -f "$VENV/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$VENV/bin/activate"
+fi
 
 streamlit run frontend/app.py

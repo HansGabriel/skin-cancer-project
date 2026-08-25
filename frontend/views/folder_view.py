@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
 from services.storage import get_storage
@@ -32,7 +33,7 @@ def render_folder_view() -> None:
         if st.button(f"{c.name} ({n} scans)", key=f"fc_{c.id}", use_container_width=True):
             navigate("case", selected_case_id=c.id, selected_folder_id=fid)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         back, new = st.columns([3, 2], gap="small")
         with back:
             if st.button("All saved spots", type="primary", key="fold_back", use_container_width=True):

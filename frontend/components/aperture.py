@@ -18,10 +18,12 @@ from __future__ import annotations
 import base64
 import html
 import math
+from functools import lru_cache
 from typing import Any
 
 import streamlit as st
 
+from services import photo_cache
 from services.format import tone_colors
 from services.verdict import UIVerdict
 from theme.tokens import TOKENS as T
@@ -38,12 +40,12 @@ _TIER_INK = {0: T.on_field_neutral, 1: T.on_field_melanin, 2: T.on_field_erythem
 
 _FIELD_R = 46.0  # the dark field
 # The specimen inside it. The photo renders at (2 * _PHOTO_R / 104) *
-# aperture_px, so on the 7" kiosk (aperture_px 225, device pixel ratio 1) the
-# old 38.0 put a 1024px capture into ~164 real pixels — small enough that people
+# aperture_px, so on the 7" kiosk (aperture_px 290, device pixel ratio 1) the
+# old 38.0 put a 1024px capture into ~212 real pixels — small enough that people
 # asked whether that thumbnail was what the model saw. It is not: the classifier
 # always receives the original capture bytes (services/pipeline.py).
 #
-# 41.0 gives ~177px and is the most that fits: the ABCDE marks are stroked 3
+# 41.0 gives ~229px and is the most that fits: the ABCDE marks are stroked 3
 # units wide centred on _RIM_R, so anything past ~41.5 puts the photo edge under
 # the marks and the rim stops reading as a rim. Making the circle itself bigger
 # is a tokens change (aperture_px), and that trades against the 600px height
@@ -53,12 +55,61 @@ _PHOTO_R = 41.0
 _RIM_R = 42.0  # graticule + ABCDE marks live on this radius
 
 
+# The photo is drawn at (2 * _PHOTO_R / 104) * aperture_px — about 229 real
+# pixels on the 7" panel at device pixel ratio 1. The capture is 1024px at
+# quality 92, so embedding it whole meant roughly a third of a megabyte of
+# base64 inside st.markdown, re-evaluated by the browser on every rerun, on
+# eight of the ten routes. 512 is 2x the drawn size, which is headroom for any
+# display that reports a higher pixel ratio, at about a twentieth of the bytes.
+_THUMB_PX = 512
+
+
+@lru_cache(maxsize=4)
+def _thumb_uri(data: bytes) -> str:
+    """Downscale a capture once and keep the encoded result.
+
+    Memoised because the alternative is decoding and re-encoding a JPEG on every
+    rerun, which on a Pi 4 is worse than shipping the large one. Bounded at four
+    entries, and cleared on the same boundary as session state — see
+    ``navigation._drop_photo_caches``; a cache holding a participant's skin
+    after they have walked away is exactly what docs/PRIVACY.md forbids.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        arr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            raise ValueError("undecodable")
+        h, w = arr.shape[:2]
+        if max(h, w) > _THUMB_PX:
+            scale = _THUMB_PX / float(max(h, w))
+            arr = cv2.resize(
+                arr, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA
+            )
+        ok, buf = cv2.imencode(".jpg", arr, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
+        if not ok:
+            raise ValueError("unencodable")
+        payload = buf.tobytes()
+    except Exception:  # noqa: BLE001 — a thumbnail is never worth losing the photo over
+        payload = data
+    return "data:image/jpeg;base64," + base64.b64encode(payload).decode()
+
+
+def forget_thumbnails() -> None:
+    """Drop every cached thumbnail. Called when the photo leaves session state."""
+    _thumb_uri.cache_clear()
+
+
+photo_cache.register(forget_thumbnails)
+
+
 def _data_uri(image: Any) -> str | None:
     """Encode bytes or an RGB array as a data URI for embedding in the SVG."""
     if image is None:
         return None
     if isinstance(image, (bytes, bytearray)):
-        return "data:image/jpeg;base64," + base64.b64encode(bytes(image)).decode()
+        return _thumb_uri(bytes(image))
     try:
         import cv2
         import numpy as np

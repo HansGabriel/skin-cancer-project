@@ -5,11 +5,16 @@ predate it and are deliberately kept, because the design's five-key row is a
 layout and neither of these is:
 
 * **Questions is hidden when the knowledge base is empty** — never a dead key.
-* **The kiosk gets an Exit key** so closing it does not need the staff passcode
-  or an SSH session (the alternative stranded whoever was running the demo).
+* **Exit is not a nav key at all.** It lives in Settings, behind the staff
+  passcode. A sixth key left ~77px per key on the 1024px panel, which is
+  narrower than "New check" renders, and it was the one button in the app
+  carrying ``help=`` — which in Streamlit 1.57 wraps the ``<button>`` in two
+  extra divs and unstyles it completely.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -62,16 +67,31 @@ def test_saved_key_covers_its_drill_down(kb_live) -> None:
         assert route in here
 
 
-def test_exit_is_kiosk_only(monkeypatch, kb_live) -> None:
-    """A browser tab does not need an Exit button; the kiosk has no other way out."""
-    kb_live(True)
-    monkeypatch.setattr(bottom_nav, "is_kiosk", lambda: False)
-    assert bottom_nav.is_kiosk() is False
-    monkeypatch.setattr(bottom_nav, "is_kiosk", lambda: True)
-    assert bottom_nav.is_kiosk() is True
-    # The key itself is rendered by render_nav from is_kiosk(); _items() never
-    # carries it, so that the confirm-then-quit handling stays in one place.
-    assert "Exit" not in [label for label, _r, _h in bottom_nav._items()]
+def test_exit_is_never_a_nav_key(kb_live) -> None:
+    """The nav is at most five keys wide, in every configuration.
+
+    At 1024px the instrument band is 461px. Five keys is 92px each; six was
+    77px, and "New check" needs ~88px — which is what put "New checkSaved" on
+    the panel. Nothing may add a sixth key.
+    """
+    for live in (True, False):
+        kb_live(live)
+        labels = [label for label, _r, _h in bottom_nav._items()]
+        assert "Exit" not in labels
+        assert len(labels) <= 5
+
+    # And the module no longer reaches for kiosk state at all — the quit path
+    # lives entirely in views/settings_view.py.
+    assert not hasattr(bottom_nav, "is_kiosk")
+    assert not hasattr(bottom_nav, "request_quit")
+
+
+def test_the_kiosk_can_still_be_closed() -> None:
+    """Removing the nav key must not strand whoever is running the demo."""
+    source = (
+        Path(bottom_nav.__file__).resolve().parents[1] / "views" / "settings_view.py"
+    ).read_text()
+    assert "request_quit()" in source
 
 
 def test_old_entry_point_still_resolves() -> None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
 from services.auth import staff_area_reachable
@@ -41,7 +42,7 @@ def render_home_view() -> None:
     )
     _render_steps()
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         show_saved = staff_area_reachable()
         if show_saved:
             start, saved = st.columns([3, 2], gap="small")

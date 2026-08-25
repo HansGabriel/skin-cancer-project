@@ -5,6 +5,7 @@ import json
 import streamlit as st
 
 from backend.assistant import kb_is_live
+from components.actions import actions_slot
 from components.instrument import render_head
 from components.urgency_pill import render_verdict_pill
 from navigation import navigate
@@ -29,7 +30,7 @@ def render_case_view() -> None:
     render_head(f"Saved spot · {site}" if site else "Saved spot", case.name)
     if not scans:
         st.info("No scans yet.")
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button("Add a check", type="primary", key="case_add_first", use_container_width=True):
                 st.session_state["pending_case_id"] = cid
                 navigate("camera")
@@ -83,7 +84,7 @@ def render_case_view() -> None:
                 "Export CSV", store.export_case_csv(cid), file_name="case.csv", key="case_csv"
             )
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         add, back = st.columns([3, 2], gap="small")
         with add:
             if st.button(

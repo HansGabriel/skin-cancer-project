@@ -18,6 +18,7 @@ from pathlib import Path
 import streamlit as st
 
 from backend.contracts import ScanResult
+from components.actions import actions_slot
 from components.image_compare import render_image_compare
 from components.instrument import render_head
 from navigation import navigate
@@ -119,7 +120,7 @@ def render_staff_view(*, root: Path, model_path: str) -> None:
     sr = pl.get("scan_result") if isinstance(pl, dict) else None
     if not isinstance(sr, ScanResult):
         render_head("Clinical readout · staff only", "No scan to report on")
-        with st.container(key="epv-actions"):
+        with actions_slot():
             if st.button("Back", type="primary", key="staff_back_empty", use_container_width=True):
                 navigate("results")
         return
@@ -155,6 +156,6 @@ def render_staff_view(*, root: Path, model_path: str) -> None:
 
     _render_meta(pl, root, model_path)
 
-    with st.container(key="epv-actions"):
+    with actions_slot():
         if st.button("Close", type="primary", key="staff_close", use_container_width=True):
             navigate("results")

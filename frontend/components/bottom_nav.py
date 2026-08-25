@@ -7,6 +7,15 @@ everyone, translate cleanly, and keep the whole bar in one typeface.
 The keys now sit at the foot of the dark instrument band rather than under the
 page. Styling for that lives in ``theme.css`` under ``.st-key-epv-nav``; this
 module owns *which* keys exist and what they do.
+
+**There is deliberately no Exit key here.** It lived here briefly and cost more
+than it bought. Six keys across the 45% band leaves ~77px each, which is narrower
+than the word "New check" renders — that is the ``New checkSaved`` collision. It
+also carried the only ``help=`` on any button in the app, which in Streamlit 1.57
+wraps the ``<button>`` in two extra divs and broke every ``.stButton > button``
+rule in the stylesheet, so the key painted near-white text on a white background
+and lost its 74px height. Exit now lives only in Settings, behind the staff
+passcode, which is where staff look for it anyway.
 """
 
 from __future__ import annotations
@@ -15,9 +24,6 @@ import streamlit as st
 
 from backend.assistant import kb_is_live
 from navigation import Route, current_route, navigate
-from services.kiosk import is_kiosk, request_quit
-
-_CONFIRM_KEY = "_exit_armed"
 
 # Routes that light the "New check" key: the whole capture flow is one
 # destination as far as a visitor is concerned, even though it spans four
@@ -43,12 +49,7 @@ def _items() -> tuple[tuple[str, Route, tuple[Route, ...]], ...]:
 def render_nav() -> None:
     active = current_route()
     nav_items = _items()
-    # The kiosk gets an Exit key of its own. It used to live only behind the
-    # staff passcode in Settings, which meant closing the kiosk needed either
-    # the code or an SSH session — no good when someone just wants the screen
-    # back. Two taps rather than one so a stray touch cannot end the demo.
-    show_exit = is_kiosk()
-    cols = st.columns(len(nav_items) + (1 if show_exit else 0), gap="small")
+    cols = st.columns(len(nav_items), gap="small")
     for col, (label, route, here) in zip(cols, nav_items):
         if col.button(
             label,
@@ -56,7 +57,6 @@ def render_nav() -> None:
             use_container_width=True,
             type="primary" if active in here else "secondary",
         ):
-            st.session_state.pop(_CONFIRM_KEY, None)
             if route == "assistant":
                 # The key means "ask about what I have now". Buttons on a
                 # specific scan pin that scan; the key must unpin, or it
@@ -65,27 +65,7 @@ def render_nav() -> None:
 
                 clear_scan_context()
             navigate(route)
-    if show_exit:
-        _render_exit(cols[-1])
 
 
 # Kept as the old name so nothing that still imports it breaks mid-refactor.
 render_bottom_nav = render_nav
-
-
-def _render_exit(col) -> None:
-    armed = st.session_state.get(_CONFIRM_KEY, False)
-    label = "Tap again" if armed else "Exit"
-    if col.button(
-        label,
-        key="nav_exit",
-        use_container_width=True,
-        type="primary" if armed else "secondary",
-        help="Closes the kiosk and returns to the desktop.",
-    ):
-        if armed:
-            st.session_state.pop(_CONFIRM_KEY, None)
-            request_quit()
-            st.stop()
-        st.session_state[_CONFIRM_KEY] = True
-        st.rerun()

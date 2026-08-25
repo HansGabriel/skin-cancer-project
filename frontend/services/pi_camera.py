@@ -254,5 +254,26 @@ def get_camera() -> _PiCamera | None:
     return _INSTANCE
 
 
+def release_camera() -> None:
+    """Stop the camera and drop the singleton.
+
+    ``get_camera()`` had no counterpart, so nothing ever called ``stop()``. The
+    encoder thread does two colour conversions, a resize and a JPEG encode
+    twenty times a second *inside the Streamlit process*, and the MJPEG server
+    pushes those frames to a browser that decodes and repaints every one in
+    software. That ran on Home, on Results, on Settings — on every screen, for
+    the life of the process, long after the camera view was gone. It is a large
+    part of why the panel felt jammed.
+
+    Tearing the singleton down rather than pausing it keeps restart semantics
+    trivial: the next ``get_camera()`` builds a fresh one. Safe to call when
+    picamera2 is absent (Mac, Streamlit Cloud) or when nothing was ever started.
+    """
+    global _INSTANCE
+    cam, _INSTANCE = _INSTANCE, None
+    if cam is not None:
+        cam.stop()
+
+
 def preview_url() -> str:
     return f"http://{PREVIEW_HOST}:{PREVIEW_PORT}{PREVIEW_PATH}"
