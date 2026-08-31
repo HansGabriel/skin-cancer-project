@@ -21,6 +21,15 @@ Two stages run on every capture, both cheap enough for a Raspberry Pi 4:
    *different* in colour from the skin around it. Uniform skin with no lesion
    gives a near-zero difference.
 
+   Three further checks live inside that stage, and they exist because it was
+   not enough on its own: a photograph of a bare forearm under uneven light
+   passed every test above and was given a verdict. They ask whether the
+   outlined thing is on the person (:func:`mask_on_skin`), whether its edge
+   stops the way pigment does or fades the way a shadow does
+   (:func:`edge_width`), and whether it stands out from the variation this
+   skin already has (:func:`contrast_z`). See the table beside
+   ``_MIN_ON_SKIN``.
+
 An optional third stage compares the model's own features against statistics
 built from the training set (``models/feature_stats.json``, produced by
 ``scripts/build_feature_stats.py``). It is skipped when that file is absent, so
@@ -185,6 +194,61 @@ _MOIRE_PX = 512
 # dermatologist.
 _MAX_LESION_MM = float(os.environ.get("SKIN_GATE_MAX_LESION_MM", "20.0"))
 
+# --- "is that a spot, or is that the light?" ---------------------------------
+# The three checks below close the hole this gate shipped with: a photograph of
+# ordinary bare skin reached the classifier and came back a confident "benign".
+# Every earlier check answered yes to it — there is skin (1.00), there is one
+# dark region not several (dominance 1.00), it is not a screen, and the region
+# has Lab contrast of 9.6 against a floor of 5.0. What the segmenter had
+# actually outlined was a shadow.
+#
+# Measured on synthetic frames matching tests/test_bare_skin.py — a skin field
+# with a 0.55-1.15 illumination ramp, a soft shadow, hair, and a background
+# band — against the lesion fixtures the suite already trusts:
+#
+#                                     on-skin   edge width   z
+#   bare, lighting gradient              1.00         0.07   0.01
+#   bare, gradient + hair                1.00         0.20   0.61
+#   bare, soft shadow                    1.00         7.06   5.91
+#   bare, shadow + hair                  1.00         6.17   2.44
+#   bare, arm against a dark desk        0.01         1.14  10.96
+#   bare, arm against a light wall       0.01         1.15   6.91
+#   ---------------------------------------------------------------
+#   lesion, pale (amelanotic)            1.00         1.08  12.69
+#   lesion, single                       1.00         1.14  35.90
+#   lesion, dark skin                    1.00         1.15  17.57
+#   lesion, under heavy hair             1.00         1.32   9.16
+#   lesion, blurred sigma=8              1.00         1.68 165.50
+#
+# No one of them catches every bare-skin frame and each is chosen for the case
+# the other two cannot see: on-skin catches an outline that is not on the
+# person, edge width catches shading, and z catches an outline that does not
+# stand out from the skin's own variation. Each threshold sits at least 2x clear
+# of the worst *correctly outlined* lesion above, which is the same margin rule
+# _MOIRE_MAX_PEAK_RATIO was chosen under.
+#
+# All three are SOFT refusals. Every one of them is a judgement about the photo
+# — its framing, its light, its contrast — not about the subject, and
+# views/results_view.py draws the hard/soft line exactly there. The person who
+# genuinely has a faint spot is the one person who can see the scanner is wrong,
+# so "Check it anyway" must stay on screen for them.
+#
+# NOTE on the two frames these numbers do not flatter: a real lesion
+# photographed under a strong gradient or a hard shadow scores 13.1 and 10.3 on
+# edge width and IS refused. In both the segmenter had outlined the shading and
+# not the mole (0.25-0.28 of the frame against the mole's 0.087), so the scan
+# that used to "succeed" was measuring a shadow. "That looks like a shadow —
+# even out the light and put the ring on the mole" is the better answer, and it
+# is overridable.
+_MIN_ON_SKIN = float(os.environ.get("SKIN_GATE_MIN_ON_SKIN", "0.50"))
+_MAX_EDGE_WIDTH = float(os.environ.get("SKIN_GATE_MAX_EDGE_WIDTH", "4.0"))
+_MIN_CONTRAST_Z = float(os.environ.get("SKIN_GATE_MIN_CONTRAST_Z", "1.5"))
+# What the Settings "Check photos strictly" switch tightens them to. Still clear
+# of every correctly outlined lesion above, but with less room — which is why it
+# is opt-in and why its help text says it will reject some real lesions.
+_MAX_EDGE_WIDTH_STRICT = float(os.environ.get("SKIN_GATE_MAX_EDGE_WIDTH_STRICT", "2.5"))
+_MIN_CONTRAST_Z_STRICT = float(os.environ.get("SKIN_GATE_MIN_CONTRAST_Z_STRICT", "3.0"))
+
 
 # Two values, and the difference decides whether a person can get past a
 # refusal — worth the reader not having to grep for the spellings in use.
@@ -322,15 +386,205 @@ def lesion_contrast(image_rgb: np.ndarray, mask: np.ndarray) -> float:
     m = mask > 0
     if not m.any():
         return 0.0
-    k = max(3, int(0.06 * max(image_rgb.shape[:2])) | 1)
-    ring = cv2.dilate(m.astype(np.uint8), np.ones((k, k), np.uint8), iterations=1) > 0
-    ring &= ~m
+    ring = _ring_of(mask)
     if not ring.any():
         return 0.0
     lab = _lab(image_rgb)
     inside = lab[m].mean(axis=0)
     outside = lab[ring].mean(axis=0)
     return float(np.linalg.norm(inside - outside))
+
+
+def skin_region(image_rgb: np.ndarray) -> np.ndarray:
+    """:func:`skin_mask` with its holes filled — "where is the person's skin?"
+
+    The distinction matters and getting it wrong the obvious way rejects every
+    mole in the world. ``skin_mask`` classifies by *skin colour*, and a
+    pigmented lesion is not skin-coloured: measured on the suite's own
+    single-lesion fixture, the lesion outline overlaps the raw skin mask by
+    **0.00**. Any "the spot must be on skin" rule written against the raw mask
+    refuses 100% of dark lesions.
+
+    Closing the mask and filling its external contours turns "pixels that look
+    like skin" into "the area of the photo that is a person", so a lesion
+    sitting inside skin counts as on-skin (1.00) while an arm photographed
+    against a desk still reads the desk as not-skin.
+    """
+    # Downscaled first: this is compared against masks of every resolution via
+    # _match_shape, and the 384px copy is what keeps it a couple of milliseconds
+    # on a Pi rather than tens on a 12 MP capture.
+    m = skin_mask(_work_size(image_rgb)).astype(np.uint8) * 255
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
+    contours, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled = np.zeros_like(m)
+    if contours:
+        cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
+    return filled > 0
+
+
+def _ring_of(mask: np.ndarray) -> np.ndarray:
+    """The band of skin just outside ``mask`` — what a spot is compared against.
+
+    One definition, used by :func:`lesion_contrast`, :func:`edge_width` and
+    :func:`skin_variation` alike. They are compared against each other's
+    thresholds, so a ring that meant something slightly different in each would
+    make those comparisons meaningless.
+    """
+    m = mask > 0
+    k = max(3, int(0.06 * max(m.shape[:2])) | 1)
+    ring = cv2.dilate(m.astype(np.uint8), np.ones((k, k), np.uint8), iterations=1) > 0
+    return ring & ~m
+
+
+def mask_on_skin(mask: np.ndarray | None, skin_geometry: np.ndarray | None) -> float:
+    """Share of the outlined spot that sits on skin, in [0, 1].
+
+    Measured against :func:`skin_region` — the hole-filled one — for the reason
+    given there: against the raw colour mask a real mole scores 0.00 and the
+    check would refuse every lesion in the world.
+
+    The obvious alternative, measuring the *ring* around the spot instead, was
+    tried and abandoned: it scores 1.00 on everything. When the segmenter
+    latches onto a dark background band the band runs off the frame edge, so
+    the ring around it is the arm — all skin, no complaint. It is the outlined
+    area itself that has to be on the person.
+
+    Measured, on synthetic frames matching tests/test_bare_skin.py:
+
+        every lesion fixture, dark or pale, centred or at the edge   1.00
+        forearm photographed against a dark desk                     0.01
+        forearm photographed against a light wall                    0.01
+
+    Returns 1.0 — "no opinion" — when there is no geometry to compare against,
+    so a caller that could not measure the skin never causes a refusal.
+    """
+    if skin_geometry is None or mask is None:
+        return 1.0
+    m = mask > 0
+    if not m.any():
+        return 1.0
+    skin = _match_shape(skin_geometry, m.shape[:2])
+    return float(np.count_nonzero(m & skin)) / float(np.count_nonzero(m))
+
+
+def _match_shape(mask: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Nearest-neighbour resize of a boolean mask, so the 384px skin geometry can
+    be compared against a native-resolution lesion outline."""
+    if mask.shape[:2] == tuple(shape):
+        return mask > 0
+    resized = cv2.resize(
+        mask.astype(np.uint8), (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST
+    )
+    return resized > 0
+
+
+def edge_width(image_rgb: np.ndarray, mask: np.ndarray) -> float:
+    """How fast the spot's edge happens, as a percentage of the frame diagonal.
+
+    A percentage, not a pixel count, so the number means the same thing for a
+    Pi capture and a 12 MP upload. ``_MAX_EDGE_WIDTH`` is on this scale.
+
+    This is the measure that separates a shadow from a mole, and it is *not*
+    contrast. Contrast asks how different the spot is, and a lighting gradient
+    can be arbitrarily different and still be a gradient — which is exactly how
+    a bare forearm reached the classifier and came back "benign" with a Lab
+    contrast of 14.3 against a floor of 5.0.
+
+    Width asks how *fast* the difference happens, and that is the one property
+    shading cannot fake. A penumbra's width is set by the light source's angular
+    size and spans a large part of the frame; a mole's border is set by pigment
+    and stays narrow even when the photo is soft. Measured (see the table beside
+    ``_MAX_EDGE_WIDTH``):
+
+        pale (amelanotic) lesion            1.08
+        single lesion                       1.14
+        lesion + hair                       1.32
+        lesion, blurred sigma=8             1.68   <- worst real lesion
+        --------------------------------------
+        bare forearm, shadow + hair         6.17   <- refused
+        bare forearm, soft shadow           7.06   <- refused
+
+    ``median`` along the boundary, never ``mean``: a hair crossing the outline
+    is a huge local gradient and would make any frame look sharp-edged. That
+    asymmetry is why this can only ever be a "this edge is far too wide"
+    refusal, and never a "sharp enough, let it through" acceptance.
+    """
+    work = _work_size(image_rgb)
+    m = _match_shape(mask, work.shape[:2])
+    ring = _ring_of(m)
+    if not m.any() or not ring.any():
+        return 0.0
+
+    lab_l = cv2.GaussianBlur(_lab(work)[:, :, 0], (0, 0), 2.0)
+    drop = abs(float(lab_l[m].mean()) - float(lab_l[ring].mean()))
+    if drop <= 0.0:
+        return 0.0
+
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    band = cv2.dilate(m.astype(np.uint8), k) - cv2.erode(m.astype(np.uint8), k)
+    band = band > 0
+    if not band.any():
+        return 0.0
+    gx = cv2.Scharr(lab_l, cv2.CV_32F, 1, 0)
+    gy = cv2.Scharr(lab_l, cv2.CV_32F, 0, 1)
+    # Scharr's kernel sums to 32; dividing keeps the gradient in Lab-L per pixel
+    # so the ratio below is a real pixel count rather than an arbitrary scale.
+    slope = float(np.median(np.hypot(gx, gy)[band])) / 32.0
+    if slope <= 1e-6:
+        # No measurable slope anywhere on the boundary: the edge is infinitely
+        # wide. Returned on the same percentage scale as every other path — an
+        # earlier version returned a raw pixel count here, which still refused
+        # the frame but poisoned the percentiles in the scan log and in
+        # scripts/measure_gate_signals.py, i.e. the calibration set itself.
+        return 100.0
+    width_work = drop / slope
+    return 100.0 * width_work / float(np.hypot(*work.shape[:2]))
+
+
+def skin_variation(image_rgb: np.ndarray, mask: np.ndarray, skin_geometry: np.ndarray | None) -> float:
+    """How much the skin in this frame varies on its own, in Lab units.
+
+    The denominator for :func:`contrast_z`. Measured over skin *outside* the
+    spot and its ring, so the lesion cannot inflate the figure it is about to be
+    judged against. Returns 0.0 when there is not enough skin left to measure,
+    which the caller reads as "no opinion".
+    """
+    work = _work_size(image_rgb)
+    m = _match_shape(mask, work.shape[:2])
+    ring = _ring_of(m)
+    elsewhere = ~(m | ring)
+    if skin_geometry is not None:
+        elsewhere &= _match_shape(skin_geometry, work.shape[:2])
+    if np.count_nonzero(elsewhere) < 64:
+        return 0.0
+    lab = _lab(work)[elsewhere]
+    return float(np.sqrt(np.mean(lab.std(axis=0) ** 2)))
+
+
+def contrast_z(contrast: float, sigma_skin: float) -> float:
+    """Lesion contrast measured in units of the skin's own variation.
+
+    The absolute Lab floor is what let a bare forearm through: on a frame with a
+    lighting gradient the outlined region's contrast is 5.6, over the floor of
+    5.0, while the skin around it varies by 9.07 — so the "spot" does not stand
+    out from that skin at all, and scores 0.61 here.
+
+    Armed by default, at a floor far below any lesion measured here. It was
+    planned as a strict-mode-only check on the expectation that the margin would
+    be thin; measuring it on frames with a real lighting gradient showed the
+    opposite — bare skin lands at 0.01-0.61 while the weakest lesion that
+    reaches this check sits at 9.16 — and it is the only one of the three that
+    catches a plain gradient with no shadow and no background in shot. Refusing
+    that by default is what the device is for. ``_MIN_CONTRAST_Z`` carries the
+    numbers and ``_MIN_CONTRAST_Z_STRICT`` the tightened value.
+
+    ``0.0`` sigma means "not measurable" and returns infinity — no opinion,
+    never a refusal.
+    """
+    if sigma_skin <= 0.0:
+        return float("inf")
+    return contrast / sigma_skin
 
 
 def _touches_all_borders(mask: np.ndarray) -> bool:
@@ -461,12 +715,103 @@ def check_skin(image_rgb: np.ndarray) -> tuple[FrameCheck | None, float]:
     ), skin
 
 
+def spot_signals(
+    image_rgb: np.ndarray,
+    mask: np.ndarray | None,
+    *,
+    skin_geometry: np.ndarray | None = None,
+) -> dict[str, float]:
+    """Every number the content checks are decided on, measured once.
+
+    Returned whether or not the frame is refused, and logged on every scan by
+    ``services.pipeline``. The thresholds in this module were set from synthetic
+    frames because no photographs of the failure existed to set them from; the
+    log is how real captures replace that. Do not make this quietly skip work
+    when the frame is going to pass — a refusal that never happens is exactly
+    the measurement worth having.
+    """
+    if mask is None or not (mask > 0).any():
+        return {"on_skin": 1.0, "edge_width": 0.0, "contrast": 0.0, "sigma_skin": 0.0, "z": float("inf")}
+
+    # Everything is measured on the 384px working copy, and that is load-bearing
+    # rather than a speed choice. These signals are compared against one set of
+    # thresholds from two places — quick_reject, which holds a 384px frame, and
+    # check_spot, which holds the full capture — and Lab contrast measured at
+    # native resolution is not the same number as the same contrast measured
+    # after an area-average downscale. Normalising here is what makes the two
+    # paths give one photograph one answer.
+    work = _work_size(image_rgb)
+    m = _match_shape(mask, work.shape[:2]).astype(np.uint8) * 255
+    if not (m > 0).any():
+        # The outline vanished in the downscale: a spot thinner than one working
+        # pixel. "Too small to read" is check_spot's business, not this one's.
+        return {"on_skin": 1.0, "edge_width": 0.0, "contrast": 0.0, "sigma_skin": 0.0, "z": float("inf")}
+
+    contrast = lesion_contrast(work, m)
+    sigma = skin_variation(work, m, skin_geometry)
+    return {
+        "on_skin": mask_on_skin(m, skin_geometry),
+        "edge_width": edge_width(work, m),
+        "contrast": contrast,
+        "sigma_skin": sigma,
+        "z": contrast_z(contrast, sigma),
+    }
+
+
+def _content_refusal(
+    signals: dict[str, float], *, skin: float, frac: float, strict: bool
+) -> FrameCheck | None:
+    """The three "is that a spot, or is that the light?" checks, or None.
+
+    Shared by :func:`check_spot` and :func:`quick_reject` so the cheap
+    pre-segmentation path and the full path cannot drift apart — and so bare
+    skin is still refused *before* the expensive stages run. See
+    tests/test_gate_cost.py: reaching a refusal used to cost 107 seconds on a
+    12 MP capture, and putting these checks only in the full path would bring
+    that back.
+    """
+    max_edge = _MAX_EDGE_WIDTH_STRICT if strict else _MAX_EDGE_WIDTH
+    min_z = _MIN_CONTRAST_Z_STRICT if strict else _MIN_CONTRAST_Z
+
+    if signals["on_skin"] < _MIN_ON_SKIN:
+        return FrameCheck(
+            False,
+            skin,
+            frac,
+            signals["contrast"],
+            ("What is inside the ring is not on skin.",),
+            code="off_skin",
+        )
+    if signals["edge_width"] > max_edge:
+        return FrameCheck(
+            False,
+            skin,
+            frac,
+            signals["contrast"],
+            ("The edge of what is inside the ring fades away like a shadow.",),
+            code="soft_edge",
+        )
+    if signals["z"] < min_z:
+        return FrameCheck(
+            False,
+            skin,
+            frac,
+            signals["contrast"],
+            ("This looks like plain skin with no clear spot on it.",),
+            code="plain_skin",
+        )
+    return None
+
+
 def check_spot(
     image_rgb: np.ndarray,
     mask: np.ndarray | None,
     *,
     skin: float = 1.0,
     mask_is_a_guess: bool = False,
+    skin_geometry: np.ndarray | None = None,
+    strict: bool = False,
+    signals: dict[str, float] | None = None,
 ) -> FrameCheck:
     """Stage 2 alone: is there a distinct spot on skin already known to be there?
 
@@ -478,6 +823,18 @@ def check_spot(
     Measuring contrast on it compares skin against skin, so it must not be
     allowed to answer "there is a spot here" — before this flag existed the
     "no spot" branch below could not be reached through the pipeline at all.
+
+    ``skin_geometry`` is :func:`skin_region` for this frame. It is keyword-only
+    and defaults to ``None`` — "no opinion" — so every existing caller keeps
+    working and the on-skin check simply does not run for them. Note that "no
+    opinion" is not free: without it a frame whose outline is off the person is
+    still refused, but as ``plain_skin`` ("no clear spot on this skin") rather
+    than ``off_skin`` ("move so only skin fills the ring"), which is the less
+    useful of the two sentences. Pass it wherever it is known.
+
+    ``signals`` lets a caller hand in :func:`spot_signals` it has already
+    measured. ``services.pipeline`` does, because it logs them on every scan and
+    measuring the same frame twice is real time on a Pi.
     """
     reasons: list[str] = []
     if mask_is_a_guess:
@@ -501,7 +858,18 @@ def check_spot(
         reasons.append("This looks like plain skin with no clear spot on it.")
         code = "plain_skin"
 
-    return FrameCheck(not reasons, skin, frac, contrast, tuple(reasons), code=code)
+    if reasons:
+        return FrameCheck(False, skin, frac, contrast, tuple(reasons), code=code)
+
+    # Size, framing and raw contrast all said yes. So did they for a photograph
+    # of a bare forearm, which is why these run last rather than not at all.
+    if signals is None:
+        signals = spot_signals(image_rgb, mask, skin_geometry=skin_geometry)
+    content = _content_refusal(signals, skin=skin, frac=frac, strict=strict)
+    if content is not None:
+        return content
+
+    return FrameCheck(True, skin, frac, contrast, (), code="")
 
 
 # Lab-L spread (99.5th minus 0.5th percentile, after a median blur) below which
@@ -517,14 +885,18 @@ def check_spot(
 _PRECHECK_MIN_SPREAD = float(os.environ.get("SKIN_GATE_PRECHECK_SPREAD", "12.0"))
 
 
-def _tone_spread(image_rgb: np.ndarray) -> float:
+def tone_spread(image_rgb: np.ndarray) -> float:
     """How much lighter-to-darker range the frame actually contains.
 
     Exposure-normalised first, for the same reason ``skin_mask`` does it: a dim
     capture has its whole tonal range compressed, so a real lesion shot in poor
     indoor light scores like bare skin and would be refused as "no clear spot".
+
+    Sizes the frame itself. It used to take an already-downscaled copy and every
+    caller had to remember that; a full-resolution frame handed to it by mistake
+    would have scored differently and nothing would have said so.
     """
-    lab_l = _lab(_normalise_exposure(image_rgb))[:, :, 0]
+    lab_l = _lab(_normalise_exposure(_work_size(image_rgb)))[:, :, 0]
     smooth = cv2.medianBlur(lab_l, 5).astype(np.float32)
     return float(np.percentile(smooth, 99.5) - np.percentile(smooth, 0.5))
 
@@ -662,7 +1034,14 @@ def check_screen(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
     return None
 
 
-def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | None:
+def quick_reject(
+    image_rgb: np.ndarray,
+    *,
+    skin: float = 1.0,
+    skin_geometry: np.ndarray | None = None,
+    strict: bool = False,
+    signals_out: dict[str, float] | None = None,
+) -> FrameCheck | None:
     """Cheap "is there obviously no lesion here?" test, or None to keep going.
 
     This exists for one measured problem. Stage 2 (:func:`check_spot`) needs a
@@ -678,7 +1057,7 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
     Two refusals are available here, and both are chosen so that being wrong is
     not possible in the direction that matters:
 
-    * **"plain skin, no clear spot"** — decided from :func:`_tone_spread`, which
+    * **"plain skin, no clear spot"** — decided from :func:`tone_spread`, which
       needs no mask at all. That is the point: the obvious implementation asks
       ``segment_safe`` for a mask, but that helper substitutes a *centre circle*
       when no candidate is plausible, and measuring contrast on that circle
@@ -687,6 +1066,11 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
     * **"fills the whole photo"** — geometry, which downscaling does not change.
       Only trusted when the cheap mask is in band; a degenerate mask means no
       opinion.
+    * **the three content checks** — not on skin, a shadow's soft edge, or no
+      contrast against the skin's own variation. Same trust rule as above. These
+      are what actually stop a photograph of a bare forearm; the tone-spread
+      test below turned out to be dead on any frame with a lighting gradient in
+      it, which is every real photograph of an arm.
 
     **"too small in the frame" is never used here.** A small lesion is what the
     enhancement and GrabCut exist to find, so the coarse pass must not reject
@@ -698,7 +1082,7 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
     """
     work = _work_size(image_rgb)
 
-    if _tone_spread(work) < _PRECHECK_MIN_SPREAD:
+    if tone_spread(work) < _PRECHECK_MIN_SPREAD:
         return FrameCheck(
             False,
             skin,
@@ -740,12 +1124,37 @@ def quick_reject(image_rgb: np.ndarray, *, skin: float = 1.0) -> FrameCheck | No
             ("The spot fills the whole photo. Move the camera back a little.",),
             code="fills_frame",
         )
-    return None
+
+    # The three content checks, on the coarse mask and under the same trust rule
+    # the fills-frame branch above already applies: only when the cheap mask is
+    # in band, because a degenerate one is not evidence of anything.
+    #
+    # They run here as well as in check_spot on purpose. A frame of bare skin is
+    # the case that pays most for reaching a refusal the slow way — see this
+    # function's docstring and tests/test_gate_cost.py — and refusing it only
+    # after enhancement and GrabCut would put those 107 seconds back.
+    signals = spot_signals(work, mask, skin_geometry=skin_geometry)
+    # Handed back rather than returned, because the return value is already "the
+    # refusal, or None to keep going" and both of those need to be loggable.
+    # Without this the frames that ARE refused here — the interesting ones —
+    # were the only frames a scan never recorded any measurement for, which
+    # would have left the calibration log recording nothing but the passes.
+    if signals_out is not None:
+        signals_out.update(signals)
+    return _content_refusal(signals, skin=skin, frac=frac, strict=strict)
 
 
 def check_frame(image_rgb: np.ndarray, mask: np.ndarray | None) -> FrameCheck:
-    """Both content stages in order. ``mask`` comes from ``services.segmentation``."""
+    """Both content stages in order. ``mask`` comes from ``services.segmentation``.
+
+    Measures the skin geometry itself rather than leaving it at ``None``. It
+    could not simply be omitted: without it an outline sitting on a desk beside
+    the arm is still refused, but the reason reaching the screen is "no clear
+    spot on this skin" instead of "move so only skin fills the ring" — the same
+    refusal wearing the wrong sentence, which is the exact failure
+    ``verdict._NO_LESION_COPY`` exists to prevent.
+    """
     no_skin, skin = check_skin(image_rgb)
     if no_skin is not None:
         return no_skin
-    return check_spot(image_rgb, mask, skin=skin)
+    return check_spot(image_rgb, mask, skin=skin, skin_geometry=skin_region(image_rgb))

@@ -83,11 +83,29 @@ def _score_mask(frac: float) -> float:
     return 10.0 + abs(frac - _IDEAL_FRAC)
 
 
+# GrabCut initialises its two colour models with k-means, and OpenCV's k-means
+# draws from one process-wide RNG whose state advances on every call. So the
+# same photo segmented twice in one session could come back with a different
+# mask — measured on a lesion photographed under uneven light: three identical
+# calls, foreground fractions 0.276, 0.087, 0.087.
+#
+# That is not a tuning problem, it is a reproducibility one. Everything
+# downstream reads the mask: the ABCDE letters, the diameter shown to the user,
+# the risk band, and the content gate's decision to refuse. A screening device
+# that answers the same photograph differently on a re-scan cannot be defended,
+# and it also makes any threshold measured against the mask meaningless.
+#
+# The seed value itself is arbitrary and carries no meaning — only that it is
+# the same one every time.
+_GRABCUT_SEED = 20260831
+
+
 def _grabcut_center_mask(rgb: np.ndarray) -> np.ndarray:
     """GrabCut with a central ROI — fallback when global thresholds fail."""
     h, w = rgb.shape[:2]
     if h < 32 or w < 32:
         return np.zeros((h, w), dtype=np.uint8)
+    cv2.setRNGSeed(_GRABCUT_SEED)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     rect = (w // 10, h // 10, max(1, int(0.8 * w)), max(1, int(0.8 * h)))
     mask_gc = np.zeros((h, w), np.uint8)

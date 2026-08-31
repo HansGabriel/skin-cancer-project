@@ -24,7 +24,8 @@ import streamlit as st
 
 from components.instrument import render_head
 from navigation import navigate
-from services.scale import default_pixels_per_mm, trusted_pixels_per_mm
+from services import settings
+from services.scale import trusted_pixels_per_mm
 from services.scan_flow import run_scan_and_store
 
 # Pipeline stage → which of the three visible steps it belongs to. The names
@@ -99,15 +100,20 @@ def render_reading_view(*, backend, kind: str) -> None:  # noqa: ARG001 — kind
     _render_checklist(checklist, 0)
 
     # Streamlit has flushed everything above by now; the scan blocks below it.
-    pixels = float(st.session_state.get("pixels_per_mm_ui", default_pixels_per_mm()))
+    pixels = float(settings.get("pixels_per_mm_ui"))
     # Deliberately not `pixels`: that one carries the staff override from
     # Settings, and a hand-typed number must not be able to arm a hard refusal.
     # See services/scale.py.
     trusted = trusted_pixels_per_mm(
         from_device_camera=bool(st.session_state.get("capture_from_device"))
     )
-    keras = str(st.session_state.get("SKIN_KERAS_PATH_UI", ""))
-    strict_q = bool(st.session_state.get("strict_quality_gate", False))
+    keras = str(settings.get("SKIN_KERAS_PATH_UI"))
+    # Read through services.settings, not st.session_state. This line is the
+    # invisible half of the settings defect: it runs on a rerun where the
+    # Settings screen is not drawn, and Streamlit had already collected the
+    # widget-keyed value by then — so whatever staff chose, this always read the
+    # default. See services/settings.py.
+    strict = settings.get_bool("strict_checking")
     case_id = st.session_state.get("pending_case_id")
     seen = {"step": 0}
 
@@ -122,7 +128,7 @@ def render_reading_view(*, backend, kind: str) -> None:  # noqa: ARG001 — kind
         backend,
         image_bytes,
         pixels_per_mm=pixels,
-        strict_quality=strict_q,
+        strict=strict,
         keras_path=keras,
         case_id=str(case_id) if case_id else None,
         force=forced,

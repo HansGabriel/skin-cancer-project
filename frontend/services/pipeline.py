@@ -22,9 +22,20 @@ import numpy as np
 
 from backend.contracts import ScanResult
 from backend.tflite_shared import decode_image_bytes_to_rgb
+from services import settings
 from services.abcde import LetterResult, compute_abcde
 from services.evolving import apply_to_abcde
-from services.lesion_gate import FrameCheck, check_skin, check_spot, quick_reject, check_scale
+from services.lesion_gate import (
+    FrameCheck,
+    check_scale,
+    check_skin,
+    check_spot,
+    dark_structure,
+    quick_reject,
+    skin_region,
+    spot_signals,
+    tone_spread,
+)
 from services.preprocess import enhance_lesion_image
 from services.quality import check_quality
 from services.risk import composite_risk_score, risk_band
@@ -127,25 +138,38 @@ class PipelineResult(TypedDict, total=False):
     forced: NotRequired[bool]
 
 
-def _preprocess_for_abcde() -> bool:
-    try:
-        import streamlit as st
+def cap_working_resolution(rgb: np.ndarray) -> np.ndarray:
+    """Downscale a capture to ``MAX_WORK_PX`` on its long edge, or return it as is.
 
-        if st.session_state.get("preprocess_enabled") is False:
-            return False
-    except Exception:  # noqa: BLE001
-        pass
-    return os.environ.get("SKIN_PREPROCESS", "1") == "1"
+    Extracted so ``scripts/measure_gate_signals.py`` measures the gate at the
+    resolution the gate actually runs at. Every one of the thresholds it prints
+    is resolution-dependent — edge width is a percentage of the frame diagonal —
+    so measuring a 12 MP file the device would have downscaled produces numbers
+    that describe nothing.
+    """
+    h, w = rgb.shape[:2]
+    if max(h, w) <= MAX_WORK_PX:
+        return rgb
+    scale = MAX_WORK_PX / float(max(h, w))
+    return cv2.resize(
+        rgb,
+        (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+        interpolation=cv2.INTER_AREA,
+    )
+
+
+def _preprocess_for_abcde() -> bool:
+    """Session choice if there is one, else SKIN_PREPROCESS, else on.
+
+    The try/except that used to be spelled out here now lives once in
+    services.settings — this module still runs with no Streamlit at all (the
+    tests, scripts/, the Pi worker), and that contract is unchanged.
+    """
+    return settings.get_bool("preprocess_enabled")
 
 
 def _preprocess_debug() -> bool:
-    try:
-        import streamlit as st
-
-        return bool(st.session_state.get("preprocess_debug"))
-    except Exception:  # noqa: BLE001
-        pass
-    return False
+    return settings.get_bool("preprocess_debug")
 
 
 def _analysis_rgb(rgb: np.ndarray) -> np.ndarray:
@@ -191,11 +215,53 @@ def trust_line(pl: dict) -> str:
     return f"{head} · {base}"
 
 
+def _log_gate_signals(
+    rgb: np.ndarray, sig: dict[str, float], *, skin: float, strict: bool
+) -> None:
+    """One line per scan carrying every content-gate measurement.
+
+    Mirrors what ``services.scan_flow`` already does for the feature distance,
+    and for the same reason: tuning a threshold for this camera is guesswork
+    without a record of where real captures actually land.
+
+    ``sig`` may be empty or partial: a frame refused by the frame-level checks
+    (a scene, a screen, a flat field) never reaches the point where the spot
+    signals are measured. Missing entries are logged as ``nan`` rather than
+    skipping the line, because "this scan was refused and here is what little
+    was measured" is itself the record worth having.
+
+    ``tone_spread`` and ``dominance`` are logged even though nothing is decided
+    on them here. They are precisely the two signals that turned out not to work
+    — the spread test is dead on any frame with a lighting gradient, and
+    dominance reads 1.00 for bare skin and for a mole alike — so they are the
+    two most worth having real numbers for before anyone tries to revive them.
+    """
+    try:
+        spread = tone_spread(rgb)
+        _blobs, dominance, _contrast = dark_structure(rgb)
+    except Exception:  # noqa: BLE001 — a measurement for the log must never sink a scan
+        logger.debug("gate signals unavailable", exc_info=True)
+        return
+    logger.info(
+        "gate signals skin=%.3f on_skin=%.2f edge_width=%.2f contrast=%.1f "
+        "sigma_skin=%.2f z=%.2f tone_spread=%.1f dominance=%.2f strict=%s",
+        skin,
+        sig.get("on_skin", float("nan")),
+        sig.get("edge_width", float("nan")),
+        sig.get("contrast", float("nan")),
+        sig.get("sigma_skin", float("nan")),
+        sig.get("z", float("nan")),
+        spread,
+        dominance,
+        strict,
+    )
+
+
 def _gate(
     rgb_display: np.ndarray,
     q: dict,
     *,
-    strict_quality: bool,
+    strict: bool,
     force: bool = False,
     stages: dict[str, int] | None = None,
     trusted_pixels_per_mm: float | None = None,
@@ -205,7 +271,7 @@ def _gate(
     Returns ``(blocking_result_or_None, mask, rgb_for_abcde)``.
 
     Both backends call this so they cannot drift apart: the upload path once
-    honoured ``strict_quality`` while the Pi path ignored it, which meant the
+    honoured ``strict`` while the Pi path ignored it, which meant the
     same photo could pass on one device and be rejected on the other.
 
     Order is deliberate. "There is no skin here" is answered first because a
@@ -227,6 +293,13 @@ def _gate(
     st_ms = stages if stages is not None else {}
     with _stage(st_ms, "skin"):
         no_skin, skin = check_skin(rgb_display)
+        # Where the person is, as geometry rather than a fraction. check_skin
+        # answers "how much of this frame is skin" and that is all it kept, so
+        # nothing downstream could ask the question that stops a photograph of
+        # an object held in the hand: is the outlined thing actually on skin?
+        # A second skin_mask pass on the 384px working copy, ~2 ms, plus the
+        # hole fill — see lesion_gate.skin_region for why the holes matter.
+        skin_geometry = skin_region(rgb_display)
     if no_skin is not None and not force:
         return {
             "blocked": True,
@@ -237,7 +310,7 @@ def _gate(
             "verdict": no_lesion_verdict(no_skin.reasons, code=no_skin.code),
         }, None, rgb_display
 
-    if (not q["ok"] or (q["reasons"] and strict_quality)) and not force:
+    if (not q["ok"] or (q["reasons"] and strict)) and not force:
         return {
             "blocked": True,
             "quality": q,
@@ -254,8 +327,16 @@ def _gate(
     # the obvious cases from a 384px copy in a few milliseconds, and returns
     # None whenever it is not sure (see lesion_gate.quick_reject).
     with _stage(st_ms, "prespot"):
-        early = quick_reject(rgb_display, skin=skin)
+        early_signals: dict[str, float] = {}
+        early = quick_reject(
+            rgb_display,
+            skin=skin,
+            skin_geometry=skin_geometry,
+            strict=strict,
+            signals_out=early_signals,
+        )
     if early is not None and not force:
+        _log_gate_signals(rgb_display, early_signals, skin=skin, strict=strict)
         return {
             "blocked": True,
             "quality": q,
@@ -272,7 +353,26 @@ def _gate(
     # A 3-class softmax always sums to 1, so without this a photo of a bare
     # forearm comes back as a confident "benign".
     with _stage(st_ms, "spot"):
-        frame = check_spot(rgb_display, mask, skin=skin, mask_is_a_guess=mask_is_a_guess)
+        # Measured once and used twice: the checks below decide on these
+        # numbers and the log line records them. Letting check_spot measure for
+        # itself meant every scan paid for the whole set twice.
+        signals = spot_signals(rgb_display, mask, skin_geometry=skin_geometry)
+        frame = check_spot(
+            rgb_display,
+            mask,
+            skin=skin,
+            mask_is_a_guess=mask_is_a_guess,
+            skin_geometry=skin_geometry,
+            strict=strict,
+            signals=signals,
+        )
+    # Logged on every scan, refused or not, and deliberately not only when a
+    # check fires. The thresholds these numbers are compared against were set
+    # from synthetic frames, because no photograph of the failure existed to set
+    # them from — so this log IS the calibration set. A refusal somebody
+    # disagrees with can be turned into a threshold by reading one line.
+    _log_gate_signals(rgb_display, signals, skin=skin, strict=strict)
+
     # Size is only meaningful once the optics are fixed and measured; see
     # lesion_gate.check_scale. `None` on every other path, including uploads.
     if frame.is_lesion_photo:
@@ -297,7 +397,12 @@ def run_pipeline(
     image_bytes: bytes | None,
     *,
     pixels_per_mm: float,
-    strict_quality: bool = True,
+    # Defaults to OFF, where the old `strict_quality` defaulted to True. That is
+    # a deliberate change, not a rename artefact: `strict` now arms tightened
+    # *content* thresholds as well as blocking advisory quality notes, and a
+    # programmatic caller that says nothing should get what the device gives a
+    # visitor, not something stricter than the app has ever been measured at.
+    strict: bool = False,
     case_id: str | None = None,
     force: bool = False,
     preprocess: bool = True,  # noqa: ARG001 — kept for API compat; session/env controls ABCDE enhance
@@ -315,11 +420,13 @@ def run_pipeline(
     tta = os.environ.get("SKIN_TTA", "1") == "1"
     model_path = os.environ.get("SKIN_MODEL_PATH", "skin_classifier.tflite")
     stages: dict[str, int] = Stages(on_enter=on_stage)
-    # ``strict_quality`` now only decides whether *advisory* quality notes (a
-    # slightly soft or dim photo) also block. It is no longer forced on for the
-    # kiosk: services.lesion_gate is what keeps junk input from reaching the
-    # classifier, and it runs unconditionally. Blocking every imperfect photo
-    # was rejecting real lesions shot in ordinary indoor light.
+    # ``strict`` is the one Settings switch ("Check photos strictly"). It does
+    # two things and nothing else: it lets *advisory* quality notes (a slightly
+    # soft or dim photo) block as well as warn, and it arms the content checks
+    # in services.lesion_gate whose measured margin is too thin to arm by
+    # default. It defaults OFF and must stay that way — services.lesion_gate
+    # refuses junk input unconditionally, and blocking every imperfect photo was
+    # measured rejecting real lesions shot in ordinary indoor light.
 
     def _finish(
         rgb_display: np.ndarray,
@@ -386,13 +493,9 @@ def run_pipeline(
         # not a different image.
         if max(rgb_display.shape[:2]) > MAX_WORK_PX:
             with _stage(stages, "resize"):
-                h, w = rgb_display.shape[:2]
-                scale = MAX_WORK_PX / float(max(h, w))
-                rgb_display = cv2.resize(
-                    rgb_display,
-                    (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
-                    interpolation=cv2.INTER_AREA,
-                )
+                before_px = max(rgb_display.shape[:2])
+                rgb_display = cap_working_resolution(rgb_display)
+                scale = max(rgb_display.shape[:2]) / float(before_px)
                 image_bytes = _rgb_to_jpeg_bytes(rgb_display)
                 # The scale MUST travel with the image. `pixels_per_mm` is a
                 # property of the capture, so shrinking the frame without
@@ -410,7 +513,7 @@ def run_pipeline(
         blocking, mask, rgb_for_abcde = _gate(
             rgb_display,
             q,
-            strict_quality=strict_quality,
+            strict=strict,
             force=force,
             stages=stages,
             trusted_pixels_per_mm=trusted_pixels_per_mm,
@@ -478,7 +581,7 @@ def run_pipeline(
     blocking, mask, rgb_for_abcde = _gate(
         rgb_display,
         q,
-        strict_quality=strict_quality,
+        strict=strict,
         force=force,
         stages=stages,
         trusted_pixels_per_mm=trusted_pixels_per_mm,

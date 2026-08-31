@@ -13,8 +13,9 @@ so a bad shot is retaken in two seconds instead of after a full scan.
 Step 2 is also where an unclear photo is stopped. It is a *soft* gate: when the
 readings are poor the primary action becomes "Take another photo" and going on
 anyway is demoted to secondary. Deliberately not enforced in the pipeline —
-``strict_quality`` does that, and it was measured refusing **72% of genuine
-HAM10000 lesions** (see ``tests/test_gate_real_images.py``). Steering beats
+the Settings "Check photos strictly" switch does that, and it was measured
+refusing **72% of genuine HAM10000 lesions** (see
+``tests/test_gate_real_images.py``). Steering beats
 refusing when the cost of a wrong refusal is someone's melanoma.
 """
 

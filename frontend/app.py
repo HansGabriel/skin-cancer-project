@@ -21,7 +21,7 @@ sys.path.insert(0, str(FRONTEND))
 from backend.contracts import BackendKind
 from logging_config import configure_logging
 from navigation import current_route, init_navigation, navigate
-from services.scale import default_pixels_per_mm
+from services import settings
 from services.auth import (
     STAFF_ROUTES,
     enforce_passcode_gate,
@@ -53,34 +53,18 @@ def _labels_path() -> str:
     return os.environ.get("SKIN_LABELS_PATH", str(ROOT / "models" / "labels.txt"))
 
 
-def _default_pi_url() -> str:
-    return os.environ.get("PI_BASE_URL", "http://raspberrypi.local:5000")
-
-
 def _init_session() -> None:
+    """Navigation, then every Settings value — defaults, env and the saved file.
+
+    This used to seed nine keys inline, each of them the ``key`` of a Settings
+    widget. Streamlit collects a keyed widget's state on any run where that
+    widget is not drawn, so those ``setdefault`` calls were not seeding defaults
+    on first use — they were *overwriting the staff's choice* on every screen
+    change. services/settings.py explains the whole shape of it; the defaults
+    and their justifications now live in its SPEC table.
+    """
     init_navigation()
-    if "SKIN_KERAS_PATH_UI" not in st.session_state:
-        st.session_state["SKIN_KERAS_PATH_UI"] = os.environ.get(
-            "SKIN_KERAS_PATH", str(ROOT / "models" / "skin_classifier_full.keras")
-        )
-    st.session_state.setdefault("pixels_per_mm_ui", default_pixels_per_mm())
-    # Off by default — settings_view.py has always *said* this, but the default
-    # here was True, so an advisory ("slightly blurry") blocked the scan
-    # outright. Measured against real HAM10000 dermoscopy that refused 72% of
-    # genuine lesions. services.lesion_gate is what stops junk input now.
-    st.session_state.setdefault("strict_quality_gate", False)
-    st.session_state.setdefault("inference_backend_kind", "local")
-    st.session_state.setdefault("pi_base_url_input", _default_pi_url())
-    st.session_state.setdefault("preprocess_enabled", True)
-    st.session_state.setdefault("preprocess_debug", False)
-    # TTA on for every backend. It used to be switched off for the remote-Pi
-    # backend as a speed measure, but docs/METRICS.md validated the deployed
-    # 0.911 cancer sensitivity *with 4-view TTA on* — so that special case
-    # quietly served a configuration nobody had measured. It is also not where
-    # the time goes: the extra passes are ~0.6 s of what was a 30 s scan.
-    # Staff can still turn it off in Settings; that is a deliberate, visible act.
-    st.session_state.setdefault("tta_toggle", True)
-    os.environ.setdefault("SKIN_TTA", "1")
+    settings.init_session()
 
 
 def main() -> None:
@@ -98,9 +82,9 @@ def main() -> None:
     enforce_passcode_gate()
     _init_session()
 
-    kind = cast(BackendKind, st.session_state["inference_backend_kind"])
+    kind = cast(BackendKind, settings.get("inference_backend_kind"))
     backend = get_inference_backend(
-        kind, _model_path(), _labels_path(), str(st.session_state["pi_base_url_input"]).rstrip("/")
+        kind, _model_path(), _labels_path(), str(settings.get("pi_base_url_input")).rstrip("/")
     )
 
     with st.sidebar:

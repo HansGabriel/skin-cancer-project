@@ -78,7 +78,7 @@ def _skin_with_lesion(h: int = SIZE, w: int = SIZE) -> np.ndarray:
 
 def _run(rgb: np.ndarray):
     b = _Backend()
-    return run_pipeline(b, _jpeg(rgb), pixels_per_mm=10.0, strict_quality=False), b
+    return run_pipeline(b, _jpeg(rgb), pixels_per_mm=10.0, strict=False), b
 
 
 # --- The pre-check --------------------------------------------------------

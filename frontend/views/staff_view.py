@@ -22,6 +22,7 @@ from components.actions import actions_slot
 from components.image_compare import render_image_compare
 from components.instrument import render_head
 from navigation import navigate
+from services import settings
 from services.eigencam import cam_model_path
 # NOT services.format.fmt_pct: it treats a value <= 1.0 as a fraction and
 # multiplies by 100, so a genuine 0.6% malignant probability printed as
@@ -144,7 +145,7 @@ def render_staff_view(*, root: Path, model_path: str) -> None:
         st.caption("The attention view is not available on this device.")
     elif st.button("Show where the scanner looked", key="staff_attention", use_container_width=True):
         with st.spinner("Building the attention view…"):
-            build_attention_overlay(pl, str(st.session_state.get("SKIN_KERAS_PATH_UI", "")))
+            build_attention_overlay(pl, str(settings.get("SKIN_KERAS_PATH_UI")))
         st.session_state["last_result"] = pl
         st.rerun()
 

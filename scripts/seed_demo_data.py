@@ -65,7 +65,7 @@ def main() -> int:
             backend,
             path.read_bytes(),
             pixels_per_mm=10.0,
-            strict_quality=False,
+            strict=False,
             keras_path="",
             case_id=case.id,
         )

@@ -224,7 +224,7 @@ def test_a_blurred_lesion_is_refused_softly_and_can_be_forced() -> None:
 
     blurred = cv2.GaussianBlur(_one_lesion(), (0, 0), 12)
     result = run_pipeline(_CountingBackend(), _jpeg(blurred),
-                          pixels_per_mm=10.0, strict_quality=False)
+                          pixels_per_mm=10.0, strict=False)
 
     assert result["blocked"] is True
     assert result["verdict"].headline == "TAKE ANOTHER PHOTO"
@@ -299,7 +299,7 @@ def test_a_face_never_reaches_the_classifier() -> None:
     from services.pipeline import run_pipeline
 
     backend = _CountingBackend()
-    result = run_pipeline(backend, _jpeg(_face_like()), pixels_per_mm=10.0, strict_quality=False)
+    result = run_pipeline(backend, _jpeg(_face_like()), pixels_per_mm=10.0, strict=False)
 
     assert result["blocked"] is True
     assert backend.calls == 0, "the model was asked to classify a scene"
@@ -311,7 +311,7 @@ def test_the_refusal_says_what_is_actually_wrong() -> None:
     from services.pipeline import run_pipeline
 
     result = run_pipeline(_CountingBackend(), _jpeg(_face_like()),
-                          pixels_per_mm=10.0, strict_quality=False)
+                          pixels_per_mm=10.0, strict=False)
 
     assert result["verdict"].headline == "THIS IS NOT ONE SPOT"
     assert result["frame_check"].can_override is False
@@ -322,7 +322,7 @@ def test_refusing_a_scene_costs_nothing(caplog) -> None:
     from services.pipeline import run_pipeline
 
     result = run_pipeline(_CountingBackend(), _jpeg(_face_like()),
-                          pixels_per_mm=10.0, strict_quality=False)
+                          pixels_per_mm=10.0, strict=False)
 
     stages = result.get("stage_ms") or {}
     for expensive in ("enhance", "segment", "model", "abcde"):
@@ -342,7 +342,7 @@ def test_real_lesions_still_reach_the_classifier(name, frame) -> None:
     from services.pipeline import run_pipeline
 
     backend = _CountingBackend()
-    result = run_pipeline(backend, _jpeg(frame), pixels_per_mm=10.0, strict_quality=False)
+    result = run_pipeline(backend, _jpeg(frame), pixels_per_mm=10.0, strict=False)
 
     assert not result.get("blocked"), f"{name} was refused: {result['verdict'].headline}"
     assert backend.calls == 1, f"{name} never reached the model"
@@ -354,7 +354,7 @@ def test_an_upload_is_never_refused_for_its_size() -> None:
 
     backend = _CountingBackend()
     result = run_pipeline(backend, _jpeg(_one_lesion()), pixels_per_mm=10.0,
-                          strict_quality=False)  # trusted_pixels_per_mm defaults to None
+                          strict=False)  # trusted_pixels_per_mm defaults to None
 
     assert not result.get("blocked")
     assert backend.calls == 1
@@ -371,11 +371,11 @@ def test_the_device_camera_can_refuse_something_too_large() -> None:
     frame = _jpeg(_one_lesion())
 
     ok = run_pipeline(_CountingBackend(), frame, pixels_per_mm=40.0,
-                      strict_quality=False, trusted_pixels_per_mm=40.0)
+                      strict=False, trusted_pixels_per_mm=40.0)
     assert not ok.get("blocked")
 
     too_big = run_pipeline(_CountingBackend(), frame, pixels_per_mm=4.0,
-                           strict_quality=False, trusted_pixels_per_mm=4.0)
+                           strict=False, trusted_pixels_per_mm=4.0)
     assert too_big["blocked"] is True
     assert too_big["frame_check"].code == "too_large"
     assert too_big["verdict"].headline == "TOO BIG TO BE A SPOT"

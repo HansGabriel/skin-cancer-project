@@ -73,7 +73,7 @@ def _skin_with_lesion() -> np.ndarray:
 
 def _run(rgb: np.ndarray, backend: _Backend | None = None):
     b = backend or _Backend()
-    return run_pipeline(b, _jpeg(rgb), pixels_per_mm=10.0, strict_quality=False), b
+    return run_pipeline(b, _jpeg(rgb), pixels_per_mm=10.0, strict=False), b
 
 
 def test_a_real_lesion_photo_reaches_the_classifier() -> None:
@@ -138,13 +138,13 @@ def test_a_dim_photo_is_advisory_by_default() -> None:
 def test_strict_mode_blocks_the_same_dim_photo() -> None:
     """The toggle has to actually do something, in the direction it claims."""
     b = _Backend()
-    pl = run_pipeline(b, _jpeg(_dim(_skin_with_lesion())), pixels_per_mm=10.0, strict_quality=True)
+    pl = run_pipeline(b, _jpeg(_dim(_skin_with_lesion())), pixels_per_mm=10.0, strict=True)
     assert b.calls == 0
     assert pl["blocked"] and pl["verdict"].state == "retake"
 
 
 def test_both_backends_apply_the_same_rules() -> None:
-    """The Pi path once ignored strict_quality entirely, so the same photo
+    """The Pi path once ignored strict entirely, so the same photo
     passed on one device and was rejected on the other."""
 
     class _PiBackend(_Backend):
@@ -157,8 +157,8 @@ def test_both_backends_apply_the_same_rules() -> None:
     dim = _jpeg(_dim(_skin_with_lesion()))
     pi = _PiBackend()
     pi._jpg = dim
-    strict_pi = run_pipeline(pi, None, pixels_per_mm=10.0, strict_quality=True)
-    strict_upload = run_pipeline(_Backend(), dim, pixels_per_mm=10.0, strict_quality=True)
+    strict_pi = run_pipeline(pi, None, pixels_per_mm=10.0, strict=True)
+    strict_upload = run_pipeline(_Backend(), dim, pixels_per_mm=10.0, strict=True)
     assert strict_pi["verdict"].state == strict_upload["verdict"].state == "retake"
 
 

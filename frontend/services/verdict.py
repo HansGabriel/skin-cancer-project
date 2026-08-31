@@ -121,6 +121,27 @@ _NO_LESION_COPY: dict[str, tuple[str, str, str]] = {
         "real skin.",
         "Point the camera at the skin itself and take a new photo.",
     ),
+    "no_spot": (
+        "NO SPOT COULD BE PICKED OUT",
+        "The scanner found skin, but could not pick out an edge anywhere on it "
+        "to read as a spot.",
+        "Put the ring over a mole or mark, move a little closer, and take a new "
+        "photo in even light.",
+    ),
+    "off_skin": (
+        "THE RING IS NOT ON SKIN",
+        "What the scanner outlined is not sitting on skin, so it cannot read it "
+        "as a spot.",
+        "Move the camera so only skin fills the ring, with the mole or mark in "
+        "the middle of it.",
+    ),
+    "soft_edge": (
+        "THAT LOOKS LIKE A SHADOW",
+        "The edge of what the scanner outlined fades away slowly, the way a "
+        "shadow does, rather than stopping the way a mole does.",
+        "Move so the light falls evenly on the skin, then put the ring over the "
+        "mole or mark itself.",
+    ),
     "plain_skin": (
         "NO SPOT ON THIS SKIN",
         "The scanner found skin, but no clear mark on it to read.",

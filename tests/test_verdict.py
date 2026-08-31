@@ -213,3 +213,36 @@ def test_verdict_copy_stays_readable() -> None:
         text = v.text().lower()
         for word in jargon:
             assert word not in text, f"{v.state} exposes '{word}': {v.text()}"
+
+
+def test_every_refusal_code_the_gate_can_emit_has_its_own_wording() -> None:
+    """A new gate check must not ship a message written for a different one.
+
+    ``_NO_LESION_COPY`` exists because one sentence had to cover every refusal
+    and "NO SKIN SPOT FOUND" is accurate for a wall and nonsense for a face. The
+    fallback that keeps a new code from rendering a blank screen also hides the
+    omission, so nothing but this test notices — which is exactly what happened
+    when ``off_skin`` and ``soft_edge`` were added.
+
+    Read out of the source rather than by calling anything: the codes live in
+    ``FrameCheck(...)`` literals scattered across the module, and importing it
+    tells you nothing about which ones exist.
+    """
+    import ast
+    from pathlib import Path
+
+    from services.verdict import _NO_LESION_COPY
+
+    source = (Path(__file__).resolve().parent.parent / "frontend" / "services" / "lesion_gate.py").read_text()
+    codes = {
+        kw.value.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "FrameCheck"
+        for kw in node.keywords
+        if kw.arg == "code" and isinstance(kw.value, ast.Constant) and kw.value.value
+    }
+    # Emitted by services.scan_flow after inference, not by lesion_gate itself.
+    codes.add("ood")
+
+    assert codes, "no refusal codes found — this test has stopped testing anything"
+    assert codes - set(_NO_LESION_COPY) == set()

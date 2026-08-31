@@ -40,6 +40,7 @@ from backend.contracts import ScanResult
 from components.actions import actions_slot
 from components.instrument import render_head
 from navigation import navigate
+from services import settings
 from services.format import tone_chip, tone_colors
 from services.kiosk import is_kiosk
 from services.verdict import resolve_verdict, signs_sentence, verdict_for_saved_scan
@@ -187,7 +188,7 @@ def _answer(
         # Deliberately not reworded — see the comment above.
         return text, entry.always_append_disclaimer, False
 
-    if st.session_state.get("assistant_gemma_enabled"):
+    if settings.get("assistant_gemma_enabled"):
         text, reworded = OllamaRephraser().reword(entry.answer)
     return text, entry.always_append_disclaimer, reworded
 

@@ -184,3 +184,110 @@ def test_the_structure_signal_separates_lesions_from_scenes() -> None:
         f"{_STRUCTURE_MAX_DOMINANCE} threshold — the signal does not separate "
         f"them from scenes on this data (worst {worst:.2f})"
     )
+
+
+# The three checks that stop a photograph of bare skin. Their thresholds were
+# set from *generated* frames, because no photographs of the failure existed to
+# set them from — which is the shortcut this whole file exists to catch. These
+# ceilings are the only place real images get a say, so they are the tests to
+# run first on the machine that holds the dataset.
+#
+# Two percent, like the ceilings above. Dermoscopy fills the frame with skin, so
+# on_skin should be 1.00 for essentially every image here and a failure means
+# skin_region is wrong rather than that the threshold is tight.
+_MAX_OFF_SKIN_REJECT = 0.02
+_MAX_SOFT_EDGE_REJECT = 0.02
+_MAX_LOW_Z_REJECT = 0.02
+
+
+def _spot_signals_for(path: str):
+    """Gate signals for one real image, or ``None`` when there is no outline.
+
+    A guessed mask is a circle drawn in the middle of the frame, so measuring it
+    compares skin against skin and would drag every rate below toward "refuse"
+    for a reason that has nothing to do with these thresholds.
+    """
+    from services.lesion_gate import skin_region, spot_signals
+    from services.segmentation import segment_or_fallback
+
+    rgb = _load(path)
+    mask, is_a_guess = segment_or_fallback(rgb)
+    if is_a_guess:
+        return None
+    return spot_signals(rgb, mask, skin_geometry=skin_region(rgb))
+
+
+def _rate(predicate) -> tuple[float, list[str]]:
+    hits: list[str] = []
+    measured = 0
+    for path in _PATHS:
+        signals = _spot_signals_for(path)
+        if signals is None:
+            continue
+        measured += 1
+        if predicate(signals):
+            hits.append(path)
+    assert measured, "no real image produced an outline — the harness is broken"
+    return len(hits) / measured, hits
+
+
+def test_real_lesions_are_not_refused_as_being_off_skin() -> None:
+    """A mole is not skin-coloured, so this is the check that could refuse them all.
+
+    It is measured against the hole-filled skin region for exactly that reason
+    (see lesion_gate.skin_region). If this fails, that fill is what is broken —
+    do not reach for the threshold first.
+    """
+    from services.lesion_gate import _MIN_ON_SKIN
+
+    rate, examples = _rate(lambda s: s["on_skin"] < _MIN_ON_SKIN)
+    assert rate <= _MAX_OFF_SKIN_REJECT, (
+        f"on-skin check refused {rate:.0%} of real lesions; lower "
+        f"SKIN_GATE_MIN_ON_SKIN. Examples: {examples[:3]}"
+    )
+
+
+def test_real_lesions_are_not_refused_as_shadows() -> None:
+    """Dermoscopy is often soft and unevenly lit — the plausible false positive."""
+    from services.lesion_gate import _MAX_EDGE_WIDTH
+
+    rate, examples = _rate(lambda s: s["edge_width"] > _MAX_EDGE_WIDTH)
+    assert rate <= _MAX_SOFT_EDGE_REJECT, (
+        f"soft-edge check refused {rate:.0%} of real lesions; raise "
+        f"SKIN_GATE_MAX_EDGE_WIDTH. Examples: {examples[:3]}"
+    )
+
+
+def test_real_lesions_stand_out_from_the_skin_around_them() -> None:
+    """The amelanotic and heavily-pigmented-skin cases are the ones at risk."""
+    from services.lesion_gate import _MIN_CONTRAST_Z
+
+    rate, examples = _rate(lambda s: s["z"] < _MIN_CONTRAST_Z)
+    assert rate <= _MAX_LOW_Z_REJECT, (
+        f"contrast-z check refused {rate:.0%} of real lesions; lower "
+        f"SKIN_GATE_MIN_CONTRAST_Z. Examples: {examples[:3]}"
+    )
+
+
+def test_the_bare_skin_signals_have_real_margin_on_real_lesions() -> None:
+    """Report the margins, so a threshold change can be judged rather than guessed.
+
+    Same shape as test_the_structure_signal_separates_lesions_from_scenes above.
+    The 2x rule is the one _MOIRE_MAX_PEAK_RATIO was chosen under: a threshold
+    has to sit at least twice clear of the worst real lesion, or it is not a
+    threshold, it is a coin toss.
+    """
+    from services.lesion_gate import _MAX_EDGE_WIDTH, _MIN_CONTRAST_Z
+
+    signals = [s for s in (_spot_signals_for(p) for p in _PATHS) if s is not None]
+    widest = float(np.max([s["edge_width"] for s in signals]))
+    weakest = float(np.min([s["z"] for s in signals]))
+
+    assert widest * 2.0 <= _MAX_EDGE_WIDTH, (
+        f"the widest real lesion edge is {widest:.2f} against a ceiling of "
+        f"{_MAX_EDGE_WIDTH} — less than 2x margin"
+    )
+    assert weakest >= _MIN_CONTRAST_Z * 2.0, (
+        f"the weakest real lesion z is {weakest:.2f} against a floor of "
+        f"{_MIN_CONTRAST_Z} — less than 2x margin"
+    )

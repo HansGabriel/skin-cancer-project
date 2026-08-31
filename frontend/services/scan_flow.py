@@ -69,7 +69,7 @@ def build_attention_overlay(pl: dict, keras_path: str) -> None:
     finalize_pipeline_result(pl, keras_path, want_overlay=True)
 
 
-def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict_quality: bool, keras_path: str, case_id: str | None = None, force: bool = False, on_stage=None, trusted_pixels_per_mm: float | None = None) -> dict:
+def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: float, strict: bool, keras_path: str, case_id: str | None = None, force: bool = False, on_stage=None, trusted_pixels_per_mm: float | None = None) -> dict:
     backend_id = getattr(backend, "backend_id", "?")
     logger.info(
         "starting scan backend=%s upload=%s force=%s",
@@ -81,7 +81,7 @@ def run_scan_and_store(backend, image_bytes: bytes | None, *, pixels_per_mm: flo
         backend,
         image_bytes,
         pixels_per_mm=pixels_per_mm,
-        strict_quality=strict_quality,
+        strict=strict,
         case_id=case_id,
         force=force,
         on_stage=on_stage,

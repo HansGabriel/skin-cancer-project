@@ -222,3 +222,104 @@ to tests on raw arrays:
 
 Both are regression-tested through the real encode in
 `tests/test_gate_robustness.py`, across seven skin tones and five exposures.
+
+## Content gate — is there a spot on this skin?
+
+`frontend/services/lesion_gate.py` refuses a photograph that is not a spot on
+skin, because the classifier has only three labels — benign, pre_cancerous,
+malignant — and a 3-class softmax sums to 1. Anything that reaches it is called
+one of the three, so "not a lesion" has to be answered before inference.
+
+Three checks were added after a photograph of an ordinary bare forearm was given
+a confident "benign". Every check that existed answered yes to it:
+
+| signal | that frame | threshold |
+|---|---|---|
+| skin fraction | 1.00 | ≥ 0.08 |
+| dark-blob dominance | 1.00 | < 0.65 refuses |
+| periodicity | 18 | > 400 refuses |
+| Lab contrast | 9.6 | ≥ 5.0 |
+
+What the segmenter had outlined was a shadow.
+
+### The three signals
+
+Measured on generated frames — a skin field with a 0.55–1.15 illumination ramp,
+a soft shadow, hair, and a background band — against the lesion fixtures the
+suite already trusts. **These are not measurements of a real camera.** No
+photographs of the failure were available, which is the single most important
+caveat on every number below.
+
+| frame | on-skin | edge width | z |
+|---|---|---|---|
+| bare, lighting gradient | 1.00 | 0.07 | 0.01 |
+| bare, gradient + hair | 1.00 | 0.20 | 0.61 |
+| bare, shadow + hair | 1.00 | 6.17 | 2.44 |
+| bare, soft shadow | 1.00 | 7.06 | 5.91 |
+| bare, arm against a dark desk | **0.01** | 1.14 | 10.96 |
+| bare, arm against a light wall | **0.01** | 1.15 | 6.91 |
+| lesion, pale (amelanotic) | 1.00 | 1.08 | 12.69 |
+| lesion, single | 1.00 | 1.14 | 35.90 |
+| lesion, dark skin | 1.00 | 1.15 | 17.57 |
+| lesion, under heavy hair | 1.00 | 1.32 | 9.16 |
+| lesion, blurred σ=8 | 1.00 | **1.68** | 165.50 |
+
+Shipped thresholds, each at least 2× clear of the worst correctly-outlined
+lesion — the margin rule `_MOIRE_MAX_PEAK_RATIO` was chosen under:
+
+| check | env var | default | strict | worst real lesion |
+|---|---|---|---|---|
+| `off_skin` | `SKIN_GATE_MIN_ON_SKIN` | 0.50 | — | 1.00 |
+| `soft_edge` | `SKIN_GATE_MAX_EDGE_WIDTH` | 4.0 | 2.5 | 1.68 |
+| `plain_skin` (z) | `SKIN_GATE_MIN_CONTRAST_Z` | 1.5 | 3.0 | 9.16 |
+
+All three are **soft** refusals. Each judges the *photo* — its framing, light
+and contrast — not the subject, so "Check it anyway" stays on screen. Only
+refusals about the subject (`structure`, `screen`, `too_large`, `ood`) are hard.
+
+### Measured against the previous behaviour
+
+Through the real JPEG path, seven bare-skin frames and ten lesion frames:
+
+| | before | after |
+|---|---|---|
+| bare-skin frames given a verdict | 4 of 7 | **0 of 7** |
+| lesion frames refused by a new check | — | 1 (a mole under a hard shadow) |
+
+That one case is a deliberate cost, not a regression tolerated: the segmenter
+outlines the shadow rather than the mole there (25% of the frame against the
+mole's 8.7%), so the scan that used to succeed was measuring shading. It is
+pinned by `tests/test_bare_skin.py::test_a_mole_photographed_under_a_hard_shadow_is_refused_not_measured`.
+
+### Two signals that do not work
+
+Recorded so nobody spends the afternoon rediscovering it.
+
+- **Frame-wide tone spread** (`_PRECHECK_MIN_SPREAD`, 12.0) is dead on any real
+  photograph of a limb. A skin field with a lighting gradient scores 43. It
+  still catches a genuinely flat frame, and is kept for that alone.
+- **Measuring that spread inside the skin mask instead** inverts it: the skin
+  mask excludes the lesion, so a bare forearm scores 42.7 and a real lesion
+  scores 2.0. A "refuse when low" rule there would refuse lesions and pass skin.
+
+Both are logged on every scan anyway (`dermascan.pipeline`, `gate signals …`),
+because they are the two most likely to be reached for again.
+
+### Replacing these numbers with real ones
+
+Every scan logs one line carrying all eight signals, and
+`scripts/measure_gate_signals.py --images DIR --name SET` prints percentiles for
+a folder. Pick each threshold strictly between the must-pass set's worst case
+and the must-refuse set's median, with ≥2× margin from the must-pass worst case.
+A measure that cannot meet that on real images should be set so it can never
+fire and left logging. `tests/test_gate_real_images.py` holds the HAM10000
+ceilings (≤2% refusal per check) and runs wherever the dataset is on disk.
+
+### Segmentation is now deterministic
+
+`cv2.grabCut` initialises its colour models with k-means drawn from OpenCV's
+process-wide RNG, so the same photo could segment differently on a re-scan —
+measured, three identical calls returned foreground fractions 0.276, 0.087,
+0.087. Everything downstream reads that mask: the ABCDE letters, the displayed
+diameter, the risk band, and this gate's decision. `segmentation.py` now seeds
+the RNG before every GrabCut call.
