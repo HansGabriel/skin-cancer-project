@@ -1,0 +1,5 @@
+# Streamlit Community Cloud. Point the app at cloud/streamlit_app.py.
+streamlit==1.57.0
+ai-edge-litert==2.1.5
+numpy>=1.26,<2.3
+opencv-python-headless>=4.10
