@@ -35,7 +35,9 @@ that imitates it; it is a mitigation, not a measurement.
 * Split by `lesion_id` (`GroupShuffleSplit`), so the two columns above become one.
 * Camera-style augmentation: blur, JPEG re-compression, colour cast, exposure drift,
   glare, a faint screen grid.
-* Threshold re-fitted for 90% sensitivity on the new validation set; temperature re-fitted.
+* Threshold and temperature fitted by `training/calibrate.py` on the **exported TFLite model
+  with 4-view TTA** — the device path — for 90% cancer sensitivity on the new validation set.
+  (The first model's threshold was fitted on Keras single-view probabilities.)
 * `python training/eval.py` prints the table to paste here.
 
 Replace the table above when it has run. Do not mix numbers from the two models.
@@ -49,20 +51,26 @@ never which label it shows. `tests/test_classifier.py` holds that invariant.
 
 ## The photo gate (dermascan/gate.py)
 
-Four checks, every one on a 384 px copy, every threshold in `dermascan/config.py`:
+Four checks, every one on a small copy, every threshold in `dermascan/config.py`:
 
 | check | refuses | measured on | threshold |
 |---|---|---|---|
 | skin fraction | walls, desks, screens showing non-skin | YCrCb + HSV colour box, exposure-normalised | ≥ 0.08 |
 | focus / brightness | blur, black frames, glare | Laplacian variance at 512 px; mean V | ≥ 20; 12–246 |
 | one spot | plain skin, speckle, whole-frame dark | Otsu outline: area 0.4–75%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
-| real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 4.0 |
+| real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 4.0 (overridable) |
 
 Measured on synthetic frames through a real JPEG encode (`tests/test_gate.py`): every
 lesion fixture passes (dark, pale, hairy, irregular, vignetted, inside a shadow, blurred
 to 10 px); bare skin, gradients, shadows, walls are refused. **No real Pi captures have
 been measured.** Setting `SAVE_CAPTURES_DIR` in `config.py` keeps each capture with its
 gate numbers so the thresholds can be checked against the real camera.
+
+The edge check is the one the plan had listed as dropped. It came back because without it
+a bare forearm under a lamp or in a soft shadow passes the other three checks and gets a
+verdict (measured: edge width 6–12 for those, 1–3 for every lesion fixture, including one
+blurred by 14 px). It is the least proven of the four, so it is overridable and its number
+is in every log line.
 
 What was dropped from the earlier gate, and why: moiré/screen detection (the demo input
 *is* a screen), dark-blob dominance, contrast-variation z-score, on-skin geometry, scale

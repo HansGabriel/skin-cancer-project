@@ -7,8 +7,8 @@ project, not a diagnosis.**
 
 ## Read the code in this order
 
-Everything that decides anything is in `dermascan/` (about 550 lines). The rest is the
-screen around it.
+Everything that decides anything is in `dermascan/` (under 1,000 lines, much of it
+explanation). The rest is the screen around it.
 
 | file | what it does |
 |---|---|
@@ -21,7 +21,7 @@ screen around it.
 | `kiosk/camera.py` | owns the Pi camera for the life of the process; plain pixels, no enhancement |
 | `kiosk/static/index.html`, `kiosk.css`, `kiosk.js` | the one page, five states |
 | `cloud/streamlit_app.py` | the same core behind an upload box, for Streamlit Community Cloud |
-| `training/` | the notebook that makes the model, and `eval.py` that scores it |
+| `training/` | the notebook that makes the model; `calibrate.py` fits its threshold; `eval.py` scores it |
 
 ## Run it on a laptop (no Pi)
 
@@ -29,7 +29,7 @@ screen around it.
 uv venv --python 3.12 venv && source venv/bin/activate   # or: python3.12 -m venv venv
 pip install -r requirements.txt
 scripts/run_dev.sh          # then open http://127.0.0.1:8080
-pytest -q                   # 80+ tests, under a minute, no dataset needed
+pytest -q                   # ~95 tests, a few seconds, no dataset needed
 ```
 
 The page offers your laptop's camera and a file picker. Every photo is scanned by the
@@ -59,9 +59,11 @@ at instead; the "spot" refusals can be overridden with "Check it anyway".
 ## Change a threshold, swap a model
 
 * Any number: edit `dermascan/config.py`, restart. That is the whole procedure.
-* A new model: run the notebook on the PC, then `python training/eval.py`, then copy
-  the four files it wrote into `models/` and commit. The threshold and temperature are
-  fitted to the model they came with, so always swap all four together.
+* A new model: run `training/train_skin_classifier.ipynb` on the PC, top to bottom. Its
+  last cell runs `training/calibrate.py` (fits the threshold and temperature on the
+  exported model, the way the kiosk runs it) and `training/eval.py` (scores the test set).
+  Commit the four files in `models/` and `training/splits.csv` together; the threshold
+  and temperature belong to the model they were fitted on.
 
 ## Documents
 

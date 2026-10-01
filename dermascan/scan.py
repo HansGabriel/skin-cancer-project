@@ -54,6 +54,7 @@ class ScanOutcome:
             "stage_ms": self.stage_ms,
             "total_ms": sum(self.stage_ms.values()),
             "forced": self.forced,
+            "caveat": verdict.FORCED_CAVEAT if self.forced else "",
             "model": self.model_name,
         }
 
@@ -61,7 +62,7 @@ class ScanOutcome:
 def decode_jpeg(data: bytes) -> np.ndarray:
     bgr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if bgr is None:
-        raise ValueError("That file is not a picture the scanner can open.")
+        raise ValueError("not an image")
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
@@ -90,8 +91,9 @@ def run_scan(
         rgb = decode_jpeg(jpeg_bytes)
         rgb = gate.shrink(rgb, config.MAX_WORK_PX)
         lap("decode")
-    except ValueError as exc:
-        return ScanOutcome("error", verdict.error_verdict(str(exc)), stage_ms=ms)
+    except ValueError:
+        log.info("scan status=error reason=not_a_picture")
+        return ScanOutcome("error", verdict.error_verdict("not_a_picture"), stage_ms=ms)
 
     report = gate.check(rgb)
     lap("gate")
@@ -106,9 +108,9 @@ def run_scan(
     clf = classifier or get_classifier()
     try:
         pred = clf.predict(rgb)
-    except Exception as exc:  # noqa: BLE001 - a model failure must reach the screen as words
-        log.exception("model failed")
-        return ScanOutcome("error", verdict.error_verdict(f"The model did not answer ({exc})."), stage_ms=ms)
+    except Exception:  # noqa: BLE001 - a model failure must reach the screen as words
+        log.exception("scan status=error reason=model")
+        return ScanOutcome("error", verdict.error_verdict("scanner"), stage_ms=ms)
     lap("model")
 
     out = ScanOutcome(

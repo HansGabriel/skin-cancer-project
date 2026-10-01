@@ -17,8 +17,14 @@ python -m kiosk.server                   # try it: http://127.0.0.1:8080 in any 
 
 `EPIVUE.desktop` on the desktop runs `scripts/launch_kiosk.sh`, which starts the server,
 waits for `/health`, opens `surf` full screen, and shuts everything down when **Exit kiosk**
-(inside "Details", two taps) is pressed or the browser is closed. Copy the file to
-`~/Desktop/` and mark it executable. The log is `/tmp/dermascan_kiosk.log`; one line per
+(inside "Details") is pressed or the browser is closed. Exit asks for the staff code on an
+on-screen keypad when one is set; otherwise it is two taps. Set the code once:
+
+```bash
+printf %s '2468' > ~/.dermascan_passcode && chmod 600 ~/.dermascan_passcode   # pick your own 4 digits
+```
+
+Copy `EPIVUE.desktop` to `~/Desktop/` and mark it executable. The log is `/tmp/dermascan_kiosk.log`; one line per
 scan looks like
 
 ```

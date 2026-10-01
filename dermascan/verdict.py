@@ -25,6 +25,7 @@ from dermascan.classifier import Prediction
 from dermascan.gate import Refusal
 
 Tone = Literal["neutral", "info", "warning", "urgent"]
+State = Literal["low_concern", "uncertain", "needs_attention", "urgent", "uncertain_caution", "refused", "error"]
 # "neutral" has no colour on purpose: a clean result must never look like an
 # all-clear. Green is banned for the same reason.
 
@@ -42,7 +43,7 @@ ACTION = {
 
 @dataclass(frozen=True)
 class Verdict:
-    state: str  # low_concern | uncertain | needs_attention | urgent | uncertain_caution | refused
+    state: State
     tone: Tone
     headline: str
     body: str
@@ -168,10 +169,26 @@ def for_refusal(r: Refusal) -> Verdict:
     )
 
 
-def error_verdict(message: str) -> Verdict:
+# Shown under a result the visitor asked to be read after the photo check refused it.
+FORCED_CAVEAT = (
+    "This photo did not pass the usual checks and was read anyway. "
+    "Treat the result with extra caution."
+)
+
+# What went wrong, in words, for the few ways a scan can fail outright. The
+# technical detail goes to the log, never to the visitor.
+_ERROR_BODY = {
+    "not_a_picture": "That file is not a picture the scanner can open.",
+    "no_photo": "There is no photo to check yet.",
+    "camera": "The camera did not take the photo.",
+    "scanner": "The scanner could not finish reading this photo.",
+}
+
+
+def error_verdict(kind: str) -> Verdict:
     return Verdict(
         "error", "info",
         "THAT SCAN DID NOT FINISH",
-        message,
+        _ERROR_BODY.get(kind, _ERROR_BODY["scanner"]),
         "Take another photo. If this keeps happening, ask a staff member.",
     )
