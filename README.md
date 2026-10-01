@@ -1,85 +1,75 @@
-# Skin lesion screening prototype (HAM10000 → TFLite → Pi)
+# E.P.I.V.U.E. — skin check kiosk
 
-AI-assisted **screening** demo: EfficientNet-style classifier on PC, TensorFlow Lite on a Raspberry Pi 4 with Camera Module 2, and a Streamlit UI that can call the Pi over the LAN.
+A Raspberry Pi 4 with a camera module photographs one spot on skin, a small on-device
+model sorts it into *benign / pre-cancerous / malignant*, and the screen says in plain
+words what to do next. It runs with no internet. **It is a screening aid for a science
+project, not a diagnosis.**
 
-**Technical source of truth:** see [AGENTS.md](AGENTS.md) (dataset, stack, offline-first constraints, Notion links).
+## Read the code in this order
 
-**Not medical advice.** Outputs are for research and education only.
+Everything that decides anything is in `dermascan/` (about 550 lines). The rest is the
+screen around it.
 
-## Quick start (PC)
+| file | what it does |
+|---|---|
+| `dermascan/config.py` | every number you can tune, each with a one-line reason |
+| `dermascan/scan.py` | `run_scan(jpeg_bytes)`: decode → gate → model → words. The one function the UI calls |
+| `dermascan/gate.py` | "is this a readable photo of one spot on skin?" — skin colour, focus and light, one compact spot, a real edge |
+| `dermascan/classifier.py` | loads the TFLite model, averages 4 flipped views, applies the screening threshold |
+| `dermascan/verdict.py` | label + confidence → the headline, body and advice a visitor reads |
+| `kiosk/server.py` | Flask: serves the page, streams the camera, answers `/scan` |
+| `kiosk/camera.py` | owns the Pi camera for the life of the process; plain pixels, no enhancement |
+| `kiosk/static/index.html`, `kiosk.css`, `kiosk.js` | the one page, five states |
+| `cloud/streamlit_app.py` | the same core behind an upload box, for Streamlit Community Cloud |
+| `training/` | the notebook that makes the model, and `eval.py` that scores it |
 
-1. Python **3.11+** recommended (project venv may use 3.12; see `requirements.txt`).
-2. Create a venv and install PC dependencies:
+## Run it on a laptop (no Pi)
 
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+```bash
+uv venv --python 3.12 venv && source venv/bin/activate   # or: python3.12 -m venv venv
+pip install -r requirements.txt
+scripts/run_dev.sh          # then open http://127.0.0.1:8080
+pytest -q                   # 80+ tests, under a minute, no dataset needed
+```
 
-   **WSL / desktop:** do not rely on `pip install tflite-runtime` here — Google often ships **no wheel** for Linux x86_64 + Python 3.12, so pip shows *“from versions: none”*. Use `requirements.txt` on the PC, or a lighter TFLite-only option: `pip install ai-edge-litert` (same interpreter path Streamlit uses when `tflite-runtime` is missing). Reserve `tflite-runtime` for the **Raspberry Pi** venv when a wheel exists for that platform.
+The page offers your laptop's camera and a file picker. Every photo is scanned by the
+exact code the Pi runs.
 
-3. Place `models/skin_classifier.tflite` and `models/labels.txt` (or set `SKIN_MODEL_PATH` / `SKIN_LABELS_PATH`).
-4. Run the demo:
+## Run it on the Pi
 
-   ```bash
-   streamlit run frontend/app.py
-   ```
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Short version: clone to
+`~/Documents/skin-cancer-project`, make a venv with `--system-site-packages` so apt's
+`picamera2` is visible, `pip install -r requirements.txt`, double-click `EPIVUE.desktop`.
 
-5. Run unit tests (no GPU required):
+## How a scan works
 
-   ```bash
-   pytest tests -q
-   ```
+```
+tap "Take the photo"        kiosk/camera.py      1024 px centre crop, JPEG, ~0.1 s
+tap "Check this spot"       dermascan/scan.py
+   decode + shrink          ~20 ms
+   gate                     dermascan/gate.py    ~50 ms   refuses walls, blur, plain skin, shadows
+   model (4 views)          dermascan/classifier.py       ~0.6 s on a Pi 4
+   verdict                  dermascan/verdict.py          words on screen
+```
 
-   (`tests/conftest.py` adds `frontend/` to `PYTHONPATH`; use the project venv.)
+The gate is what stops the model being asked about a photo of nothing: the model has
+only three labels and will always pick one. Each refusal says what to point the camera
+at instead; the "spot" refusals can be overridden with "Check it anyway".
 
-## Raspberry Pi (inference + camera)
+## Change a threshold, swap a model
 
-1. Copy `skin_classifier.tflite`, `labels.txt`, and `scripts/pi_server.py` to the same directory on the Pi (see [AGENTS.md](AGENTS.md) layout), or adjust paths inside `pi_server.py`.
-2. Install Picamera2 from **apt** where possible (`python3-picamera2` metapackage on Raspberry Pi OS).
-3. Create a venv and install Pi-only wheels (unpinned so pip can pick any wheel your platform supports; then `pip freeze > requirements-pi.txt` if you want a pin file):
+* Any number: edit `dermascan/config.py`, restart. That is the whole procedure.
+* A new model: run the notebook on the PC, then `python training/eval.py`, then copy
+  the four files it wrote into `models/` and commit. The threshold and temperature are
+  fitted to the model they came with, so always swap all four together.
 
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install numpy opencv-python-headless tflite-runtime flask
-   ```
+## Documents
 
-   If **`tflite-runtime` fails with “No matching distribution”**, your Python/OS combo may have no published wheel (common on **PC or WSL with Python 3.12**). Install on a **Raspberry Pi** venv instead, or on the PC use the full project `requirements.txt` / `ai-edge-litert` for Streamlit local inference (see `backend/streamlit_resources.py`).
+* [docs/HARDWARE_CHECKLIST.md](docs/HARDWARE_CHECKLIST.md) — the panel ribbon, the case, power
+* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Pi setup, autostart, Streamlit Cloud
+* [docs/METRICS.md](docs/METRICS.md) — how good the model is, honestly
+* [docs/PRIVACY.md](docs/PRIVACY.md) — nothing is stored; what that means for the fair
+* [AGENTS.md](AGENTS.md) — the technical plan and the decisions behind it
 
-4. Start the server: `python pi_server.py` (default `http://0.0.0.0:5000`).
-5. On the PC, set Streamlit sidebar Pi URL or env `PI_BASE_URL` (default `http://raspberrypi.local:5000`).
-
-**Debug:** `POST /scan` accepts optional multipart field `image` (JPEG/PNG) to bypass the camera.
-
-## Privacy & data retention
-
-Saved scans are photos of participants' skin and stay **on this device only** — nothing
-is uploaded. A scan is stored only after the participant ticks the consent box in the
-save dialog. History, saved cases, and Settings sit behind a staff passcode once one is
-configured (`.streamlit/secrets.toml` or `DERMASCAN_PASSCODE` — never committed); on the
-kiosk, if no passcode is set those screens stay **closed** rather than open. Staff erase
-all participant data with the "End event" wipe in Settings after each session. Full
-policy, passcode setup, and the human-participants (ISEF/IRB) requirements:
-[docs/PRIVACY.md](docs/PRIVACY.md).
-
-## Repository layout (short)
-
-| Path | Role |
-|------|------|
-| `notebooks/train_skin_classifier.ipynb` | Training + export |
-| `backend/` | Inference backends (mock / local TFLite / Pi HTTP) |
-| `frontend/app.py` | Streamlit UI |
-| `scripts/pi_server.py` | Flask API on the Pi |
-| `requirements.txt` | PC training + Streamlit (full pin set) |
-| `streamlit-requirements.txt` | Slim deps for Streamlit Community Cloud (no CUDA / no full TF) |
-| `requirements-pi.txt` | Raspberry Pi runtime only |
-
-## Deploy online (Streamlit Community Cloud)
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full recipe. In short: push
-the branch, point share.streamlit.io at `frontend/app.py` with
-`streamlit-requirements.txt`, and set a `[dermascan] passcode` secret. Grad-CAM
-is intentionally disabled on the hosted demo; classification + ABCDE +
-E-Evolving + risk scoring all run via the TFLite path.
+The earlier, much larger version of this app (ABCDE measurements, saved cases, an
+offline assistant, heat maps) is on the `main` branch if the paper needs it.
