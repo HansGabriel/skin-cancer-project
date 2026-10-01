@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, "v2/**"]
   pull_request:
 
 jobs:
@@ -14,7 +14,5 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install dependencies
-        run: pip install -r streamlit-requirements.txt pytest
-      - name: Run unit tests
-        run: pytest tests -q
+      - run: pip install -r requirements.txt
+      - run: pytest tests -q

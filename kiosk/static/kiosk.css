@@ -1,0 +1,149 @@
+/* E.P.I.V.U.E. kiosk — one page, 1024x600 landscape first.
+   The instrument (dark band, circular field, cyan reticle) is the only bold
+   element. Everything else is white paper, hairline rules, near-black text.
+   A clean result has no colour: green would read as "you are safe".
+   No backdrop-filter, no :has(), one short transition: it has to paint fast
+   on a Raspberry Pi 4 in WebKitGTK. */
+
+@font-face{font-family:'Archivo';font-weight:400;font-display:swap;src:url(/static/fonts/archivo-400.woff2) format('woff2')}
+@font-face{font-family:'Archivo';font-weight:600;font-display:swap;src:url(/static/fonts/archivo-600.woff2) format('woff2')}
+@font-face{font-family:'Archivo';font-weight:700;font-display:swap;src:url(/static/fonts/archivo-700.woff2) format('woff2')}
+@font-face{font-family:'Source Serif 4';font-weight:400;font-display:swap;src:url(/static/fonts/sourceserif-400.woff2) format('woff2')}
+
+:root{
+  --bg:#FFFFFF; --text:#131A22; --muted:#5B6675; --hairline:#EDF0F5; --border:#D8DEE8; --chip:#F1F4F8;
+  --field:#0B1220; --field-ink:#E8EEF6; --field-muted:#7C8AA0; --field-body:#9FB0C4; --field-rule:rgba(232,238,246,.12);
+  --reticle:#3DDBD9; --navy:#16233A; --navy-strong:#0B1220; --navy-tint:#EDF1F7;
+  --erythema:#C0362C; --melanin:#7A4B2A; --veil:#4A6FB0;
+  --on-field-erythema:#E0645A; --on-field-melanin:#C79A6B; --on-field-veil:#7E9BD0; --on-field-neutral:#8C9BB0;
+  --urgent-tint:#FAECEA; --warning-tint:#F6EEE7; --info-tint:#ECF1F9;
+  --sans:'Archivo','Helvetica Neue',Arial,sans-serif; --serif:'Source Serif 4',Georgia,serif;
+  --band:44%; --aperture:300px; --touch:56px; --radius:10px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--reticle);outline-offset:2px}
+
+.shell{display:grid;grid-template-columns:var(--band) 1fr;height:100vh;width:100vw}
+
+/* ---------- the instrument band ---------- */
+.band{background:var(--field);color:var(--field-ink);display:flex;flex-direction:column;padding:22px 30px 18px}
+.band-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.brand{font-weight:700;letter-spacing:.14em;font-size:14px}
+.band-tag{color:var(--field-muted);font-size:12px;letter-spacing:.04em;text-align:right}
+.aperture-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+.aperture{position:relative;width:min(var(--aperture),100%,62vh);aspect-ratio:1/1;border-radius:50%;overflow:hidden;background:#060B15;
+  box-shadow:0 0 0 1px var(--field-rule),0 18px 48px rgba(0,0,0,.5)}
+.aperture img,.aperture video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:#060B15}
+body[data-state="live"] #field,body[data-state="captured"] #field,body[data-state="reading"] #field,
+body[data-state="result"] #field,body[data-state="refused"] #field,body[data-state="error"] #field{display:block}
+body[data-state="live"][data-camera="webcam"] #field{display:none}
+body[data-state="live"][data-camera="webcam"] #webcam{display:block}
+
+.reticle{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform-origin:50% 50%}
+.rt-circle{fill:none;stroke:var(--reticle);stroke-width:.6;opacity:.85}
+.rt-inner{stroke-dasharray:2 3;opacity:.55}
+.rt-tick{fill:none;stroke:var(--reticle);stroke-width:1.2;stroke-linecap:round}
+.rt-fine{stroke-width:.6;opacity:.6}
+.rt-marks path{fill:none;stroke:var(--reticle);stroke-width:.8;opacity:.5}
+body[data-state="reading"] .reticle{animation:turn 6s linear infinite}
+body[data-state="result"] .reticle,body[data-state="refused"] .reticle{opacity:.35}
+@keyframes turn{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){body[data-state="reading"] .reticle{animation:none}}
+
+/* the verdict ring: a thick circle in the tone's ink; dashed when nothing was read */
+.ring{position:absolute;inset:0;border-radius:50%;border:6px solid transparent;pointer-events:none;transition:border-color .25s}
+body[data-tone="neutral"] .ring{border-color:var(--on-field-neutral)}
+body[data-tone="info"] .ring{border-color:var(--on-field-veil)}
+body[data-tone="warning"] .ring{border-color:var(--on-field-melanin)}
+body[data-tone="urgent"] .ring{border-color:var(--on-field-erythema)}
+body[data-state="refused"] .ring,body[data-state="error"] .ring{border-style:dashed;border-width:3px}
+
+.badge{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);font-size:11px;font-weight:700;letter-spacing:.18em;
+  color:var(--field-ink);background:rgba(6,11,21,.72);padding:4px 10px;border-radius:999px;display:none;align-items:center;gap:7px}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--reticle);animation:pulse 1.6s ease-in-out infinite}
+body[data-state="live"] .badge{display:inline-flex}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.badge::before{animation:none}}
+
+.aperture-hint{position:absolute;left:0;right:0;top:62%;margin:0;padding:0 16%;text-align:center;
+  color:var(--field-body);font-size:15px;line-height:1.45}
+body:not([data-state="idle"]) .aperture-hint{display:none}
+
+.band-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--field-rule);padding-top:12px;min-height:40px}
+.readout{color:var(--field-muted);font-size:12px;letter-spacing:.06em;font-variant-numeric:tabular-nums}
+
+/* ---------- the page band ---------- */
+.page{display:flex;flex-direction:column;padding:26px 46px 14px;min-width:0}
+.screen{flex:1;min-height:0;overflow:hidden}
+.eyebrow{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.eyebrow.on-dark{color:var(--reticle)}
+.headline{margin:0 0 6px;font-size:clamp(26px,5.6vh,34px);font-weight:700;letter-spacing:-.024em;line-height:1.08}
+.mark{width:44px;height:4px;border-radius:2px;margin:10px 0 12px;background:var(--text)}
+body[data-tone="info"] .mark{background:var(--veil)}
+body[data-tone="warning"] .mark{background:var(--melanin)}
+body[data-tone="urgent"] .mark{background:var(--erythema)}
+body[data-tone="neutral"] .mark,body[data-tone=""] .mark{background:var(--border)}
+.lede{margin:0;color:var(--muted);font-size:16px}
+.mid{padding-top:14px}
+.advice{font-family:var(--serif);font-size:clamp(17px,3.4vh,20px);line-height:1.45;margin:4px 0 0}
+.note{margin-top:14px;padding:12px 14px;border-radius:var(--radius);background:var(--chip);font-size:14px;line-height:1.45}
+.note b{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+body[data-tone="urgent"] .note{background:var(--urgent-tint)}
+body[data-tone="warning"] .note{background:var(--warning-tint)}
+body[data-tone="info"] .note{background:var(--info-tint)}
+.row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--hairline);font-size:15px}
+.row:first-child{border-top:1px solid var(--hairline)}
+.row-num{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--chip);display:grid;place-items:center;font-weight:700;font-size:13px}
+.caveat{margin-top:12px;font-size:13px;color:var(--muted);padding:10px 12px;border-left:3px solid var(--melanin);background:var(--warning-tint);border-radius:0 8px 8px 0}
+.steps{margin-top:10px}
+.step{display:flex;align-items:center;gap:12px;padding:8px 0;color:var(--muted);font-size:15px}
+.step i{width:9px;height:9px;border-radius:50%;background:var(--border);flex:0 0 auto}
+.step.now{color:var(--text)}
+.step.now i{background:var(--navy);animation:pulse 1.2s ease-in-out infinite}
+.step.done i{background:var(--navy)}
+
+.actions{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;padding:12px 0 10px}
+.actions:empty{padding:0}
+.btn{min-height:var(--touch);border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:600;font-size:16px;padding:0 18px;transition:background .12s,border-color .12s}
+.btn:active{background:var(--navy-tint);border-color:var(--navy)}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn.primary:active{background:var(--navy-strong)}
+.btn[disabled]{opacity:.45}
+.strip{border-top:1px solid var(--hairline);padding-top:9px;font-size:12px;color:var(--muted)}
+.strip strong{color:var(--text)}
+
+.ghost{background:none;border:1px solid var(--field-rule);color:var(--field-muted);border-radius:8px;padding:6px 12px;font-size:12px;letter-spacing:.06em;min-height:36px}
+.ghost:active{color:var(--field-ink);border-color:var(--reticle)}
+.ghost.danger:active{color:var(--on-field-erythema);border-color:var(--on-field-erythema)}
+
+/* ---------- staff drawer ---------- */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100vw);background:var(--field);color:var(--field-ink);display:flex;flex-direction:column;
+  padding:22px 26px;box-shadow:-18px 0 48px rgba(0,0,0,.45);z-index:10}
+.drawer[hidden]{display:none}
+.drawer-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.drawer-body{flex:1;overflow:auto;min-height:0}
+.drawer-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--field-rule);padding-top:12px;gap:10px}
+.muted{color:var(--field-muted);font-size:12px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:grid;grid-template-columns:120px 1fr 54px;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--field-rule);font-size:13px}
+.bar span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.bar-track{height:6px;border-radius:999px;background:rgba(232,238,246,.1);overflow:hidden}
+.bar-fill{height:100%;background:var(--field-body)}
+.bar.flagged .bar-fill{background:var(--on-field-melanin)}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--field-rule);font-size:13px;color:var(--field-body)}
+.kv span:last-child{color:var(--field-ink);font-variant-numeric:tabular-nums}
+.drawer h3{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--field-muted);margin:18px 0 6px;font-weight:600}
+.drawer h3:first-child{margin-top:0}
+
+/* ---------- small screens (a phone opening the laptop dev server) ---------- */
+@media (max-width:760px){
+  html,body{overflow:auto}
+  .shell{grid-template-columns:1fr;height:auto;min-height:100vh}
+  .band{padding:16px}
+  .aperture{width:min(240px,70vw)}
+  .page{padding:18px 16px 12px}
+  .headline{font-size:26px}
+  .actions{grid-auto-flow:row}
+}

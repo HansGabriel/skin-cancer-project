@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E.P.I.V.U.E. — skin check</title>
+<link rel="stylesheet" href="/static/kiosk.css">
+</head>
+<body data-state="idle" data-camera="off" data-tone="">
+<main class="shell">
+
+  <!-- The instrument: one dark band, one circular field. Every scan state is shown here. -->
+  <section class="band" aria-label="Camera view">
+    <header class="band-head">
+      <span class="brand">E.P.I.V.U.E.</span>
+      <span class="band-tag">Skin check · not a diagnosis</span>
+    </header>
+
+    <div class="aperture-wrap">
+      <div class="aperture">
+        <img id="field" alt="" draggable="false">
+        <video id="webcam" autoplay playsinline muted hidden></video>
+        <svg class="reticle" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="46" class="rt-circle"/>
+          <circle cx="50" cy="50" r="30" class="rt-circle rt-inner"/>
+          <path class="rt-tick" d="M50 2v9M50 89v9M2 50h9M89 50h9"/>
+          <path class="rt-tick rt-fine" d="M50 42v16M42 50h16"/>
+          <g class="rt-marks">
+            <path d="M50 4v2.5M50 93.5V96M4 50h2.5M93.5 50H96" transform="rotate(45 50 50)"/>
+          </g>
+        </svg>
+        <div class="ring" aria-hidden="true"></div>
+        <span class="badge" id="badge"></span>
+        <p class="aperture-hint" id="hint">Camera ready</p>
+      </div>
+    </div>
+
+    <footer class="band-foot">
+      <span id="readout" class="readout"></span>
+      <button class="ghost" id="staff-open" type="button">Details</button>
+    </footer>
+  </section>
+
+  <!-- The page: one job per state, actions pinned at the foot, the safety strip always visible. -->
+  <section class="page">
+    <div class="screen" id="screen">
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1 class="headline" id="headline"></h1>
+      <p class="lede" id="lede"></p>
+      <div class="mid" id="mid"></div>
+    </div>
+    <div class="actions" id="actions"></div>
+    <footer class="strip">
+      <strong>Not a diagnosis.</strong> This is an educational screening aid. Only a health worker can tell you what a spot is.
+    </footer>
+  </section>
+</main>
+
+<!-- Staff drawer: numbers, timings, exit. Hidden from visitors behind one small button. -->
+<aside class="drawer" id="drawer" hidden aria-label="Details for staff">
+  <header class="drawer-head">
+    <span class="eyebrow on-dark">For staff</span>
+    <button class="ghost" id="staff-close" type="button">Close</button>
+  </header>
+  <div id="drawer-body" class="drawer-body"></div>
+  <footer class="drawer-foot">
+    <span id="model-line" class="muted"></span>
+    <button class="ghost danger" id="quit" type="button">Exit kiosk</button>
+  </footer>
+</aside>
+
+<input type="file" id="file" accept="image/*" hidden>
+<canvas id="canvas" hidden></canvas>
+<script src="/static/kiosk.js"></script>
+</body>
+</html>
