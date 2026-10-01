@@ -3,26 +3,41 @@
 # Starts the server, waits for it, opens the browser full screen, and tears
 # everything down when the on-screen "Exit kiosk" button is pressed or the
 # browser window is closed. Double-click EPIVUE.desktop to run this.
+#
+# PORT and QUIT_FLAG must match KIOSK_PORT and QUIT_FLAG in dermascan/config.py.
 set -u
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-URL="http://127.0.0.1:8080"
-LOG="/tmp/dermascan_kiosk.log"
+PORT=8080
 QUIT_FLAG="/tmp/dermascan_quit"
+URL="http://127.0.0.1:$PORT"
+LOG="/tmp/dermascan_kiosk.log"
+PIDFILE="/tmp/dermascan_server.pid"
 
 cd "$PROJECT_DIR" || exit 1
 rm -f "$QUIT_FLAG"
 
-# A previous run still alive? Stop exactly that one (never pkill by name).
-if [ -f /tmp/dermascan_server.pid ] && kill -0 "$(cat /tmp/dermascan_server.pid)" 2>/dev/null; then
-  kill "$(cat /tmp/dermascan_server.pid)"; sleep 1
+if [ ! -f "$PROJECT_DIR/venv/bin/activate" ]; then
+  echo "No venv in $PROJECT_DIR. Set it up first (docs/DEPLOYMENT.md):" >&2
+  echo "  python3 -m venv --system-site-packages venv && venv/bin/pip install -r requirements.txt" >&2
+  exit 1
+fi
+
+# A previous run still alive? Stop exactly that process, and only if it really is
+# our server (a stale pidfile can point at a PID some other program now has).
+if [ -f "$PIDFILE" ]; then
+  OLD_PID="$(cat "$PIDFILE")"
+  if grep -qs "kiosk.server" "/proc/$OLD_PID/cmdline"; then
+    kill "$OLD_PID"; sleep 1
+  fi
+  rm -f "$PIDFILE"
 fi
 
 # shellcheck disable=SC1091
 source "$PROJECT_DIR/venv/bin/activate"
-python -m kiosk.server >"$LOG" 2>&1 &
+python -m kiosk.server --port "$PORT" >"$LOG" 2>&1 &
 SERVER_PID=$!
-echo "$SERVER_PID" >/tmp/dermascan_server.pid
+echo "$SERVER_PID" >"$PIDFILE"
 
 # Wait up to 30 s for the model to load and the server to answer.
 for _ in $(seq 1 30); do
@@ -30,8 +45,8 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 if ! curl -sf "$URL/health" >/dev/null; then
-  echo "server did not start; see $LOG" >&2
-  kill "$SERVER_PID" 2>/dev/null; exit 1
+  echo "The kiosk server did not start; the reason is at the end of $LOG" >&2
+  kill "$SERVER_PID" 2>/dev/null; rm -f "$PIDFILE"; exit 1
 fi
 
 # surf is the small WebKitGTK browser installed on the Pi; -F is full screen.
@@ -51,4 +66,4 @@ done
 
 kill "$BROWSER_PID" 2>/dev/null
 kill "$SERVER_PID" 2>/dev/null
-rm -f "$QUIT_FLAG" /tmp/dermascan_server.pid
+rm -f "$QUIT_FLAG" "$PIDFILE"

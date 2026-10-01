@@ -9,13 +9,16 @@ What it does, in order:
 3. Decide the label with the screening rule in models/thresholds.json:
    if p(pre_cancerous) + p(malignant) >= threshold, the spot is FLAGGED and the
    label is whichever of those two is larger; otherwise it is "benign". The
-   threshold (0.11) was chosen so 90% of cancers in the validation set are
-   flagged. It is deliberately low: missing a cancer costs more than a false
-   alarm.
+   threshold (about 0.1) is chosen by training/calibrate.py so that 90% of
+   cancers in the validation set are flagged. It is deliberately low: missing
+   a cancer costs more than a false alarm.
 4. Report confidence from TEMPERATURE-SCALED probabilities. The raw softmax is
-   over-confident; dividing its log by T (1.54, fitted on validation data)
-   makes the displayed number honest. The decision in step 3 always uses the
-   raw probabilities, so calibration can never change a label.
+   over-confident; dividing its log by T (models/temperature.json, fitted on
+   validation data) makes the displayed number honest. The decision in step 3
+   always uses the raw probabilities, so calibration can never change a label.
+
+One Classifier is shared by every request. A TFLite interpreter is not safe to
+use from two threads at once, so `predict` holds a lock while it runs.
 
 The model expects float32 RGB in [0, 255] - no scaling. EfficientNet rescales
 internally. Do not add "/255" or "/127.5 - 1".
@@ -24,6 +27,7 @@ internally. Do not add "/255" or "/127.5 - 1".
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -176,6 +180,7 @@ class Classifier:
         self.use_tta = use_tta
         self._interpreter = _interpreter_class()(model_path=str(self.model_path), num_threads=num_threads)
         self._interpreter.allocate_tensors()
+        self._lock = threading.Lock()
         self._in = self._interpreter.get_input_details()[0]
         self._out = self._interpreter.get_output_details()[0]
         if len(self.labels) != int(self._out["shape"][-1]):
@@ -186,17 +191,17 @@ class Classifier:
     def predict(self, rgb: np.ndarray) -> Prediction:
         """`rgb` is any HxWx3 uint8 RGB image. Returns the label and honest confidence."""
         rgb_224 = cv2.resize(rgb, (config.INPUT_SIZE, config.INPUT_SIZE), interpolation=cv2.INTER_AREA)
-        t0 = time.perf_counter()
-        total = np.zeros(len(self.labels), dtype=np.float32)
         views = _views(rgb_224, self.use_tta)
-        for view in views:
-            self._interpreter.set_tensor(self._in["index"], to_input_tensor(np.ascontiguousarray(view), self._in))
-            self._interpreter.invoke()
-            out = dequantize_output(self._interpreter.get_tensor(self._out["index"])[0], self._out)
-            # The exported model emits softmax already; be tolerant of a logits export.
-            total += out if (out.max() <= 1.0 and out.sum() > 0.9) else softmax(out)
-        raw = total / float(len(views))
-        inference_ms = int((time.perf_counter() - t0) * 1000)
+        total = np.zeros(len(self.labels), dtype=np.float32)
+        with self._lock:
+            t0 = time.perf_counter()
+            for view in views:
+                self._interpreter.set_tensor(self._in["index"], to_input_tensor(np.ascontiguousarray(view), self._in))
+                self._interpreter.invoke()
+                # The model ends in a softmax layer, so this is already probabilities.
+                total += dequantize_output(self._interpreter.get_tensor(self._out["index"])[0], self._out)
+            inference_ms = int((time.perf_counter() - t0) * 1000)
+        raw = total / float(total.sum())  # average of the views; renormalised against rounding
 
         idx = decide_index(raw, self.thresholds)
         calibrated = apply_temperature(raw, self.temperature)
@@ -212,11 +217,13 @@ class Classifier:
 
 
 _SHARED: Classifier | None = None
+_SHARED_LOCK = threading.Lock()
 
 
 def get_classifier() -> Classifier:
     """The one classifier the app shares. Loading takes ~1 s on a Pi, so do it once."""
     global _SHARED
-    if _SHARED is None:
-        _SHARED = Classifier()
-    return _SHARED
+    with _SHARED_LOCK:
+        if _SHARED is None:
+            _SHARED = Classifier()
+        return _SHARED

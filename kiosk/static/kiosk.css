@@ -98,12 +98,6 @@ body[data-tone="info"] .note{background:var(--info-tint)}
 .row:first-child{border-top:1px solid var(--hairline)}
 .row-num{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--chip);display:grid;place-items:center;font-weight:700;font-size:13px}
 .caveat{margin-top:12px;font-size:13px;color:var(--muted);padding:10px 12px;border-left:3px solid var(--melanin);background:var(--warning-tint);border-radius:0 8px 8px 0}
-.steps{margin-top:10px}
-.step{display:flex;align-items:center;gap:12px;padding:8px 0;color:var(--muted);font-size:15px}
-.step i{width:9px;height:9px;border-radius:50%;background:var(--border);flex:0 0 auto}
-.step.now{color:var(--text)}
-.step.now i{background:var(--navy);animation:pulse 1.2s ease-in-out infinite}
-.step.done i{background:var(--navy)}
 
 .actions{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;padding:12px 0 10px}
 .actions:empty{padding:0}
@@ -136,6 +130,14 @@ body[data-tone="info"] .note{background:var(--info-tint)}
 .kv span:last-child{color:var(--field-ink);font-variant-numeric:tabular-nums}
 .drawer h3{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--field-muted);margin:18px 0 6px;font-weight:600}
 .drawer h3:first-child{margin-top:0}
+
+/* staff code keypad, inside the drawer */
+.keypad{border-top:1px solid var(--field-rule);padding-top:12px;margin-top:10px}
+.keypad[hidden]{display:none}
+.code-dots{text-align:center;font-size:20px;letter-spacing:.3em;color:var(--field-ink);margin-bottom:10px;min-height:28px}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.keys .btn{min-height:48px;background:none;color:var(--field-ink);border-color:var(--field-rule)}
+.keys .btn:active{border-color:var(--reticle);background:rgba(61,219,217,.08)}
 
 /* ---------- small screens (a phone opening the laptop dev server) ---------- */
 @media (max-width:760px){

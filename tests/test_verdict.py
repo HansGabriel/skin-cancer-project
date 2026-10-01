@@ -8,7 +8,7 @@ from dermascan import verdict
 from dermascan.classifier import Prediction
 from dermascan.gate import Refusal
 
-JARGON = ("malignant", "benign", "softmax", "inconclusive", "pre_cancerous", "classifier", "model", "%")
+JARGON = ("malignant", "benign", "softmax", "inconclusive", "pre_cancerous", "classifier", "model", "tflite")
 URGENT = ("urgent", "doctor soon")
 
 
@@ -18,13 +18,16 @@ def _pred(label: str, conf: float) -> Prediction:
 
 def test_every_verdict_is_plain_language() -> None:
     cases = [verdict.for_prediction(_pred(l, c)) for l in ("benign", "pre_cancerous", "malignant") for c in (20.0, 80.0)]
-    cases += [verdict.for_refusal(Refusal(code, True, {})) for code in list(verdict._REFUSAL_COPY) + ["unknown"]]
-    cases.append(verdict.error_verdict("x"))
+    cases += [verdict.for_refusal(Refusal(code, True)) for code in list(verdict._REFUSAL_COPY) + ["unknown"]]
+    cases += [verdict.error_verdict(k) for k in list(verdict._ERROR_BODY) + ["unknown"]]
     for v in cases:
         text = v.text().lower()
         for word in JARGON:
             assert not re.search(rf"\b{re.escape(word)}\b", text), f"{v.state}: '{word}' in {text!r}"
+        assert "%" not in text and not re.search(r"\d", text), f"{v.state}: a number or percentage in {text!r}"
         assert v.headline.isupper()
+    for word in JARGON:
+        assert word not in verdict.FORCED_CAVEAT.lower()
 
 
 def test_clean_result_has_no_colour_and_keeps_the_safety_line() -> None:
@@ -60,6 +63,6 @@ def test_confidence_floor_is_inclusive() -> None:
 
 
 def test_each_refusal_code_has_its_own_words() -> None:
-    seen = {verdict.for_refusal(Refusal(c, True, {})).headline for c in verdict._REFUSAL_COPY}
+    seen = {verdict.for_refusal(Refusal(c, True)).headline for c in verdict._REFUSAL_COPY}
     assert len(seen) == len(verdict._REFUSAL_COPY)
-    assert verdict.for_refusal(Refusal("something_new", True, {})).headline == "NOT A SPOT IT CAN READ"
+    assert verdict.for_refusal(Refusal("something_new", True)).headline == "NOT A SPOT IT CAN READ"

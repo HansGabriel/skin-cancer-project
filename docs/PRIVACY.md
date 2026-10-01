@@ -18,7 +18,10 @@ and it must stay off whenever the device is used with people rather than test im
 ## Staff details
 
 The **Details** button shows the model's three percentages and the scan timings. It
-shows nothing about a person, so it is not locked. **Exit kiosk** needs two taps.
+shows nothing about a person, so it is not locked. **Exit kiosk** asks for the staff code
+when `~/.dermascan_passcode` exists, so a visitor cannot end the demo.
+
+Pressing **Done** drops the photo from the page and from the server's memory.
 
 ## Before photographing students for the study
 

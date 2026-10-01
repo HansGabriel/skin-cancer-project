@@ -26,8 +26,8 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 |------|--------|-----|
 | Dataset | HAM10000, 7 dx → 3 labels (`benign`, `pre_cancerous`, `malignant`) | standard, fits the 4060 |
 | Split | **by `lesion_id`** (GroupShuffleSplit), never by image | image-level split leaked 40% of test lesions |
-| Model | EfficientNetB0, 3-class softmax head, dynamic-range TFLite, float32 in/out, raw `[0,255]` input | accuracy/size; EfficientNet rescales internally — never add `/255` |
-| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.90 sensitivity on val); 4-view TTA on | sensitivity-first screening |
+| Model | EfficientNetB0, 3-class softmax head; TFLite with int8 weights and activations, float32 in/out, raw `[0,255]` input | fast on the Pi CPU; EfficientNet rescales internally — never add `/255` |
+| Decision | flag if `p(pre)+p(mal) >= thresholds.json`; threshold fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity | the guarantee describes the device, not the Keras model |
 | Confidence | temperature-scaled for display only; decision on raw probs | honest numbers, same labels |
 | Kiosk UI | **Flask + one static HTML page** (`kiosk/`) — *changed from Streamlit on 2026-10-01 with the mentor's approval* | Streamlit re-ran everything per tap and took 40 s to boot on the Pi |
 | Web demo | Streamlit Community Cloud, `cloud/streamlit_app.py`, upload only | same `dermascan/` core |
@@ -51,7 +51,7 @@ dermascan/      config.py scan.py gate.py classifier.py verdict.py   — the cor
 kiosk/          server.py camera.py static/{index.html,kiosk.css,kiosk.js,fonts/}
 cloud/          streamlit_app.py requirements.txt
 models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
-training/       train_skin_classifier.ipynb eval.py requirements.txt (+ splits.csv, *.keras: gitignored)
+training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py requirements.txt splits.csv (*.keras: gitignored)
 scripts/        launch_kiosk.sh run_dev.sh
 tests/          pytest, < 1 min, no dataset
 docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
@@ -64,7 +64,8 @@ Pi install path: `~/Documents/skin-cancer-project` (`EPIVUE.desktop` assumes it)
 ## Agent defaults
 
 1. **Keep it readable.** Every module starts with a docstring a student can follow; every
-   tunable lives in `dermascan/config.py` with a one-line reason; no new env vars.
+   tunable lives in `dermascan/config.py` with a one-line reason; no env vars except
+   `DERMASCAN_PASSCODE` (the Exit code, also read from `~/.dermascan_passcode`).
 2. **Clinical safety.** Screening only. Visitor-facing copy lives only in
    `dermascan/verdict.py`, plain words, no jargon, no percentages, never a green "safe".
    `tests/test_verdict.py` enforces it.

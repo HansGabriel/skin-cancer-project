@@ -47,6 +47,37 @@ def test_garbage_bytes_are_an_error_not_a_crash(classifier) -> None:
     out = scan.run_scan(b"not a jpeg", classifier=classifier)
     assert out.status == "error"
     assert out.verdict.headline == "THAT SCAN DID NOT FINISH"
+    assert "picture" in out.verdict.body
+
+
+def test_a_model_failure_reaches_the_screen_without_the_exception_text(classifier, monkeypatch) -> None:
+    def boom(rgb):
+        raise RuntimeError("tflite internal: tensor 17 bad shape")
+
+    monkeypatch.setattr(classifier, "predict", boom)
+    out = scan.run_scan(jpeg(with_lesion(textured(SKIN_TONES["light"]))), classifier=classifier)
+    assert out.status == "error"
+    assert "tensor" not in out.verdict.text() and "tflite" not in out.verdict.text().lower()
+
+
+def test_a_forced_result_carries_the_caveat_and_a_normal_one_does_not(classifier) -> None:
+    photo = jpeg(textured(SKIN_TONES["medium"]))
+    assert scan.run_scan(photo, force=True, classifier=classifier).to_dict()["caveat"]
+    ok = scan.run_scan(jpeg(with_lesion(textured(SKIN_TONES["light"]))), classifier=classifier)
+    assert ok.to_dict()["caveat"] == ""
+
+
+def test_two_threads_sharing_one_classifier_get_their_own_answers(classifier) -> None:
+    """Streamlit Cloud serves each visitor on its own thread with one shared model."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    lesion = with_lesion(textured(SKIN_TONES["light"]))
+    bare = textured(SKIN_TONES["deep"])
+    expected = {id(lesion): classifier.predict(lesion).raw_probs, id(bare): classifier.predict(bare).raw_probs}
+    with ThreadPoolExecutor(8) as pool:
+        jobs = [(img, pool.submit(classifier.predict, img)) for img in [lesion, bare] * 20]
+        for img, job in jobs:
+            np.testing.assert_allclose(job.result().raw_probs, expected[id(img)], atol=1e-6)
 
 
 def test_huge_uploads_are_reduced_before_anything_runs(classifier) -> None:

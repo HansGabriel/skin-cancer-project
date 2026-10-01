@@ -14,7 +14,6 @@ __pycache__/
 
 # training artefacts (large; the four files in models/ are what ships)
 training/*.keras
-training/splits.csv
 
 # raw captures, if SAVE_CAPTURES_DIR is ever switched on
 captures/

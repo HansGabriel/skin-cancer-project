@@ -1,19 +1,44 @@
-/* E.P.I.V.U.E. kiosk page. One state machine, one fetch per scan.
-   States: idle -> live -> captured -> reading -> result | refused | error
-   The camera is either the Pi's ("pi": the server streams /preview.mjpg and
-   takes the photo), the browser's ("webcam": getUserMedia on a laptop), or
-   absent ("off": pick a file). The server decides nothing about the UI; it
-   answers /scan with a verdict and this file puts the words on screen. */
+/* E.P.I.V.U.E. kiosk page. One state machine, one request per scan.
+
+   States:  idle -> live -> captured -> reading -> result | refused | error
+
+   Where the photo comes from:
+     "pi"      the server streams /preview.mjpg and takes the photo (/capture)
+     "webcam"  the browser's own camera, on a laptop
+     "off"     no camera: pick a file
+
+   Every word a visitor reads comes from the server (dermascan/verdict.py). The
+   one exception is NO_ANSWER below: when the server cannot be reached at all,
+   it cannot send words either. */
 
 const $ = (id) => document.getElementById(id);
 const body = document.body;
-const S = { camera: "off", photoUrl: null, outcome: null, stream: null, quitArmed: 0 };
+const S = { camera: "off", photoBlob: null, photoUrl: null, photoOnServer: false, outcome: null, stream: null,
+            exitNeedsCode: false, exitArmedAt: 0, code: "" };
+
+const NO_ANSWER = {
+  status: "error", stage_ms: {}, total_ms: 0, measured: {}, refusal: null, caveat: "",
+  verdict: { state: "error", tone: "info", headline: "THAT SCAN DID NOT FINISH",
+             body: "The scanner did not answer.", advice: "Take another photo. If this keeps happening, ask a staff member.",
+             note_label: "", note: "" },
+};
+
+// fetch + JSON, never throws: a dead server or a non-JSON reply becomes NO_ANSWER.
+async function postJSON(url, form) {
+  try {
+    const r = await fetch(url, { method: "POST", body: form });
+    return await r.json();
+  } catch (e) {
+    return NO_ANSWER;
+  }
+}
 
 // ---------- boot ----------
 async function boot() {
   try {
     const h = await (await fetch("/health")).json();
     S.camera = h.camera ? "pi" : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? "webcam" : "off");
+    S.exitNeedsCode = !!h.exit_needs_code;
     $("model-line").textContent = h.ok ? `${h.model.file} · ${h.model.tta ? "4 views" : "1 view"}` : "model not loaded";
   } catch (e) {
     S.camera = "off";
@@ -22,7 +47,7 @@ async function boot() {
   render("idle");
 }
 
-// ---------- rendering ----------
+// ---------- small DOM helpers ----------
 function el(tag, cls, text) {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -36,13 +61,25 @@ function button(label, onClick, primary) {
   return b;
 }
 function rows(items, numbered) {
-  const box = el("div", "mid");
+  const box = el("div");
   items.forEach((t, i) => {
     const r = el("div", "row");
     if (numbered) r.appendChild(el("span", "row-num", String(i + 1)));
     r.appendChild(el("span", "", t));
     box.appendChild(r);
   });
+  return box;
+}
+function verdictBlock(o) {
+  const v = o.verdict, box = el("div");
+  box.appendChild(el("p", "advice", v.advice));
+  if (v.note) {
+    const n = el("div", "note");
+    n.appendChild(el("b", "", v.note_label));
+    n.appendChild(document.createTextNode(v.note));
+    box.appendChild(n);
+  }
+  if (o.caveat) box.appendChild(el("p", "caveat", o.caveat));
   return box;
 }
 function setPage({ eyebrow, headline, lede, mid, actions, tone, mark }) {
@@ -57,7 +94,8 @@ function setPage({ eyebrow, headline, lede, mid, actions, tone, mark }) {
   $("actions").replaceChildren(...(actions || []));
 }
 
-function render(state, data) {
+// ---------- the screens ----------
+function render(state, o) {
   body.dataset.state = state;
   const cam = S.camera;
   if (state !== "live") stopWebcam();
@@ -100,61 +138,38 @@ function render(state, data) {
 
   if (state === "reading") {
     $("readout").textContent = "Reading…";
-    const steps = el("div", "steps");
-    ["Checking the photo and finding skin", "Looking for one spot with a clear edge", "Comparing it with the on-device model"].forEach((t) => {
-      const s = el("div", "step");
-      s.appendChild(el("i"));
-      s.appendChild(el("span", "", t));
-      steps.appendChild(s);
-    });
     setPage({
       eyebrow: "Reading",
       headline: "Reading the spot…",
       lede: "Everything happens on this device. No internet needed.",
-      mid: steps,
+      mid: rows(["Checks the photo shows one spot on skin", "Compares the spot with the on-device model", "Puts what to do next into plain words"]),
       actions: [],
     });
-    tickSteps(steps);
   }
 
   if (state === "result") {
-    const o = data, v = o.verdict;
     $("readout").textContent = `Scan ${o.total_ms} ms · model ${o.stage_ms.model} ms`;
-    const mid = el("div");
-    mid.appendChild(el("p", "advice", v.advice));
-    if (v.note) { const n = el("div", "note"); n.appendChild(el("b", "", v.note_label)); n.appendChild(document.createTextNode(v.note)); mid.appendChild(n); }
-    if (o.forced) mid.appendChild(el("p", "caveat", "This photo did not pass the usual checks and was read anyway. Treat the result with extra caution."));
     setPage({
-      eyebrow: "Result · what to do next", headline: v.headline, lede: v.body, mid, tone: v.tone, mark: true,
+      eyebrow: "Result · what to do next", headline: o.verdict.headline, lede: o.verdict.body,
+      mid: verdictBlock(o), tone: o.verdict.tone, mark: true,
       actions: [button("Done", () => render("idle"), true), button("Check another spot", cam === "off" ? pickFile : startLive)],
     });
   }
 
   if (state === "refused" || state === "error") {
-    const o = data, v = o.verdict;
     $("readout").textContent = state === "refused" ? `Stopped after ${o.total_ms} ms` : "Stopped";
-    const mid = el("div");
-    mid.appendChild(el("p", "advice", v.advice));
-    if (v.note) { const n = el("div", "note"); n.appendChild(el("b", "", v.note_label)); n.appendChild(document.createTextNode(v.note)); mid.appendChild(n); }
     const actions = [button("Take another photo", retake, true)];
     if (o.refusal && o.refusal.can_override) actions.push(button("Check it anyway", () => scan(true)));
     else actions.push(button("Back to start", () => render("idle")));
-    setPage({ eyebrow: state === "refused" ? "Result · nothing was read" : "Result", headline: v.headline, lede: v.body, mid, tone: v.tone, mark: true, actions });
+    setPage({
+      eyebrow: state === "refused" ? "Result · nothing was read" : "Result",
+      headline: o.verdict.headline, lede: o.verdict.body, mid: verdictBlock(o), tone: o.verdict.tone, mark: true, actions,
+    });
   }
   renderDrawer();
 }
 
-function tickSteps(box) {
-  const steps = box.querySelectorAll(".step");
-  let i = 0;
-  steps[0].classList.add("now");
-  S.ticker = setInterval(() => {
-    if (body.dataset.state !== "reading") return clearInterval(S.ticker);
-    if (i < steps.length - 1) { steps[i].classList.replace("now", "done"); i++; steps[i].classList.add("now"); }
-  }, 350);
-}
-
-// ---------- camera ----------
+// ---------- camera and photo ----------
 function startLive() {
   forgetPhoto();
   if (S.camera === "pi") {
@@ -171,55 +186,46 @@ function stopWebcam() {
 }
 async function takePhoto() {
   if (S.camera === "pi") {
-    const r = await fetch("/capture", { method: "POST" });
-    if (!r.ok) return render("error", { verdict: errorWords((await r.json()).error) });
-    showPhoto(await r.blob());
-  } else {
-    const v = $("webcam"), c = $("canvas"), side = Math.min(v.videoWidth, v.videoHeight);
-    c.width = c.height = Math.min(side, 1024);
-    c.getContext("2d").drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, c.width, c.height);
-    c.toBlob((blob) => { showPhoto(blob); }, "image/jpeg", 0.92);
+    let r;
+    try { r = await fetch("/capture", { method: "POST" }); } catch (e) { return render("error", NO_ANSWER); }
+    if (!r.ok) return render("error", await r.json().catch(() => NO_ANSWER));
+    return showPhoto(await r.blob(), true); // the server already holds this photo
   }
+  const v = $("webcam"), c = $("canvas"), side = Math.min(v.videoWidth, v.videoHeight);
+  c.width = c.height = Math.min(side, 1024);
+  c.getContext("2d").drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, c.width, c.height);
+  c.toBlob((blob) => showPhoto(blob, false), "image/jpeg", 0.92);
 }
 function pickFile() { $("file").value = ""; $("file").click(); }
-$("file").addEventListener("change", () => { const f = $("file").files[0]; if (f) showPhoto(f); });
+$("file").addEventListener("change", () => { const f = $("file").files[0]; if (f) showPhoto(f, false); });
 
-function showPhoto(blob) {
+function showPhoto(blob, onServer) {
   forgetPhoto();
   S.photoBlob = blob;
+  S.photoOnServer = onServer;
   S.photoUrl = URL.createObjectURL(blob);
   $("field").src = S.photoUrl;
   render("captured");
 }
 function forgetPhoto() {
   if (S.photoUrl) URL.revokeObjectURL(S.photoUrl);
-  S.photoUrl = null; S.photoBlob = null; S.outcome = null;
+  if (S.photoBlob || S.outcome) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
+  S.photoUrl = null; S.photoBlob = null; S.photoOnServer = false; S.outcome = null;
   $("field").removeAttribute("src");
 }
-function retake() { S.camera === "off" ? (forgetPhoto(), pickFile()) : startLive(); }
+function retake() { if (S.camera === "off") { forgetPhoto(); pickFile(); } else startLive(); }
 
 // ---------- the scan ----------
 async function scan(force) {
   render("reading");
   const form = new FormData();
-  // The server remembers the last photo it took or received, so a Pi capture
-  // and a forced re-read send nothing; an upload or webcam shot sends the file.
-  if (S.photoBlob && !(S.camera === "pi" && S.photoFromPi)) form.append("image", S.photoBlob, "photo.jpg");
+  // A Pi capture is already on the server, and so is any photo being re-read with
+  // force; only a first look at an upload or a webcam shot sends the file.
+  if (S.photoBlob && !S.photoOnServer) { form.append("image", S.photoBlob, "photo.jpg"); S.photoOnServer = true; }
   if (force) form.append("force", "1");
-  let o;
-  try {
-    const r = await fetch("/scan", { method: "POST", body: form });
-    o = await r.json();
-    if (!r.ok) o = { status: "error", verdict: errorWords(o.error), stage_ms: {}, total_ms: 0 };
-  } catch (e) {
-    o = { status: "error", verdict: errorWords("The scanner did not answer."), stage_ms: {}, total_ms: 0 };
-  }
+  const o = await postJSON("/scan", form);
   S.outcome = o;
-  await new Promise((r) => setTimeout(r, 700)); // let the checklist finish ticking
   render(o.status === "ok" ? "result" : o.status === "refused" ? "refused" : "error", o);
-}
-function errorWords(msg) {
-  return { state: "error", tone: "info", headline: "THAT SCAN DID NOT FINISH", body: msg || "Something went wrong.", advice: "Take another photo. If this keeps happening, ask a staff member.", note_label: "", note: "" };
 }
 
 // ---------- staff drawer ----------
@@ -235,40 +241,72 @@ function renderDrawer() {
     Object.entries(o.prediction.probs_pct).forEach(([k, v]) => {
       const r = el("div", "bar" + (k === o.prediction.label ? " flagged" : ""));
       r.appendChild(el("span", "", k.replace("_", "-")));
-      const t = el("div", "bar-track"); const f = el("div", "bar-fill"); f.style.width = v + "%"; t.appendChild(f); r.appendChild(t);
-      r.appendChild(el("span", "", v.toFixed(0) + "%")); b.appendChild(r);
+      const t = el("div", "bar-track"), f = el("div", "bar-fill");
+      f.style.width = v + "%"; t.appendChild(f); r.appendChild(t);
+      r.appendChild(el("span", "", v.toFixed(0) + "%"));
+      b.appendChild(r);
     });
     kv("decision", o.prediction.flagged ? "flagged for a doctor" : "not flagged");
     kv("confidence", o.prediction.confidence_pct.toFixed(0) + "%");
     kv("verdict state", o.verdict.state);
     if (o.forced) kv("photo checks", "overridden by visitor");
   } else if (o.refusal) {
-    h("Stopped by the photo check"); kv("reason", o.refusal.code); kv("can override", o.refusal.can_override ? "yes" : "no");
+    h("Stopped by the photo check");
+    kv("reason", o.refusal.code);
+    kv("can override", o.refusal.can_override ? "yes" : "no");
   }
-  h("What the photo check measured");
-  Object.entries(o.measured || {}).forEach(([k, v]) => kv(k.replace(/_/g, " "), Number(v).toFixed(3)));
-  h("Timing (ms)");
-  Object.entries(o.stage_ms || {}).forEach(([k, v]) => kv(k, String(v)));
-  kv("total", String(o.total_ms));
+  if (Object.keys(o.measured || {}).length) {
+    h("What the photo check measured");
+    Object.entries(o.measured).forEach(([k, v]) => kv(k.replace(/_/g, " "), Number(v).toFixed(3)));
+  }
+  if (Object.keys(o.stage_ms || {}).length) {
+    h("Timing (ms)");
+    Object.entries(o.stage_ms).forEach(([k, v]) => kv(k, String(v)));
+    kv("total", String(o.total_ms));
+  }
 }
-$("staff-open").addEventListener("click", () => { renderDrawer(); $("drawer").hidden = false; });
-$("staff-close").addEventListener("click", () => { $("drawer").hidden = true; });
+$("staff-open").addEventListener("click", () => { renderDrawer(); closeKeypad(); $("drawer").hidden = false; });
+$("staff-close").addEventListener("click", () => { $("drawer").hidden = true; closeKeypad(); });
+
+// Exit: two taps, or the staff code on a keypad when one is set (config.staff_passcode).
 $("quit").addEventListener("click", () => {
+  if (S.exitNeedsCode) return openKeypad();
   const now = Date.now();
-  if (now - S.quitArmed > 3000) { S.quitArmed = now; $("quit").textContent = "Tap again to exit"; setTimeout(() => { $("quit").textContent = "Exit kiosk"; }, 3000); return; }
-  fetch("/quit", { method: "POST" });
+  if (now - S.exitArmedAt > 3000) {
+    S.exitArmedAt = now;
+    $("quit").textContent = "Tap again to exit";
+    setTimeout(() => { $("quit").textContent = "Exit kiosk"; }, 3000);
+    return;
+  }
+  postJSON("/quit", new FormData());
   $("quit").textContent = "Exiting…";
 });
-
-// Pi captures already live on the server; mark them so /scan is not sent a copy.
-const _showPhoto = showPhoto;
-showPhoto = function (blob, fromPi) { S.photoFromPi = !!fromPi; _showPhoto(blob); };
-const _takePhoto = takePhoto;
-takePhoto = async function () {
-  if (S.camera !== "pi") return _takePhoto();
-  const r = await fetch("/capture", { method: "POST" });
-  if (!r.ok) return render("error", { verdict: errorWords((await r.json()).error) });
-  showPhoto(await r.blob(), true);
-};
+function openKeypad() {
+  S.code = "";
+  const pad = $("keypad");
+  pad.replaceChildren();
+  const shown = el("div", "code-dots", "· · · ·");
+  pad.appendChild(shown);
+  const grid = el("div", "keys");
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "Cancel"].forEach((k) => {
+    grid.appendChild(button(k, () => keypadPress(k, shown)));
+  });
+  pad.appendChild(grid);
+  pad.hidden = false;
+}
+function closeKeypad() { $("keypad").hidden = true; S.code = ""; }
+async function keypadPress(k, shown) {
+  if (k === "Cancel") return closeKeypad();
+  if (k === "Clear") S.code = "";
+  else if (S.code.length < 4) S.code += k;
+  shown.textContent = S.code ? "●".repeat(S.code.length) + " ·".repeat(4 - S.code.length) : "· · · ·";
+  if (S.code.length === 4) {
+    const form = new FormData();
+    form.append("code", S.code);
+    S.code = "";
+    const r = await postJSON("/quit", form);
+    shown.textContent = r.ok ? "Exiting…" : "Wrong code";
+  }
+}
 
 boot();

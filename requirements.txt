@@ -1,9 +1,10 @@
-# Runtime for the kiosk, on the Pi and on a laptop. Same four packages everywhere.
-# Pi: create the venv with --system-site-packages so apt's picamera2 is visible:
+# Runtime for the kiosk, on the Pi and on a laptop. Pinned to the set that runs on
+# the Pi (Raspberry Pi OS, Python 3.13, aarch64). Same file everywhere, and in CI.
+# Pi: make the venv with --system-site-packages so apt's picamera2 is visible:
 #   python3 -m venv --system-site-packages venv && source venv/bin/activate && pip install -r requirements.txt
 ai-edge-litert==2.1.5
-numpy>=1.26,<2.3
-opencv-python-headless>=4.10
-Flask>=3.1
+numpy==2.2.4
+opencv-python-headless==4.13.0.92
+Flask==3.1.1
 # tests
 pytest>=8
