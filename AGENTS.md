@@ -1,17 +1,20 @@
 # Agent instructions — skin-cancer-project
 
-End-to-end technical plan for the **AI-Assisted Skin Lesion Classifier**: dataset choice, TensorFlow/Keras training (PC GPU or Colab), TFLite on Raspberry Pi 4, camera integration, PC frontend, and offline-first operation.
+**AI-Assisted Skin Lesion Classifier**: HAM10000 → TensorFlow/Keras EfficientNetB0 trained
+on an RTX 4060 → TFLite on a Raspberry Pi 4 with Camera Module 2 → a Flask kiosk on a 7"
+1024×600 touch panel → fully offline.
 
 ## Source of truth (Notion)
 
 | Doc | URL |
 |-----|-----|
-| **AI Model Development & Deployment Plan** (this sync) | https://www.notion.so/AI-Model-Development-Deployment-Plan-9c33d9f582ef41f88306084b43d65b6c |
+| **AI Model Development & Deployment Plan** | https://www.notion.so/AI-Model-Development-Deployment-Plan-9c33d9f582ef41f88306084b43d65b6c |
 | **Parent — AI-assisted skin cancer detection platform** | https://www.notion.so/AI-assisted-skin-cancer-detection-platform-0a1108390ba2473c9906bf0a47471c68 |
 
 **Audience:** Mentor (Hans) + research team (Maria Beatriz, Kumar, Tyeisha, Cristine Eve).
-
-**Hardware:** Windows PC with NVIDIA **RTX 4060** + **Raspberry Pi 4 Model B** + **Pi Camera Module 2** + **32GB SD card**.
+**Hardware:** Windows PC with RTX 4060 (training, WSL) · Raspberry Pi 4 Model B · Pi Camera
+Module 2 · 7" 1024×600 HDMI touch panel · Mac for development.
+**Demo:** 13 October 2026.
 
 If chat instructions conflict with Notion, follow Notion unless the user overrides.
 
@@ -19,116 +22,75 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 
 ## Stack decisions (do not change without explicit approval)
 
-| Area | Choice | Rationale (short) |
-|------|--------|-------------------|
-| **Primary dataset** | [HAM10000](https://www.kaggle.com/datasets/kmader/skin-cancer-mnist-ham10000) (~10k, 7 dx classes) | Standard benchmark, Kaggle-friendly, fits 4060 training time |
-| **Validation / skin-tone angle** | **MSKCC Skin Tone Labeling** + **DDI** (secondary) | Filipino / Fitzpatrick diversity story; not the sole training set for v1 |
-| **Avoid for v1** | ISIC 2024 SLICE-3D at full scale | Size, compute, distribution mismatch vs dermoscopic device |
-| **Framework** | **TensorFlow 2.16+** + **Keras** | **TFLite** + `tflite-runtime` on Pi is the deployment target |
-| **Architecture** | **EfficientNetB0** (ImageNet), **int8 TFLite** for Pi | Accuracy/size tradeoff; **MobileNetV2** fallback if Pi latency too high |
-| **Training location** | **Primary: local RTX 4060** | Faster than free Colab T4; Kaggle Notebooks acceptable for teaching |
-| **PC demo UI** | **Streamlit** (`frontend/app.py`) | Simple, browser-based |
-| **Pi service** | **Flask** `POST /scan` (e.g. `pi_server.py` on Pi) | PC app calls Pi over LAN |
-| **Offline** | No runtime `pip`, no cloud model fetch, no telemetry; LAN only PC↔Pi | Barangay / field use case |
+| Area | Choice | Why |
+|------|--------|-----|
+| Dataset | HAM10000, 7 dx → 3 labels (`benign`, `pre_cancerous`, `malignant`) | standard, fits the 4060 |
+| Split | **by `lesion_id`** (GroupShuffleSplit), never by image | image-level split leaked 40% of test lesions |
+| Model | EfficientNetB0, 3-class softmax head, dynamic-range TFLite, float32 in/out, raw `[0,255]` input | accuracy/size; EfficientNet rescales internally — never add `/255` |
+| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.90 sensitivity on val); 4-view TTA on | sensitivity-first screening |
+| Confidence | temperature-scaled for display only; decision on raw probs | honest numbers, same labels |
+| Kiosk UI | **Flask + one static HTML page** (`kiosk/`) — *changed from Streamlit on 2026-10-01 with the mentor's approval* | Streamlit re-ran everything per tap and took 40 s to boot on the Pi |
+| Web demo | Streamlit Community Cloud, `cloud/streamlit_app.py`, upload only | same `dermascan/` core |
+| Camera | picamera2 opened once per process, never torn down; plain pixels to the model | reopening stalled the preview; CLAHE before the model hurt accuracy |
+| Offline | no runtime pip, no downloads, no telemetry; nothing stored | barangay / field use |
 
-### Class strategy
+### What was removed on 2026-10-01 (kept on `main`)
 
-- HAM10000 **7 dx labels** map to **3 display groups**: **malignant** (mel, bcc), **pre_cancerous** (akiec), **benign** (nv, bkl, df, vasc).
-- **Design note:** The written plan argues for a **7-class softmax + post-hoc collapse** for defensibility; the reference notebook cells in Notion use a **3-class head** end-to-end. When implementing, pick one approach per milestone and keep **labels.txt**, metrics, and UI in sync.
-
-### Preprocessing contract
-
-- **Training (Keras):** `efficientnet.preprocess_input` on RGB `224×224` — effectively **identity** on TF 2.21 (EfficientNet rescales internally), so the model sees raw `[0, 255]`.
-- **TFLite (PC + Pi):** float32 RGB `224×224` in **`[0, 255]`** — resize only, **no scaling**. `backend/preprocessing.py` is canonical; `scripts/pi_server.py` / `classify_pi.py` mirror it. Do **not** add `(img / 127.5) - 1.0` — the exported graph input expects raw `[0, 255]` (quantized input dtypes are handled from the tensor's scale/zero-point in `to_input_tensor`).
-- **Camera gotcha:** picamera2's `"RGB888"` format delivers **BGR** byte order; every capture path converts BGR→RGB at the capture boundary before inference.
+ABCDE measurements, GrabCut segmentation, E-evolving, saved cases/history, the offline
+LLM assistant (Ollama), Grad-CAM/Eigen-CAM, the feature-distance OOD gate, pixels-per-mm
+scale, PC-to-Pi HTTP mode, ~40 `SKIN_*` env vars. Reason: 30–60 s scans, a gate nobody
+could calibrate, and a codebase the students could not read. Do not bring them back into
+the kiosk path; cite them from `main` in the paper if needed.
 
 ---
 
-## Repository layout (PC — align with this repo)
-
-Project root: `skin-cancer-project` (e.g. `c:\Users\Hans_\codes\skin-cancer-project`).
+## Repository layout
 
 ```
-datasets/ham10000/          # HAM10000_metadata.csv, HAM10000_images_part_1|2, test_samples/
-notebooks/train_skin_classifier.ipynb   # main training notebook (per plan)
-models/                     # skin_classifier_full.keras, skin_classifier.tflite, labels.txt
-frontend/app.py             # Streamlit demo (calls Pi)
-scripts/test_inference_pc.py
-requirements.txt
-venv/
+dermascan/      config.py scan.py gate.py classifier.py verdict.py   — the core, no UI framework
+kiosk/          server.py camera.py static/{index.html,kiosk.css,kiosk.js,fonts/}
+cloud/          streamlit_app.py requirements.txt
+models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
+training/       train_skin_classifier.ipynb eval.py requirements.txt (+ splits.csv, *.keras: gitignored)
+scripts/        launch_kiosk.sh run_dev.sh
+tests/          pytest, < 1 min, no dataset
+docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
 ```
 
-**Pi (`~/Documents/skin-cancer-project/` — the canonical install path; see docs/DEPLOYMENT.md "Autostart & crash recovery"):** full repo clone (`EPIVUE.desktop` and `deploy/dermascan-kiosk.service` assume this path), with `skin_classifier.tflite`, `labels.txt`, `thresholds.json`, `temperature.json` next to `pi_server.py` / `classify_pi.py` for the standalone Flask/CLI path, plus `venv/`.
-
----
-
-## Phased work checklist (from plan)
-
-1. **Data** — Download HAM10000 (Kaggle or [Harvard Dataverse](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DBW86T)); place under `datasets/ham10000/`; stratified train/val/test.
-2. **Train** — Notebook: `tf.data` pipeline, augmentation, class weights, EfficientNetB0 two-phase (frozen then partial unfreeze), early stopping + checkpoint; evaluate with report + confusion matrix.
-3. **Export** — Save `.keras`; convert **TFLite** with representative dataset for quantization; ship `labels.txt`.
-4. **PC sanity check** — `scripts/test_inference_pc.py` on held-out images before Pi.
-5. **Pi** — 64-bit Pi OS, `python3-picamera2`, `venv`, **`tflite-runtime`** (not full TF on Pi); copy `.tflite` + labels; `test_with_files.py` then `classify.py` with camera.
-6. **Integration** — Flask on Pi (`/scan`); Streamlit on PC; verify LAN path (`raspberrypi.local` or static IP when offline Ethernet / hotspot).
-7. **Hardware milestone (week ~6 plan)** — LED ring, enclosure, macro lens; tune capture for dermoscopic-like quality.
-8. **Offline verification** — Disconnect internet; PC↔Pi only; run full demo per plan checklist (Part 8.4).
-
-### Suggested timeline (8-week cadence from plan)
-
-| Week | Goal | Output |
-|------|------|--------|
-| **2** | Train v1, baseline metrics | `skin_classifier_full.keras` (~85%+ test acc target on 3-class formulation) |
-| **4** | Pi camera E2E | `classify.py` live capture → TFLite |
-| **6** | Imaging hardware complete | Stable LED + enclosure + macro captures |
-| **8** | Demo + paper + poster | Science-fair ready |
-
----
-
-## CUDA / Python note (PC)
-
-Plan recommends **Python 3.11** and **TF 2.16.x** with **CUDA 12.3 + cuDNN 8.9** for GPU on Windows. This repo’s `requirements.txt` may differ; when upgrading TF/CUDA, update pins and document in README.
+Pi install path: `~/Documents/skin-cancer-project` (`EPIVUE.desktop` assumes it).
 
 ---
 
 ## Agent defaults
 
-1. **Phase alignment** — Implement the next unchecked milestone above; avoid unrelated refactors.
-2. **Clinical safety** — Screening only; never imply diagnosis or treatment; keep disclaimers in CLI, Streamlit, and Pi output.
-3. **Reproducibility** — Seeds, stratified splits, versioned deps, documented preprocessing.
-4. **Evaluation** — Classification report, confusion matrix, discussion of imbalance and skin-tone generalization limits.
-5. **Secrets** — No API keys or Kaggle tokens in git; use env vars or local config ignored by VCS.
-6. **Offline** — No runtime external downloads, analytics, or CDN-only assets for demo-critical paths.
+1. **Keep it readable.** Every module starts with a docstring a student can follow; every
+   tunable lives in `dermascan/config.py` with a one-line reason; no new env vars.
+2. **Clinical safety.** Screening only. Visitor-facing copy lives only in
+   `dermascan/verdict.py`, plain words, no jargon, no percentages, never a green "safe".
+   `tests/test_verdict.py` enforces it.
+3. **Calibrate on the real path.** Thresholds are measured through a real JPEG encode
+   (`tests/conftest.py`), never on raw arrays, never on `samples/` style patches.
+   Real Pi captures (`SAVE_CAPTURES_DIR`) beat synthetic frames whenever they exist.
+4. **Measure speed from the log line** (`scan status=... ms decode= gate= model=`),
+   target < 5 s on the Pi.
+5. **Reproducibility.** Seeds, lesion-grouped split, versioned deps, `training/eval.py`
+   numbers only in `docs/METRICS.md`.
+6. **Secrets.** None needed; keep it that way.
+7. **Pi work:** give copy-paste commands rather than running installs unprompted; confirm
+   the branch before pulling on the Pi.
 
 ---
 
-## References (from plan)
+## CUDA / Python note (PC)
 
-- EfficientNet: [arXiv:1905.11946](https://arxiv.org/abs/1905.11946)
-- TF vs PyTorch (medical imaging): [arXiv:2507.14587](https://arxiv.org/abs/2507.14587)
-- MDPI edge / TFLite on Pi: [MDPI Applied Sciences 2025](https://www.mdpi.com/2076-3417/15/6/3077)
+Training uses WSL + the venv's NVIDIA wheels (`training/requirements.txt`); cell 0 of the
+notebook sets `LD_LIBRARY_PATH` and must import TensorFlow in the same cell. Python 3.12.
+On the Mac, Homebrew's python@3.12 is broken; use `uv venv --python 3.12`.
+
+## References
+
+- EfficientNet: https://arxiv.org/abs/1905.11946
 - HAM10000: Tschandl et al., *Scientific Data* 2018
-- MSKCC skin tone dataset: [ISIC DOI 10.34970/962049](https://api.isic-archive.com/doi/mskcc-skin-tone-labeling-dataset/)
-- TensorFlow Lite Python: https://www.tensorflow.org/lite/guide/python  
-- Picamera2 manual: https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf  
-- ISIC Archive: https://www.isic-archive.com/
-
----
-
-## Summary line
-
-**HAM10000** + **TensorFlow/Keras EfficientNetB0** → train on **RTX 4060** → **TFLite** → **Pi 4 + Camera Module 2** + **`tflite-runtime`** → **Streamlit on PC** + **Flask on Pi** → verify **fully offline** LAN operation for field demos.
-
----
-
-## Learned User Preferences
-
-- On macOS, prefer **inference-only** setup (Streamlit + `models/*.tflite` + `labels.txt`); do not default to full `requirements.txt` / notebook training on the Mac.
-- When fixing environment or dependency issues, give **copy-paste shell commands** first unless the user explicitly asks the agent to run installs.
-
-## Learned Workspace Facts
-
-- **Streamlit demo deps** live in `streamlit-requirements.txt` (TFLite via `ai-edge-litert`, OpenCV, etc.); full `requirements.txt` is for **GPU training on Windows/Linux** and includes **NVIDIA CUDA** wheels that fail or are irrelevant on Mac.
-- **Grad-CAM / 7-class Keras** need `tensorflow` and `tf-keras-vis` installed separately—they are **not** in `streamlit-requirements.txt`.
-- When **Settings → `SKIN_KERAS_PATH`** points to a valid `.keras` file, the scan path loads Keras and runs **Grad-CAM on CPU** (often much slower than TFLite-only); leave Keras path empty for fast screening runs.
-- **macOS Homebrew `python@3.12`** can break `venv` / `pip` with `pyexpat` / `libexpat` (`_XML_SetAllocTrackerActivationThreshold`); usual fix: `brew reinstall expat python@3.12`, `rm -rf venv`, recreate venv with **`python3.12`** (not system `python3`, which may be Apple 3.9), or use **python.org** 3.12.
-- **Ubuntu 3.12** is used for training; **Mac** is used for Streamlit demo—platform-specific Python/venv steps differ.
+- Split leakage in ISIC-derived sets: Cassidy et al. 2022, *Medical Image Analysis* 75:102305
+- TensorFlow Lite Python: https://www.tensorflow.org/lite/guide/python
+- Picamera2 manual: https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf

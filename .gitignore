@@ -1,23 +1,20 @@
 venv/
+.venv/
 datasets/
-!datasets/.gitkeep
-.kaggle/
 **/.ipynb_checkpoints/
 __pycache__/
 *.pyc
-logs/*.sqlite
-logs/*.sqlite-journal
-
-# Pi server runtime files (symlinks + scan db)
-scripts/*.sqlite
-scripts/*.sqlite-journal
-scripts/skin_classifier.tflite
-scripts/labels.txt
-scripts/thresholds.json
+.pytest_cache/
 
 # Cursor local metadata/state
 .cursor/
-.cursor/hooks/state/
 
-# Streamlit secrets (use .streamlit/secrets.toml.example as a template)
+# Streamlit Cloud secrets, if any are ever added
 .streamlit/secrets.toml
+
+# training artefacts (large; the four files in models/ are what ships)
+training/*.keras
+training/splits.csv
+
+# raw captures, if SAVE_CAPTURES_DIR is ever switched on
+captures/

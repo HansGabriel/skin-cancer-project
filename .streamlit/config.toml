@@ -1,14 +1,10 @@
+# Streamlit Community Cloud only (cloud/streamlit_app.py). The kiosk does not use Streamlit.
 [browser]
 gatherUsageStats = false
 
 [server]
 headless = true
 maxUploadSize = 8
-enableXsrfProtection = true
-# Serves frontend/static/ at /app/static/ — how the vendored woff2 fonts reach
-# the browser. They must NOT be inlined as data: URIs in the stylesheet, which
-# Streamlit re-sends on every rerun; served this way the browser caches them.
-enableStaticServing = true
 
 [theme]
 base = "light"
