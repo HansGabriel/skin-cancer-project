@@ -1,46 +1,66 @@
 # How good is the model, honestly
 
-## The deployed model (until the retrain lands)
+## The deployed model
 
-`models/skin_classifier.tflite`, EfficientNetB0, 3 classes, trained June 2026 on HAM10000
-with an **image-level** split. Measured through the production path (4-view TTA, decision
-at the 0.11 threshold):
+`models/skin_classifier.tflite`, EfficientNetB0, 3 classes, retrained 1 October 2026 on
+HAM10000. The split is **by lesion** (`GroupShuffleSplit` on `lesion_id`, recorded in
+`training/splits.csv`): train 7,002, validation 1,519, test 1,494 images, and no lesion
+appears on both sides of any line. Training images get camera-style augmentation (blur,
+JPEG re-compression, colour cast, exposure drift, glare, a faint screen grid); validation
+and test images are clean dermoscopy.
 
-| | Full test (n=1503) | Leakage-free subset (n=897) |
+Measured on the **test split** through the production path (`python training/eval.py`: the
+exported int8 TFLite model, 4-view TTA, decision at the 0.235 threshold):
+
+| | Test (n=1494) |
+|---|---|
+| Cancer sensitivity (pre-cancerous + malignant flagged) | 0.874 |
+| Benign specificity | 0.698 |
+| 3-class accuracy at the threshold | 0.700 |
+| Argmax accuracy (no threshold) | 0.824 |
+| Benign recall at argmax | 0.920 |
+| Pre-cancerous recall at argmax | 0.556 |
+| Malignant recall at argmax | 0.447 |
+| Cancer sensitivity / benign specificity at argmax | 0.579 / 0.920 |
+
+Test set: 1,176 benign, 63 pre-cancerous, 255 malignant. With only 63 pre-cancerous
+images, any figure for that class is rough.
+
+**What the threshold does.** `p(pre_cancerous) + p(malignant) >= 0.235` flags the spot.
+0.235 is the highest threshold that flags 90% of cancers in the validation set (it
+flagged 0.906, with validation specificity 0.681). On the test set it flagged 0.874: a
+little under the target, as expected for a threshold fitted on other images. The cost is
+that about three in ten benign spots are also flagged ("better to get checked"). For a
+screening tool that is the right trade: a missed cancer costs more than a precautionary
+visit. The threshold is fitted by `training/calibrate.py` on the exported TFLite model with
+4-view TTA, so it describes the device, not the Keras model.
+
+**Quantization costs accuracy.** The Keras model scored better than the exported one on
+the same test split (single view, argmax):
+
+| | Keras | Exported TFLite, 4-view TTA |
 |---|---|---|
-| Cancer sensitivity (pre-cancerous + malignant flagged) | 0.911 | 0.903 |
-| Benign specificity | 0.736 | 0.855 |
-| 3-class accuracy at the threshold | 0.754 | 0.843 |
-| Argmax accuracy (no threshold) | 0.857 | 0.903 |
-| Malignant recall at argmax | 0.643 | 0.625 |
-| Pre-cancerous recall at argmax | 0.429 | 0.360 |
+| Accuracy | 0.849 | 0.824 |
+| Pre-cancerous recall | 0.524 | 0.556 |
+| Malignant recall | 0.620 | 0.447 |
 
-**Why two columns.** HAM10000 has several photos of many lesions. The split was made per
-image, so 606 of 1,503 test images share a lesion with a training image — the model has
-seen them. The right-hand column keeps only lesions entirely inside the test set. Cite
-that one.
+Malignant recall drops most. The threshold recovers sensitivity at the price of
+specificity. The cause has not been isolated (int8 quantization is the first suspect;
+trying float16 or dynamic-range export is the obvious experiment).
 
-**What the threshold does.** `p(pre_cancerous) + p(malignant) >= 0.11` flags the spot.
-0.11 was chosen so 90% of cancers in the validation set are flagged. The cost is that
-about one in four benign spots is also flagged ("better to get checked"). For a screening
-tool that is the right trade: a missed cancer costs more than a precautionary visit.
+**Not comparable to the first model.** The first model (June 2026) was trained and tested
+on an image-level split that put 40% of test images' lesions into training. Its figures
+(sensitivity 0.911 at threshold 0.11, specificity 0.736 on the full test set; 0.903 / 0.855
+on a leakage-free subset) came from a different, easier test set. Do not quote them next
+to the table above, and do not cite either set of numbers as measured on this model.
 
 **What is not measured at all.** Every number above is on dermoscopy images. The kiosk
 is a bare camera module, and the students demo by photographing images on a phone
-screen. No accuracy figure exists for that input. The retrain (below) adds augmentation
-that imitates it; it is a mitigation, not a measurement.
+screen. No accuracy figure exists for that input. The camera-style augmentation is a
+mitigation, not a measurement.
 
-## The retrain (training/train_skin_classifier.ipynb)
-
-* Split by `lesion_id` (`GroupShuffleSplit`), so the two columns above become one.
-* Camera-style augmentation: blur, JPEG re-compression, colour cast, exposure drift,
-  glare, a faint screen grid.
-* Threshold and temperature fitted by `training/calibrate.py` on the **exported TFLite model
-  with 4-view TTA** — the device path — for 90% cancer sensitivity on the new validation set.
-  (The first model's threshold was fitted on Keras single-view probabilities.)
-* `python training/eval.py` prints the table to paste here.
-
-Replace the table above when it has run. Do not mix numbers from the two models.
+To refresh this table after a retrain: run `python training/calibrate.py`, then
+`python training/eval.py`, and paste what it prints. Do not mix numbers from two models.
 
 ## Displayed confidence
 

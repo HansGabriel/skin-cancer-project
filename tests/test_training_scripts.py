@@ -73,6 +73,17 @@ def test_calibrate_writes_both_files(fake_split: Path, tmp_path: Path, monkeypat
     monkeypatch.setattr(config, "THRESHOLDS_PATH", tmp_path / "thresholds.json")
     monkeypatch.setattr(config, "TEMPERATURE_PATH", tmp_path / "temperature.json")
     monkeypatch.setattr(sys, "argv", ["calibrate.py", "--csv", str(fake_split), "--target", "0.5"])
+
+    # The fake images are not lesions, so what the real model says about them depends on the
+    # model and has failed this test after a retrain. This test is about the files calibrate
+    # writes, so give it scores that put every cancer above every benign.
+    def scores(rows, clf, images_dir=None):
+        truth = np.array([int(r["label_idx"]) for r in rows])
+        p_cancer = np.where(truth == 0, 0.1, 0.6)
+        probs = np.stack([1 - p_cancer, p_cancer / 2, p_cancer / 2], axis=1)
+        return truth, probs
+
+    monkeypatch.setattr(calibrate, "score_rows", scores)
     assert calibrate.main() == 0
     thr = json.loads((tmp_path / "thresholds.json").read_text())
     assert thr["precancer_idx"] == 1 and thr["malignant_idx"] == 2
