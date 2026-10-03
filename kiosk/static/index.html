@@ -2,73 +2,92 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1220">
 <title>E.P.I.V.U.E. — skin check</title>
 <link rel="stylesheet" href="/static/kiosk.css">
 </head>
-<body data-state="idle" data-camera="off" data-tone="">
-<main class="shell">
+<body>
+<!-- Two bands, from the EPIVUE Interface design: the instrument (dark, the aperture and
+     the five nav keys) and the page (white, one job per screen). Every size is
+     clamp(min, N·container-height, max), so 1024x600 and 1440x900 both fill; under
+     720 px wide the bands stack and the nav moves to the bottom. -->
+<main class="app" id="app" data-screen="home" data-tone="" data-camera="off" data-source="camera">
 
-  <!-- The instrument: one dark band, one circular field. Every scan state is shown here. -->
-  <section class="band" aria-label="Camera view">
-    <header class="band-head">
-      <span class="brand">E.P.I.V.U.E.</span>
-      <span class="band-tag">Skin check · not a diagnosis</span>
+  <section class="instrument" aria-label="Camera view">
+    <div class="glow" aria-hidden="true"></div>
+    <header class="inst-head">
+      <div class="brand"><span class="brand-dot"></span><span>E.P.I.V.U.E.</span></div>
+      <div class="inst-meta"><span id="clock" class="clock"></span><span class="offline">OFFLINE</span></div>
     </header>
 
-    <div class="aperture-wrap">
-      <div class="aperture">
-        <img id="field" alt="" draggable="false">
-        <video id="webcam" autoplay playsinline muted hidden></video>
-        <svg class="reticle" viewBox="0 0 100 100" aria-hidden="true">
-          <circle cx="50" cy="50" r="46" class="rt-circle"/>
-          <circle cx="50" cy="50" r="30" class="rt-circle rt-inner"/>
-          <path class="rt-tick" d="M50 2v9M50 89v9M2 50h9M89 50h9"/>
-          <path class="rt-tick rt-fine" d="M50 42v16M42 50h16"/>
-          <g class="rt-marks">
-            <path d="M50 4v2.5M50 93.5V96M4 50h2.5M93.5 50H96" transform="rotate(45 50 50)"/>
-          </g>
+    <div class="field">
+      <div class="aperture" id="aperture">
+        <svg class="ap-svg" viewBox="-2 -2 104 104" aria-hidden="true">
+          <circle cx="50" cy="50" r="46" fill="#0B1220"/>
+          <circle class="rest-ring" cx="50" cy="50" r="28" fill="none" stroke="#3DDBD9" stroke-width=".4" stroke-dasharray="1.4 3" opacity=".35"/>
         </svg>
-        <div class="ring" aria-hidden="true"></div>
-        <span class="badge" id="badge"></span>
-        <p class="aperture-hint" id="hint">Camera ready</p>
+        <div class="photo">
+          <img id="field" alt="" draggable="false">
+          <video id="webcam" autoplay playsinline muted></video>
+        </div>
+        <svg class="ap-svg ap-over" viewBox="-2 -2 104 104" aria-hidden="true">
+          <g class="reticle">
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#3DDBD9" stroke-width="1.4" opacity=".6"/>
+            <path d="M50 11V6M89 50h5M50 89v5M11 50H6" stroke="#3DDBD9" stroke-width="1" opacity=".85"/>
+          </g>
+          <g class="spinner"><path d="M 50 4.5 A 45.5 45.5 0 0 1 82.17 17.83" fill="none" stroke="#3DDBD9" stroke-width="2.6" stroke-linecap="round"/></g>
+          <g class="arcs" id="arcs">
+            <path data-sign="A" d="M 52.20 8.06 A 42 42 0 0 1 89.21 34.95"/>
+            <path data-sign="B" d="M 90.57 39.13 A 42 42 0 0 1 76.43 82.64"/>
+            <path data-sign="C" d="M 72.87 85.22 A 42 42 0 0 1 27.13 85.22"/>
+            <path data-sign="D" d="M 23.57 82.64 A 42 42 0 0 1 9.43 39.13"/>
+            <path data-sign="E" d="M 10.79 34.95 A 42 42 0 0 1 47.80 8.06"/>
+            <text x="70.87" y="21.28">A</text><text x="83.76" y="60.97">B</text><text x="50" y="85.5">C</text>
+            <text x="16.24" y="60.97">D</text><text x="29.13" y="21.28">E</text>
+          </g>
+          <circle class="verdict-ring" cx="50" cy="50" r="47.5" fill="none" stroke-width="3"/>
+        </svg>
+        <div class="ap-rest" id="ap-rest">Put the spot inside the ring</div>
+        <div class="ap-chip ap-live"><span class="pulse"></span>LIVE</div>
+        <div class="ap-chip ap-imported"><span></span>IMPORTED PHOTO</div>
+        <div class="ap-reading">READING</div>
+      </div>
+
+      <div class="caption">
+        <div class="cap-abcde">
+          <div class="cap-title">A B C D E · THE FIVE THINGS DOCTORS LOOK AT</div>
+          <div class="legend">
+            <span><i style="background:#8C9BB0"></i>Normal</span>
+            <span><i style="background:#C79A6B"></i>Borderline</span>
+            <span><i style="background:#E0645A"></i>Stands out</span>
+            <span><i style="background:#7E9BD0"></i>Not measured</span>
+          </div>
+        </div>
+        <div class="cap-saved"><div class="cap-title" id="cap-saved-title"></div><div class="dots" id="cap-dots"></div></div>
+        <div class="cap-standby cap-title" id="cap-standby">READY · ON-DEVICE MODEL</div>
       </div>
     </div>
-
-    <footer class="band-foot">
-      <span id="readout" class="readout"></span>
-      <button class="ghost" id="staff-open" type="button">Details</button>
-    </footer>
   </section>
 
-  <!-- The page: one job per state, actions pinned at the foot, the safety strip always visible. -->
+  <nav class="nav" aria-label="Sections">
+    <button type="button" data-go="home">Home</button>
+    <button type="button" data-go="frame">New check</button>
+    <button type="button" data-go="saved">Saved</button>
+    <button type="button" data-go="questions">Questions</button>
+    <button type="button" data-go="settings">Settings</button>
+  </nav>
+
   <section class="page">
-    <div class="screen" id="screen">
-      <p class="eyebrow" id="eyebrow"></p>
-      <h1 class="headline" id="headline"></h1>
-      <p class="lede" id="lede"></p>
-      <div class="mid" id="mid"></div>
-    </div>
-    <div class="actions" id="actions"></div>
+    <div class="screen" id="screen"></div>
     <footer class="strip">
-      <strong>Not a diagnosis.</strong> This is an educational screening aid. Only a health worker can tell you what a spot is.
+      <span class="strip-k">NOT A DIAGNOSIS</span>
+      <span class="strip-t">An educational screening aid. Always contact a qualified health professional.</span>
     </footer>
+    <div class="overlay staff" id="staff" hidden></div>
+    <div class="overlay sheet" id="sheet" hidden></div>
   </section>
 </main>
-
-<!-- Staff drawer: numbers, timings, exit. Hidden from visitors behind one small button. -->
-<aside class="drawer" id="drawer" hidden aria-label="Details for staff">
-  <header class="drawer-head">
-    <span class="eyebrow on-dark">For staff</span>
-    <button class="ghost" id="staff-close" type="button">Close</button>
-  </header>
-  <div id="drawer-body" class="drawer-body"></div>
-  <div id="keypad" class="keypad" hidden aria-label="Staff code"></div>
-  <footer class="drawer-foot">
-    <span id="model-line" class="muted"></span>
-    <button class="ghost danger" id="quit" type="button">Exit kiosk</button>
-  </footer>
-</aside>
 
 <input type="file" id="file" accept="image/*" hidden>
 <canvas id="canvas" hidden></canvas>

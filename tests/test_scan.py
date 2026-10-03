@@ -16,8 +16,10 @@ def test_a_lesion_gets_a_verdict_quickly(classifier) -> None:
     assert time.perf_counter() - t < 2.0
     assert out.status == "ok"
     assert out.prediction is not None and out.verdict.state in ("low_concern", "uncertain", "urgent", "needs_attention", "uncertain_caution")
-    assert set(out.stage_ms) == {"decode", "gate", "model"}
+    assert set(out.stage_ms) == {"decode", "gate", "model", "signs"}
     assert out.to_dict()["total_ms"] == sum(out.stage_ms.values())
+    assert [s["letter"] for s in out.to_dict()["signs"]] == ["A", "B", "C", "D", "E"]
+    assert [line["letter"] for line in out.to_dict()["sign_lines"]] == ["A", "B", "C"]
 
 
 def test_a_wall_never_reaches_the_model(classifier, monkeypatch) -> None:

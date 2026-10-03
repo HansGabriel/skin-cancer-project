@@ -13,6 +13,10 @@ Two kinds of verdict:
                       not flagged + unsure -> not sure, try again.
 * `for_refusal`     - the gate stopped the scan. One headline per refusal code,
                       each saying what to point the camera at instead.
+
+Also here: the chip above each verdict (`CHIP`), the "what the scan saw" lines
+for the A B C signs (`sign_lines`), and the three readings on the "check the
+photo" screen (`photo_readings`).
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from typing import Literal
 from dermascan import config
 from dermascan.classifier import Prediction
 from dermascan.gate import Refusal
+from dermascan.signs import Sign
 
 Tone = Literal["neutral", "info", "warning", "urgent"]
 State = Literal["low_concern", "uncertain", "needs_attention", "urgent", "uncertain_caution", "refused", "error"]
@@ -56,7 +61,19 @@ class Verdict:
         return " ".join((self.headline, self.body, self.advice, self.note_label, self.note))
 
     def to_dict(self) -> dict:
-        return self.__dict__.copy()
+        return {**self.__dict__, "chip": CHIP[self.state]}
+
+
+# The small label above the headline. Never "safe", never "clear".
+CHIP: dict[str, str] = {
+    "low_concern": "LOW CONCERN",
+    "uncertain": "NOT SURE",
+    "needs_attention": "IMPORTANT",
+    "uncertain_caution": "IMPORTANT",
+    "urgent": "URGENT",
+    "refused": "NOT READ",
+    "error": "NOT READ",
+}
 
 
 def for_prediction(p: Prediction, *, confidence_floor: float = config.CONFIDENCE_FLOOR_PCT) -> Verdict:
@@ -192,3 +209,74 @@ def error_verdict(kind: str) -> Verdict:
         _ERROR_BODY.get(kind, _ERROR_BODY["scanner"]),
         "Take another photo. If this keeps happening, ask a staff member.",
     )
+
+
+# --- What the scan saw: one line per measured sign, by tier (normal, borderline, stands out)
+_SIGN_WORDS: dict[str, tuple[str, str, str]] = {
+    "A": ("The two halves match", "The two halves differ a little", "The two halves look different"),
+    "B": ("Edges are smooth and even", "Edges are slightly uneven", "Edges are uneven and ragged"),
+    "C": ("One even colour throughout", "Two different colours inside", "Several different colours inside"),
+}
+
+
+def sign_lines(signs: list[Sign] | None) -> list[dict]:
+    """[{letter, tier, text}] for the signs that were measured; [] when none were."""
+    if not signs:
+        return []
+    return [
+        {"letter": s.letter, "tier": s.tier, "text": _SIGN_WORDS[s.letter][s.tier]}
+        for s in signs
+        if s.letter in _SIGN_WORDS and s.tier is not None
+    ]
+
+
+# --- The "check the photo" screen: light, focus, spot, each as 0-3 bars and a word
+PHOTO_OK_HEADLINE = "This photo can be read"
+PHOTO_OK_LEDE = "All three readings are good enough for a reliable answer."
+PHOTO_SOFT_LEDE = "It can be read. A sharper, evenly lit photo gives a steadier answer."
+
+
+def photo_lede(readings: list[dict]) -> str:
+    """The sentence under "This photo can be read": a nudge when any reading is below full."""
+    soft = any(r["level"] is not None and r["level"] < 3 for r in readings)
+    return PHOTO_SOFT_LEDE if soft else PHOTO_OK_LEDE
+
+
+def photo_readings(measured: dict[str, float], refusal_code: str | None) -> list[dict]:
+    """[{name, level, word}]. level is 0-3 bars, or None when the gate stopped before measuring it."""
+    code = refusal_code or ""
+
+    def light() -> tuple[int | None, str]:
+        if code == "too_dark":
+            return 0, "too dark"
+        if code == "too_bright":
+            return 0, "too bright"
+        b = measured.get("brightness")
+        if b is None:
+            return None, "not checked"
+        lo, hi = config.BRIGHTNESS_GOOD
+        return (3, "good") if lo <= b <= hi else (2, "dim" if b < lo else "glary")
+
+    def focus() -> tuple[int | None, str]:
+        if code == "too_blurry":
+            return 1, "blurry"
+        f = measured.get("focus")
+        if f is None:
+            return None, "not checked"
+        return (3, "sharp") if f >= config.FOCUS_SHARP else (2, "soft")
+
+    def spot() -> tuple[int | None, str]:
+        if code == "no_skin":
+            return 0, "no skin"
+        if code in ("no_spot", "plain_skin"):
+            return 1, "not found"
+        if code == "fills_frame":
+            return 1, "too close"
+        if code == "soft_edge":
+            return 2, "faint edge"
+        if "spot_fraction" not in measured:
+            return None, "not checked"
+        return 3, "yes"
+
+    rows = (("Light", light()), ("Focus", focus()), ("Spot in frame", spot()))
+    return [{"name": name, "level": level, "word": word} for name, (level, word) in rows]

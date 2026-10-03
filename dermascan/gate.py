@@ -24,7 +24,7 @@ frames, never on this camera), and GrabCut (20 s on a Pi).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import cv2
@@ -45,6 +45,9 @@ class Refusal:
 class GateReport:
     refusal: Refusal | None  # None means the photo passed
     measured: dict[str, float]  # every number the checks decided on, for the staff panel and the log
+    # The spot's outline on the GATE_WORK_PX copy, once check 3 has drawn one.
+    # signs.py measures A, B and C on it, so nothing outlines the spot twice.
+    outline: np.ndarray | None = field(default=None, repr=False, compare=False)
 
     @property
     def passed(self) -> bool:
@@ -116,13 +119,70 @@ def _largest_component(binary: np.ndarray) -> np.ndarray:
     return labels == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
 
 
-def _otsu_blob(gray: np.ndarray) -> np.ndarray:
+def _clean_threshold(gray: np.ndarray, valid: np.ndarray | None = None) -> np.ndarray:
+    """Otsu's threshold (on the `valid` pixels only, if given), then small holes and specks removed."""
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, th = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    sample = blur[valid] if valid is not None and valid.any() else blur.ravel()
+    t, _ = cv2.threshold(sample.reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    th = ((blur > t) & (valid if valid is not None else True)).astype(np.uint8) * 255
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, k, iterations=2)
-    th = cv2.morphologyEx(th, cv2.MORPH_OPEN, k, iterations=1)
-    return _largest_component(th)
+    return cv2.morphologyEx(th, cv2.MORPH_OPEN, k, iterations=1)
+
+
+def _otsu_blob(gray: np.ndarray) -> np.ndarray:
+    return _largest_component(_clean_threshold(gray))
+
+
+def _central_component(binary: np.ndarray) -> np.ndarray | None:
+    """The largest blob that keeps clear of the frame edge, or None if there is none big enough."""
+    m = (binary > 0).astype(np.uint8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+    h, w = m.shape
+    best, best_area = None, config.SPOT_MIN_FRACTION * h * w
+    for i in range(1, n):
+        x, y, bw, bh, area = stats[i]
+        if x > 0 and y > 0 and x + bw < w and y + bh < h and area >= best_area:
+            best, best_area = i, area
+    return None if best is None else labels == best
+
+
+def _without_hair(l_ch: np.ndarray) -> np.ndarray:
+    """Lightness with thin dark lines (hairs) filled in by the skin around them.
+
+    A morphological close removes any dark feature narrower than the kernel and
+    leaves anything wider - a mole - in place. Without it, hairs crossing a mole
+    become the "outline": a thin web the compactness check rightly calls a scatter.
+    """
+    k = max(3, int(config.HAIR_KERNEL_FRACTION * max(l_ch.shape)) | 1)
+    return cv2.morphologyEx(l_ch, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+
+
+def _dark_spot(l_ch: np.ndarray) -> np.ndarray:
+    """The dark region, preferring a spot in the field over dark corners at the frame edge.
+
+    Dermoscopy photos - and the Pi's imaging cone - have a dark vignette around
+    the field. Otsu's threshold then splits "vignette" from "everything else" and
+    the outline lands on the corners. So: if the dark region found touches the
+    edge, threshold again with those edge-touching dark pixels left out, and take
+    a blob that keeps clear of the edge. Only if there is none is the edge blob
+    kept - a spot that really is bigger than the frame (the caller refuses it).
+    """
+    dark_all = _clean_threshold(255 - l_ch) > 0
+    first = _largest_component(dark_all)
+    if not _touches_border(first):
+        return first
+    central = _central_component(dark_all)
+    if central is not None and _looks_like_a_spot(central):
+        return central
+    n, labels = cv2.connectedComponents(dark_all.astype(np.uint8), connectivity=8)
+    edge_ids = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
+    vignette = np.isin(labels, edge_ids[edge_ids > 0])
+    if vignette.mean() < 0.9:
+        retry = _central_component(_clean_threshold(255 - l_ch, valid=~vignette) > 0)
+        if retry is not None and _looks_like_a_spot(retry):
+            return retry
+    return first
 
 
 def solidity(mask: np.ndarray) -> float:
@@ -146,14 +206,15 @@ def _touches_border(mask: np.ndarray) -> bool:
 def outline_spot(rgb_small: np.ndarray) -> np.ndarray:
     """A boolean outline of the spot in a small frame.
 
-    Moles are dark, so the dark region (Otsu's threshold on Lab lightness) is the
-    outline whenever it looks like a spot. Only when it does not is the LIGHT
+    Moles are dark, so the dark region (Otsu's threshold on Lab lightness, hairs
+    filled in first, dark frame corners set aside) is the outline whenever it
+    looks like a spot. Only when it does not is the LIGHT
     region tried, for a pale mark on dark skin; it must be a compact blob clear of
     the frame edge, or it is just the skin around a dark region. Otherwise the
     dark region is returned so the caller can say why it was not a spot.
     """
-    l_ch = cv2.cvtColor(rgb_small, cv2.COLOR_RGB2LAB)[:, :, 0]
-    dark = _otsu_blob(255 - l_ch)
+    l_ch = _without_hair(cv2.cvtColor(rgb_small, cv2.COLOR_RGB2LAB)[:, :, 0])
+    dark = _dark_spot(l_ch)
     if _looks_like_a_spot(dark):
         return dark
     light = _otsu_blob(l_ch)
@@ -219,8 +280,10 @@ def check(rgb: np.ndarray) -> GateReport:
     """
     measured: dict[str, float] = {}
 
+    outline: np.ndarray | None = None
+
     def refuse(code: RefusalCode, can_override: bool) -> GateReport:
-        return GateReport(Refusal(code, can_override), measured)
+        return GateReport(Refusal(code, can_override), measured, outline)
 
     # 1. Is there skin?
     measured["skin_fraction"] = skin_fraction(rgb)
@@ -239,7 +302,7 @@ def check(rgb: np.ndarray) -> GateReport:
 
     # 3. Is there one spot on it?
     small = shrink(rgb)
-    mask = outline_spot(small)
+    mask = outline = outline_spot(small)
     measured["spot_fraction"] = float(mask.mean())
     measured["spot_solidity"] = solidity(mask)
     measured["spot_contrast"] = spot_contrast(small, mask)
@@ -254,4 +317,4 @@ def check(rgb: np.ndarray) -> GateReport:
     measured["edge_width"] = edge_width(small, mask)
     if measured["edge_width"] > config.SPOT_MAX_EDGE_WIDTH_PCT:
         return refuse("soft_edge", True)
-    return GateReport(None, measured)
+    return GateReport(None, measured, outline)
