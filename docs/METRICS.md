@@ -58,7 +58,7 @@ Four checks, every one on a small copy, every threshold in `dermascan/config.py`
 | check | refuses | measured on | threshold |
 |---|---|---|---|
 | skin fraction | walls, desks, screens showing non-skin | YCrCb + HSV colour box, exposure-normalised | ≥ 0.08 |
-| focus / brightness | blur, black frames, glare | Laplacian variance at 512 px; mean V | ≥ 20; 12–246 |
+| focus / brightness | blur, black frames, glare | Laplacian variance at 512 px after a 1–99 percentile stretch; mean V | ≥ 13; 12–246 |
 | one spot | plain skin, speckle, whole-frame dark | Otsu outline (hairs filled in, dark frame edges set aside): area 0.4–75%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
 | real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 5.5 (overridable) |
 
@@ -83,3 +83,22 @@ is in every log line.
 What was dropped from the earlier gate, and why: moiré/screen detection (the demo input
 *is* a screen), dark-blob dominance, contrast-variation z-score, on-skin geometry, scale
 check, feature-distance OOD (its statistics file was never built), GrabCut (20 s on a Pi).
+
+## Focus limit (3 Oct 2026)
+
+Set from what the model tolerates. On the 80 never-seen photos the model flags every
+cancer up to Gaussian blur σ = 2 px (at 1024 px) and slips only from σ = 3 (22/23, then
+21/23 at σ = 6). The old check (min/max stretch, limit 20) refused 45% of photos at σ = 1
+and 46% of sharp photos after camera-style noise reduction. The new one (1–99 percentile
+stretch, limit 13) refuses 0–5% of sharp photos with glare, dim light or noise reduction,
+and about half of σ 3–6 blur. Real-lesion pass rate 91% → 93%.
+
+## E (evolving) is not automatic
+
+71 pairs of photos of the same unchanged HAM10000 mole, compared on colour (Lab ΔE of
+the spot), asymmetry and border: the noise between two photos of one mole (median ΔE 7,
+p95 22; zoom differs by ×2.3 median, so size is unusable) is larger than a simulated 35%
+darkening or a grown lobe. Limits that kept false "changed" at 15% caught 4% of the
+darkening and 1% of the lobes. So the kiosk shows the first and latest photo of a saved
+group side by side and leaves the judgement to a person. Pi captures through the cone
+(fixed distance and light) may be far steadier; measure them before automating E.

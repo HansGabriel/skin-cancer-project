@@ -211,6 +211,16 @@ def error_verdict(kind: str) -> Verdict:
     )
 
 
+# --- E (evolving): what a visitor reads when comparing a spot's first and latest photo.
+# The kiosk does not judge change itself (docs/METRICS.md: from photos it misses most
+# real change), so these words hand the judgement to a person.
+EVOLVING_COMPARE = (
+    "Look for any change in size, shape or colour between the two photos. "
+    "A spot that is growing or changing should be shown to a health worker, "
+    "whatever any single scan says."
+)
+
+
 # --- What the scan saw: one line per measured sign, by tier (normal, borderline, stands out)
 _SIGN_WORDS: dict[str, tuple[str, str, str]] = {
     "A": ("The two halves match", "The two halves differ a little", "The two halves look different"),

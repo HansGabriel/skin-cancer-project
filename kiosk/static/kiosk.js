@@ -22,7 +22,7 @@ const S = {
   screen: "home", camera: "off", source: "camera", stream: null,
   photoBlob: null, photoUrl: null, photoOnServer: false,
   check: null, outcome: null, viewing: null, // viewing: a saved scan {id, site} shown instead of the live one
-  savedAs: null, thread: [], suggestions: [],
+  savedAs: null, history: null, thread: [], suggestions: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
   staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null,
@@ -41,6 +41,7 @@ const NO_REPLY = { text: "The kiosk did not answer. Ask a staff member.", badge:
 const ARC = { 0: "#8C9BB0", 1: "#C79A6B", 2: "#E0645A", null: "#7E9BD0" };
 const LINE = { 0: "#8B95A5", 1: "#7A4B2A", 2: "#C0362C" };
 const RING = { neutral: "#5B6675", warning: "#7A4B2A", urgent: "#C0362C", info: "#7E9BD0" };
+const HISTORY_ARC = "#3DDBD9"; // E has an earlier photo of this spot to compare with
 const THUMB = { urgent: "#E0645A", warning: "#C79A6B" }; // saved-scan rings; anything else is plain grey
 const PROB_NAME = { benign: "Benign", pre_cancerous: "Pre-cancerous", malignant: "Malignant" }; // staff only
 const SIGN_NAME = { A: "Asymmetry", B: "Border", C: "Colours", D: "Size in frame", E: "Evolving" };
@@ -122,6 +123,8 @@ function paintInstrument() {
     document.querySelector(".verdict-ring").setAttribute("stroke", RING[o.verdict.tone] || RING.neutral);
     const tiers = Object.fromEntries((o.signs || []).map((s) => [s.letter, s.tier]));
     $("arcs").querySelectorAll("path").forEach((p) => { p.style.stroke = ARC[tiers[p.dataset.sign] ?? null]; });
+    const hist = currentHistory();
+    if (hist && hist.count > 1) $("arcs").querySelector('[data-sign="E"]').style.stroke = HISTORY_ARC;
   }
   $("ap-rest").textContent = S.screen === "frame" && S.camera === "off"
     ? "No camera here — choose a picture" : "Put the spot inside the ring";
@@ -233,9 +236,12 @@ const RENDER = {
     const lines = (o.sign_lines || []).map((l) => h("div", "sign", h("i", "", ""), h("span", "", l.text)));
     lines.forEach((n, i) => { n.firstChild.style.background = LINE[o.sign_lines[i].tier]; });
     const saving = S.viewing ? null : saveButton(o);
-    const staff = S.settings.show_staff_details && ok ? btn("Details for staff →", openStaff, "soft outline") : null;
+    // E: a spot saved more than once gets "Compare" - first photo beside this one.
+    const hist = currentHistory();
+    const compare = hist && hist.count > 1 ? btn(`Compare · ${hist.count} scans`, openCompare, "soft history") : null;
+    const staff = S.settings.show_staff_details && ok ? btn(compare ? "Staff →" : "Details for staff →", openStaff, "soft outline") : null;
     setScreen(
-      eyebrowWithChip(S.viewing ? `SAVED · ${S.viewing.site.toUpperCase()} · ${timeOf(S.viewing.saved_at)}` : "RESULT · WHAT TO DO NEXT", v.chip),
+      eyebrowWithChip(S.viewing ? `SAVED · ${(S.viewing.group || S.viewing.site).toUpperCase()} · ${timeOf(S.viewing.saved_at)}` : "RESULT · WHAT TO DO NEXT", v.chip),
       h1(v.headline, "verdict"),
       h("div", "tone-bar"),
       lede(v.body, "tight"),
@@ -245,26 +251,28 @@ const RENDER = {
       v.note ? h("div", "notebox", h("div", "label", v.note_label), h("p", "", v.note)) : null,
       ok ? actions(lines.length ? "even flush" : "even",
                    S.viewing ? btn("Back to saved", () => go("saved"), "btn compact primary") : btn("Done", finish, "btn compact primary"),
-                   S.viewing ? btn("Check another spot", startCheck, "btn compact") : saving)
+                   S.viewing ? btn("Delete this scan", deleteViewed, "btn compact danger") : saving)
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
-      ok ? h("div", "subrow", btn("Ask a question about this", () => go("questions"), "soft"), staff) : null,
+      ok ? h("div", "subrow", compare, btn(compare ? "Ask a question" : "Ask a question about this", () => go("questions"), "soft"), staff) : null,
     );
   },
 
   saved() {
     const all = S.spots;
     const total = all.reduce((n, s) => n + s.scans.length, 0);
-    const spots = S.filter ? all.filter((s) => s.site === S.filter) : all;
+    const spots = S.filter ? all.filter((s) => s.group === S.filter) : all;
     const filters = h("div", "filters",
       filterChip(`All scans · ${total}`, null),
-      all.map((s) => filterChip(`${s.site} · ${s.scans.length}`, s.site)));
+      all.map((s) => filterChip(`${s.group} · ${s.scans.length}`, s.group)));
     const list = h("div", "list", spots.map((s) => {
       const latest = s.scans[0];
       const thumb = h("span", "thumb");
       thumb.style.backgroundImage = `url(/saved/${latest.id}.jpg)`;
       thumb.style.boxShadow = `0 0 0 2px ${THUMB[latest.tone] || "#C6CDD9"}`;
       const row = h("button", "spot", thumb,
-        h("span", "spot-t", h("b", "", s.site), h("span", "", `${s.scans.length} scan${s.scans.length > 1 ? "s" : ""} · last ${timeOf(latest.saved_at)}`)),
+        h("span", "spot-t", h("b", "", s.group), h("span", "", s.scans.length > 1
+          ? `${s.scans.length} scans · first ${timeOf(s.scans[s.scans.length - 1].saved_at)} · last ${timeOf(latest.saved_at)}`
+          : `1 scan · ${timeOf(latest.saved_at)}`)),
         h("span", "pill " + (latest.tone === "neutral" ? "" : latest.tone), latest.headline));
       row.type = "button";
       row.addEventListener("click", () => openSaved(latest.id));
@@ -283,7 +291,7 @@ const RENDER = {
     const focus = spots[0];
     if (focus) {
       showPhotoUrl(`/saved/${focus.scans[0].id}.jpg`);
-      $("cap-saved-title").textContent = `${focus.site.toUpperCase()} · ${focus.scans.length} SCAN${focus.scans.length > 1 ? "S" : ""}`;
+      $("cap-saved-title").textContent = `${focus.group.toUpperCase()} · ${focus.scans.length} SCAN${focus.scans.length > 1 ? "S" : ""}`;
       const dots = [];
       focus.scans.slice(0, 5).reverse().forEach((sc, i, arr) => {
         if (i) dots.push(h("b"));
@@ -365,9 +373,9 @@ function readingsBlock(readings) {
   return h("div", "mid", rows);
 }
 
-function filterChip(label, site) {
-  const b = btn(label, () => { S.filter = site; go("saved"); }, "filter");
-  b.setAttribute("aria-pressed", String(S.filter === site));
+function filterChip(label, group) {
+  const b = btn(label, () => { S.filter = group; go("saved"); }, "filter");
+  b.setAttribute("aria-pressed", String(S.filter === group));
   return b;
 }
 
@@ -453,7 +461,7 @@ async function scan(force) {
   showOutcome(r.data || NO_ANSWER);
 }
 function showOutcome(o) {
-  S.outcome = o; S.viewing = null; S.thread = []; S.savedAs = null;
+  S.outcome = o; S.viewing = null; S.thread = []; S.savedAs = null; S.history = null;
   loadSuggestions();
   go("result");
 }
@@ -462,7 +470,7 @@ function showOutcome(o) {
 async function loadSaved() {
   const d = await getJSON("/saved");
   if (d) { S.spots = d.spots; S.sites = d.sites; S.stats = d.stats; }
-  if (S.filter && !S.spots.some((s) => s.site === S.filter)) S.filter = null;
+  if (S.filter && !S.spots.some((s) => s.group === S.filter)) S.filter = null;
 }
 const _goSaved = RENDER.saved;
 RENDER.saved = function () { _goSaved(); loadSaved().then(() => { if (S.screen === "saved") { _goSaved(); paintInstrument(); } }); };
@@ -473,7 +481,7 @@ RENDER.settings = function () { _goSettings(); if (!locked()) loadSaved().then((
 async function openSaved(id) {
   const d = await getJSON(`/saved/${id}`);
   if (!d) return go("saved");
-  S.viewing = { ...d.scan, outcome: d.outcome };
+  S.viewing = { ...d.scan, outcome: d.outcome, history: d.history };
   S.thread = [];
   go("result");
   showPhotoUrl(`/saved/${id}.jpg`);
@@ -488,16 +496,60 @@ function openSiteSheet() {
     eyebrow("SAVE THIS SCAN · KEPT UNTIL THE EVENT ENDS"),
     h1("Where is the spot?", "small"),
     lede("Saved scans stay in this kiosk’s memory only, with no name. Staff erase them at the end of the event."),
-    h("div", "sites", sites.map((s) => btn(s, () => saveAs(s)))),
+    h("div", "sites", sites.map((s) => btn(s, () => pickGroup(s)))),
     actions("one", btn("Cancel", closeOverlays)),
   );
   sheet.hidden = false;
 }
-async function saveAs(site) {
-  const r = await post("/saved", form({ site }));
+// Step two of saving: which group (which spot) on this body site. A group's
+// history starts at the first scan saved into it.
+function pickGroup(site) {
+  const groups = S.spots.filter((g) => g.site === site);
+  if (!groups.length) return saveAs(site, null);
+  const rows = groups.map((g) => {
+    const thumb = h("span", "thumb");
+    thumb.style.backgroundImage = `url(/saved/${g.scans[0].id}.jpg)`;
+    const row = h("button", "spot", thumb,
+      h("span", "spot-t", h("b", "", g.group), h("span", "", `${g.scans.length} scan${g.scans.length > 1 ? "s" : ""} · first ${timeOf(g.scans[g.scans.length - 1].saved_at)}`)),
+      h("span", "pill", "ADD HERE"));
+    row.type = "button";
+    row.addEventListener("click", () => saveAs(site, g.group));
+    return row;
+  });
+  $("sheet").replaceChildren(
+    eyebrow(`SAVE THIS SCAN · ${site.toUpperCase()}`),
+    h1("Same spot as before?", "small"),
+    lede("Add it to a spot you saved earlier to build its history, or start a new group for a different spot."),
+    h("div", "list", rows),
+    actions("even", btn("Start a new group", () => saveAs(site, null), "btn compact primary"), btn("Cancel", closeOverlays, "btn compact")),
+  );
+}
+async function saveAs(site, group) {
+  const r = await post("/saved", form({ site, group }));
   closeOverlays();
-  if (r.ok) { S.savedAs = site; loadSaved(); }
-  if (S.screen === "result") RENDER.result();
+  if (r.ok && r.data) { S.savedAs = r.data.scan.group; S.history = r.data.history; loadSaved(); }
+  if (S.screen === "result") { RENDER.result(); paintInstrument(); }
+}
+function currentHistory() { return S.viewing ? S.viewing.history : S.history; }
+
+// E, shown honestly: the group's first photo beside this one, for a person to compare.
+function openCompare() {
+  const hist = currentHistory();
+  if (!hist) return;
+  const thisId = S.viewing ? S.viewing.id : hist.latest.id;
+  const thisAt = S.viewing ? S.viewing.saved_at : hist.latest.saved_at;
+  const pane = (id, label, at) => {
+    const img = h("img", "cmp-img"); img.src = `/saved/${id}.jpg`; img.alt = label;
+    return h("figure", "cmp", img, h("figcaption", "", h("b", "", label), ` · ${timeOf(at)}`));
+  };
+  $("sheet").replaceChildren(
+    eyebrow(`E · HOW THIS SPOT LOOKS OVER TIME · ${hist.group.toUpperCase()}`),
+    h1(`First check and check ${S.viewing ? hist.number : hist.count} of ${hist.count}`, "small"),
+    h("div", "cmp-row", pane(hist.first.id, "First check", hist.first.saved_at), pane(thisId, "This check", thisAt)),
+    h("p", "lede", hist.compare_advice),
+    actions("one", btn("Back to the result", closeOverlays, "btn compact")),
+  );
+  $("sheet").hidden = false;
 }
 
 // ---------- questions ----------
@@ -524,10 +576,12 @@ function openStaff() {
   if (!o || !o.prediction) return;
   const p = o.prediction;
   const signs = (o.signs || []).map((s) => {
-    const value = s.value === null ? "—" : s.letter === "D" ? (s.value * 100).toFixed(1) + "%" : s.letter === "C" ? String(s.value) : s.value.toFixed(2);
-    const pill = s.tier === null ? (s.letter === "E" ? "NEEDS HISTORY" : "NO SCALE") : PILL[s.tier];
+    const value = s.letter === "E" && currentHistory() && currentHistory().count > 1 ? `#${currentHistory().number}` : s.value === null ? "—" : s.letter === "D" ? (s.value * 100).toFixed(1) + "%" : s.letter === "C" ? String(s.value) : s.value.toFixed(2);
+    const hist = currentHistory();
+    const eHist = s.letter === "E" && hist && hist.count > 1;
+    const pill = eHist ? `HISTORY · ${hist.count} SCANS` : s.tier === null ? (s.letter === "E" ? "NEEDS HISTORY" : "NO SCALE") : PILL[s.tier];
     const row = h("div", "srow", h("span", "l", s.letter), h("span", "n", SIGN_NAME[s.letter]), h("span", "v", value), h("span", "p", pill));
-    row.lastChild.style.color = ARC[s.tier];
+    row.lastChild.style.color = eHist ? HISTORY_ARC : ARC[s.tier];
     return row;
   });
   const fills = { benign: "#8C9BB0", pre_cancerous: "#C79A6B", malignant: "#E0645A" };
@@ -576,6 +630,20 @@ async function changeSetting(key, on) {
   else if (r.status === 403) S.staffCode = null;
   go("settings");
 }
+// Two taps, like "erase all": the first arms it for three seconds.
+async function deleteViewed(e) {
+  const b = e.currentTarget;
+  if (b.dataset.armed !== "1") {
+    b.dataset.armed = "1"; b.textContent = "Tap again to delete";
+    setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = "Delete this scan"; } }, 3000);
+    return;
+  }
+  const r = await post(`/saved/${S.viewing.id}/delete`);
+  if (r.ok && r.data) S.stats = r.data.saved;
+  S.viewing = null;
+  go("saved");
+}
+
 async function eraseAll(e) {
   const b = e.currentTarget, now = Date.now();
   if (now - S.eraseArmedAt > 3000) {

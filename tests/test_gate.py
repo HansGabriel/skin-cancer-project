@@ -152,3 +152,18 @@ def test_a_pale_mole_beside_a_dark_frame_edge_is_still_found() -> None:
 def test_a_real_mole_edge_is_not_called_a_shadow() -> None:
     """Real lesions measure edge width up to ~4.9; shadows 6-13. The limit sits between."""
     assert 4.9 < gate.config.SPOT_MAX_EDGE_WIDTH_PCT < 6.0
+
+
+def test_one_glare_dot_does_not_make_a_sharp_photo_blurry() -> None:
+    """The old min/max stretch let a single specular highlight cut the focus score by a third."""
+    img = with_lesion(textured(SKIN_TONES["light"], size=600))
+    glared = img.copy()
+    cv2.circle(glared, (180, 180), 12, (255, 255, 255), -1)
+    a, b = gate.focus_score(through_jpeg(img)), gate.focus_score(through_jpeg(glared))
+    assert b >= 0.85 * a, (a, b)
+    assert gate.check(through_jpeg(glared)).refusal is None
+
+
+def test_heavy_blur_is_still_refused() -> None:
+    img = cv2.GaussianBlur(with_lesion(textured(SKIN_TONES["light"], size=600)), (0, 0), 8)
+    assert gate.check(through_jpeg(img)).refusal.code == "too_blurry"

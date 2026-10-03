@@ -193,6 +193,15 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 .pill.warning{background:var(--brown-tint);color:var(--brown)} .pill.urgent{background:var(--red-tint);color:var(--red)} .pill.info{background:var(--blue-tint);color:var(--blue)}
 .empty{margin:auto 0;color:var(--muted);line-height:1.5;max-width:40ch;font-size:clamp(15px,2.95cqh,19px)}
 
+.soft.history{background:var(--navy);color:#fff}
+.soft.history:hover{background:var(--navy-deep)}
+.subrow .soft{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
+.cmp-row{display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.6cqw,20px);margin-top:clamp(10px,1.8cqh,18px);min-height:0;flex:1 1 auto}
+.cmp{margin:0;display:flex;flex-direction:column;gap:6px;min-height:0;align-items:center}
+.cmp-img{width:100%;max-height:clamp(140px,38cqh,360px);aspect-ratio:1/1;object-fit:cover;border-radius:50%;background:var(--navy-deep);box-shadow:0 0 0 2px var(--rule)}
+.cmp figcaption{color:var(--muted);font-size:clamp(13px,2.3cqh,15px)}
+.cmp figcaption b{color:var(--ink)}
+
 /* questions */
 .thread{margin-top:clamp(10px,1.8cqh,18px);padding:clamp(10px,1.8cqh,18px) clamp(12px,1.6cqw,20px);border-radius:12px;background:var(--wash);overflow:auto;min-height:0;flex:0 1 auto}
 .qa+.qa{margin-top:clamp(12px,2cqh,18px);padding-top:clamp(12px,2cqh,18px);border-top:1px solid var(--border)}

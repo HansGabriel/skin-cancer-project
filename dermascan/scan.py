@@ -158,7 +158,10 @@ def run_check(jpeg_bytes: bytes) -> dict:
     gate_ms = int((time.perf_counter() - t) * 1000) - decode_ms
     r = report.refusal
     readings = verdict.photo_readings(report.measured, r.code if r else None)
-    log.info("check status=%s ms decode=%d gate=%d", r.code if r else "pass", decode_ms, gate_ms)
+    log.info(
+        "check status=%s focus=%.1f brightness=%.0f ms decode=%d gate=%d",
+        r.code if r else "pass", report.measured.get("focus", -1), report.measured.get("brightness", -1), decode_ms, gate_ms,
+    )
     if r is None:
         return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured)
     v = verdict.for_refusal(r)
