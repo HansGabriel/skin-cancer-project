@@ -43,9 +43,14 @@ SKIN_MIN_FRACTION = 0.08
 SKIN_EXPOSURE_TARGET = 110.0
 
 # --- Gate 2: can the photo be read? -------------------------------------------
-# Focus = variance of the Laplacian after a contrast stretch.
-# Real dermoscopy photos score median 79; 20 is "genuinely unusable".
-FOCUS_MIN = 20.0
+# Focus = variance of the Laplacian after a 1-99 percentile contrast stretch.
+# Set from what the MODEL tolerates, not from what looks sharp (2026-10-03, 80
+# never-seen HAM10000 photos): it still flags every cancer at Gaussian blur
+# sigma 2 px and slips only from sigma 3. 267 real photos score median ~124;
+# at 13, sharp photos with glare, dim light or camera noise reduction are refused
+# 0-5% of the time (the old min/max stretch at 20 refused 46% after noise
+# reduction), and about half of sigma 3-6 blur is still refused.
+FOCUS_MIN = 13.0
 # Mean brightness (HSV value, 0-255). These are the old app's measured HARD limits:
 # outside them the photo is near-black or blown out. (25-235 was only ever advice.)
 BRIGHTNESS_MIN = 12.0
@@ -80,7 +85,7 @@ SPOT_MAX_EDGE_WIDTH_PCT = 5.5
 # --- The photo readings on the "check the photo" screen (verdict.photo_readings)
 # Display only: the gate's limits above still decide. These split a passing photo
 # into "good" and "could be better" so the visitor sees why a retake might help.
-FOCUS_SHARP = 50.0  # real dermoscopy photos score median 79; 20-50 reads, but soft
+FOCUS_SHARP = 30.0  # sigma-1 blur scores ~38, sigma-1.5 ~22: under 30 reads, but shows as soft
 BRIGHTNESS_GOOD = (40.0, 215.0)  # inside this the light is even; outside, dim or glary
 
 # --- The A B C D E signs (dermascan/signs.py) ---------------------------------

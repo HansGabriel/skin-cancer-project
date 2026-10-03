@@ -13,8 +13,10 @@
     POST /ask            {question, state, sign_lines} -> a written answer
 
     GET  /saved          saved spots, grouped by body site, plus the site list
-    POST /saved          save the last scan under a body site (`site`)
+    POST /saved          save the last scan: `site`, and `group` to add it to an existing
+                         group's history (omitted: start a new group)
     GET  /saved/<id>     one saved scan's outcome;  /saved/<id>.jpg its photo
+    POST /saved/<id>/delete   drop one saved scan (no staff code: it is the visitor's own photo)
 
     POST /staff          check the staff code (`code`); every staff route below needs it
     POST /settings       change ALLOW_READ_ANYWAY / SHOW_STAFF_DETAILS until restart
@@ -43,7 +45,7 @@ from dermascan import config
 from dermascan.answers import BAND_FOR_STATE, get_bank
 from dermascan.classifier import get_classifier
 from dermascan.scan import ScanOutcome, run_check, run_scan
-from dermascan.verdict import error_verdict
+from dermascan.verdict import EVOLVING_COMPARE, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
@@ -231,10 +233,15 @@ def saved_add():
     if outcome.get("status") != "ok":
         return jsonify({"ok": False}), 400  # only a read result is worth keeping
     try:
-        scan = saved.add(request.form.get("site", ""), jpeg, outcome)
+        scan = saved.add(request.form.get("site", ""), jpeg, outcome, group=request.form.get("group") or None)
     except ValueError:
         return jsonify({"ok": False}), 400
-    return jsonify({"ok": True, "scan": scan.summary()})
+    return jsonify({"ok": True, "scan": scan.summary(), "history": _history(scan.id)})
+
+
+def _history(scan_id: int) -> dict | None:
+    h = saved.history(scan_id)
+    return {**h, "compare_advice": EVOLVING_COMPARE} if h else None
 
 
 @app.get("/saved/<int:scan_id>")
@@ -242,7 +249,7 @@ def saved_one(scan_id: int):
     scan = saved.get(scan_id)
     if scan is None:
         return jsonify({"ok": False}), 404
-    return jsonify({"ok": True, "scan": scan.summary(), "outcome": scan.outcome})
+    return jsonify({"ok": True, "scan": scan.summary(), "outcome": scan.outcome, "history": _history(scan_id)})
 
 
 @app.get("/saved/<int:scan_id>.jpg")
@@ -251,6 +258,14 @@ def saved_photo(scan_id: int):
     if scan is None:
         return Response(status=404)
     return Response(scan.jpeg, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/saved/<int:scan_id>/delete")
+def saved_delete(scan_id: int):
+    if not saved.delete(scan_id):
+        return jsonify({"ok": False}), 404
+    log.info("saved scan %d deleted", scan_id)
+    return jsonify({"ok": True, "saved": saved.stats()})
 
 
 # --- Staff ----------------------------------------------------------------------

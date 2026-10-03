@@ -168,6 +168,41 @@ def test_save_list_open_and_erase(client) -> None:
     assert client.get(f"/saved/{sid}").status_code == 404
 
 
+def test_one_saved_scan_can_be_deleted_without_the_staff_code(client, monkeypatch) -> None:
+    monkeypatch.setattr(server.config, "staff_passcode", lambda: "4321")
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])))
+    keep = client.post("/saved", data={"site": "Back"}).get_json()["scan"]["id"]
+    drop = client.post("/saved", data={"site": "Face"}).get_json()["scan"]["id"]
+    r = client.post(f"/saved/{drop}/delete")
+    assert r.status_code == 200 and r.get_json()["saved"]["count"] == 1
+    assert client.get(f"/saved/{drop}").status_code == 404 and client.get(f"/saved/{drop}.jpg").status_code == 404
+    assert client.get(f"/saved/{keep}").status_code == 200
+    assert client.post(f"/saved/{drop}/delete").status_code == 404
+
+
+def test_groups_build_a_history_for_one_spot(client) -> None:
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])))
+    first = client.post("/saved", data={"site": "Left arm"}).get_json()
+    assert first["scan"]["group"] == "Left arm" and first["history"]["count"] == 1
+    other = client.post("/saved", data={"site": "Left arm"}).get_json()  # a different mole, same arm
+    assert other["scan"]["group"] == "Left arm · 2"
+    again = client.post("/saved", data={"site": "Left arm", "group": "Left arm"}).get_json()
+    h = again["history"]
+    assert h["group"] == "Left arm" and h["count"] == 2 and h["number"] == 2
+    assert h["first"]["id"] == first["scan"]["id"] and h["compare_advice"]
+    opened = client.get(f"/saved/{again['scan']['id']}").get_json()["history"]
+    assert opened["count"] == 2 and opened["first"]["id"] == first["scan"]["id"]
+    groups = {g["group"]: len(g["scans"]) for g in client.get("/saved").get_json()["spots"]}
+    assert groups == {"Left arm": 2, "Left arm · 2": 1}
+
+
+def test_a_scan_cannot_join_a_group_that_does_not_exist(client) -> None:
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])))
+    assert client.post("/saved", data={"site": "Back", "group": "Back · 9"}).status_code == 400
+    client.post("/saved", data={"site": "Back"})
+    assert client.post("/saved", data={"site": "Face", "group": "Back"}).status_code == 400  # group is on another site
+
+
 def test_saved_scans_are_capped(client, monkeypatch) -> None:
     monkeypatch.setattr(server.config, "SAVED_MAX", 2)
     _upload(client, with_lesion(textured(SKIN_TONES["light"])))

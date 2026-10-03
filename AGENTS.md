@@ -44,9 +44,15 @@ and a codebase the students could not read. Do not bring them back into the kios
 cite them from `246c072` in the paper if needed.
 
 **Brought back, lighter, the same day (mentor's call):** A B C on the gate's own outline
-(`dermascan/signs.py`, ~10 ms, display only — never feeds the verdict; D and E show "not
-measured"), saving in server RAM only (`kiosk/saved.py`), and a Questions tab that
+(`dermascan/signs.py`, ~10 ms, display only — never feeds the verdict; D shows "no
+scale"), saving in server RAM only (`kiosk/saved.py`), and a Questions tab that
 matches written answers (`dermascan/answers.json`, TF-IDF, no LLM).
+
+**E (evolving), 2026-10-03:** saved scans go into a visitor-chosen group (one group = one
+spot); a group's history starts at its first scan, and "Compare" shows the first and the
+current photo side by side for a PERSON to judge. No automatic "changed / not changed":
+on 71 same-mole HAM10000 pairs, any limit that kept false "changed" under 15% caught under
+5% of a simulated 35% darkening. Revisit only with real Pi captures of the same spot.
 
 ---
 

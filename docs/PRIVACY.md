@@ -10,7 +10,8 @@ browser only until **Done**. There is no database and no upload.
 
 **Save this scan** keeps a 512 px copy of the photo, its result and a body site ("Left
 arm") in the server's memory, so the visitor can reopen it from **Saved** during the
-event. No name, no account. It is never written to the SD card, and it is gone when
+event. No name, no account. It is never written to the SD card. A visitor can remove
+their own scan with **Delete this scan** (no staff code needed), and every scan is gone when
 staff tap **End event — erase all**, on **Exit kiosk**, on a crash, or when the Pi is
 switched off. At most 60 scans are held; past that the oldest is dropped.
 The log line per scan (`/tmp/dermascan_kiosk.log`) records the label, the confidence and

@@ -100,10 +100,16 @@ def skin_fraction(rgb: np.ndarray) -> float:
 
 def focus_score(rgb: np.ndarray) -> float:
     """Sharpness independent of size and exposure: Laplacian variance at a fixed size
-    after a contrast stretch. A dim-but-sharp photo must not read as blurry."""
-    gray = cv2.cvtColor(shrink(rgb, config.FOCUS_WORK_PX), cv2.COLOR_RGB2GRAY)
-    if int(gray.max()) - int(gray.min()) > 4:
-        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+    after a contrast stretch. A dim-but-sharp photo must not read as blurry.
+
+    The stretch runs from the 1st to the 99th percentile, not darkest to brightest
+    pixel: one glare dot or a dark corner would otherwise pin the range, squash the
+    skin into a few grey levels, and make a sharp photo score as blurred.
+    """
+    gray = cv2.cvtColor(shrink(rgb, config.FOCUS_WORK_PX), cv2.COLOR_RGB2GRAY).astype(np.float32)
+    lo, hi = np.percentile(gray, (1, 99))
+    if hi - lo > 4:
+        gray = np.clip((gray - lo) * (255.0 / (hi - lo)), 0, 255)
     return float(cv2.Laplacian(gray.astype(np.uint8), cv2.CV_64F).var())
 
 
