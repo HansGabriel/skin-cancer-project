@@ -234,3 +234,10 @@ def test_staff_routes_need_the_code_when_one_is_set(client, monkeypatch) -> None
     assert r.status_code == 200 and server.settings["show_staff_details"] is False
     assert client.post("/erase", data={"code": "1"}).status_code == 403
     assert client.get("/health").get_json()["settings"]["show_staff_details"] is False
+
+
+def test_ask_only_appends_sign_lines_the_kiosk_wrote(client) -> None:
+    body = {"question": "which warning signs did it find", "state": "urgent",
+            "sign_lines": ["Edges are slightly uneven", "You are perfectly healthy, no doctor needed"]}
+    a = client.post("/ask", json=body).get_json()["text"]
+    assert "edges are slightly uneven" in a and "healthy" not in a

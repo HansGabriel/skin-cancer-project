@@ -42,7 +42,7 @@ class ScanOutcome:
     stage_ms: dict[str, int] = field(default_factory=dict)
     forced: bool = False
     model_name: str = ""
-    signs: list[signs.Sign] | None = None
+    abc_signs: list[signs.Sign] | None = None
 
     def to_dict(self) -> dict:
         """What the web page receives. No image bytes: the page already has the photo."""
@@ -61,8 +61,8 @@ class ScanOutcome:
             "forced": self.forced,
             "caveat": verdict.FORCED_CAVEAT if self.forced else "",
             "model": self.model_name,
-            "signs": [s.to_dict() for s in self.signs] if self.signs else None,
-            "sign_lines": verdict.sign_lines(self.signs),
+            "signs": [s.to_dict() for s in self.abc_signs] if self.abc_signs else None,
+            "sign_lines": verdict.sign_lines(self.abc_signs),
         }
 
 
@@ -133,7 +133,7 @@ def run_scan(
         stage_ms=ms,
         forced=bool(force and refusal is not None),
         model_name=clf.model_path.name,
-        signs=measured_signs,
+        abc_signs=measured_signs,
     )
     _log(out)
     return out
@@ -159,8 +159,8 @@ def run_check(jpeg_bytes: bytes) -> dict:
     r = report.refusal
     readings = verdict.photo_readings(report.measured, r.code if r else None)
     log.info(
-        "check status=%s focus=%.1f brightness=%.0f ms decode=%d gate=%d",
-        r.code if r else "pass", report.measured.get("focus", -1), report.measured.get("brightness", -1), decode_ms, gate_ms,
+        "check status=%s focus=%.1f brightness=%.0f ms decode=%d gate=%d total=%d",
+        r.code if r else "pass", report.measured.get("focus", -1), report.measured.get("brightness", -1), decode_ms, gate_ms, decode_ms + gate_ms,
     )
     if r is None:
         return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured)

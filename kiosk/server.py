@@ -45,7 +45,7 @@ from dermascan import config
 from dermascan.answers import BAND_FOR_STATE, get_bank
 from dermascan.classifier import get_classifier
 from dermascan.scan import ScanOutcome, run_check, run_scan
-from dermascan.verdict import EVOLVING_COMPARE, error_verdict
+from dermascan.verdict import EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
@@ -212,7 +212,9 @@ def ask():
     question = str(body.get("question", "")).strip()[: config.QUESTION_MAX_CHARS]
     if not question:
         return jsonify({"ok": False}), 400
-    lines = [str(x) for x in (body.get("sign_lines") or [])][:5]
+    # Only lines verdict.py itself writes: the answer carries the project's badge,
+    # so the page must not be able to append text of its own to it.
+    lines = [x for x in (body.get("sign_lines") or []) if x in SIGN_LINE_TEXTS]
     return jsonify(get_bank().ask(question, body.get("state"), lines).to_dict())
 
 
@@ -316,6 +318,9 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    code = config.staff_passcode()
+    if code is not None and not (len(code) == 4 and code.isdigit()):
+        raise SystemExit("The staff code must be exactly 4 digits (the on-screen keypad sends 4). Fix ~/.dermascan_passcode.")
     get_classifier()  # load the model before the first visitor, not during their scan
     cam.camera.start()
     log.info(
