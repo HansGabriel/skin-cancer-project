@@ -22,7 +22,7 @@ const S = {
   screen: "home", camera: "off", source: "camera", stream: null,
   photoBlob: null, photoUrl: null, photoOnServer: false,
   check: null, outcome: null, viewing: null, // viewing: a saved scan {id, site} shown instead of the live one
-  savedAs: null, history: null, thread: [], suggestions: [],
+  savedAs: null, savedId: null, history: null, thread: [], suggestions: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
   staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null,
@@ -317,7 +317,7 @@ const RENDER = {
         qa.pending || !qa.badge ? null : h("div", "badge" + (qa.reviewed ? " ok" : ""), h("i"), qa.badge)));
     });
     const input = h("input");
-    input.type = "text"; input.placeholder = "Type a question"; input.maxLength = 200; // = config.QUESTION_MAX_CHARS input.enterKeyHint = "send";
+    input.type = "text"; input.placeholder = "Type a question"; input.maxLength = 200; input.enterKeyHint = "send"; // 200 = config.QUESTION_MAX_CHARS
     const sendTyped = () => { const q = input.value.trim(); if (q) { input.value = ""; ask(q); } };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") sendTyped(); });
     setScreen(
@@ -461,7 +461,7 @@ async function scan(force) {
   showOutcome(r.data || NO_ANSWER);
 }
 function showOutcome(o) {
-  S.outcome = o; S.viewing = null; S.thread = []; S.savedAs = null; S.history = null;
+  S.outcome = o; S.viewing = null; S.thread = []; S.savedAs = null; S.savedId = null; S.history = null;
   loadSuggestions();
   go("result");
 }
@@ -503,7 +503,8 @@ function openSiteSheet() {
 }
 // Step two of saving: which group (which spot) on this body site. A group's
 // history starts at the first scan saved into it.
-function pickGroup(site) {
+async function pickGroup(site) {
+  await loadSaved(); // groups may have been deleted or erased since this list was last read
   const groups = S.spots.filter((g) => g.site === site);
   if (!groups.length) return saveAs(site, null);
   const rows = groups.map((g) => {
@@ -526,26 +527,39 @@ function pickGroup(site) {
 }
 async function saveAs(site, group) {
   const r = await post("/saved", form({ site, group }));
+  if (!r.ok) {
+    $("sheet").replaceChildren(eyebrow("SAVE THIS SCAN"), h1("That did not save", "small"),
+      lede("The group may have just been erased. Try again."), actions("one", btn("Try again", openSiteSheet, "btn compact primary")));
+    return;
+  }
   closeOverlays();
-  if (r.ok && r.data) { S.savedAs = r.data.scan.group; S.history = r.data.history; loadSaved(); }
+  S.savedAs = r.data.scan.group; S.savedId = r.data.scan.id; S.history = r.data.history; loadSaved();
   if (S.screen === "result") { RENDER.result(); paintInstrument(); }
 }
 function currentHistory() { return S.viewing ? S.viewing.history : S.history; }
+// After a delete or an erase, the live result's history (or the saved scan itself) may be gone.
+async function refreshLiveHistory() {
+  if (!S.savedId) return;
+  const d = await getJSON(`/saved/${S.savedId}`);
+  if (d) S.history = d.history;
+  else { S.savedId = null; S.savedAs = null; S.history = null; }
+}
 
 // E, shown honestly: the group's first photo beside this one, for a person to compare.
 function openCompare() {
   const hist = currentHistory();
   if (!hist) return;
-  const thisId = S.viewing ? S.viewing.id : hist.latest.id;
-  const thisAt = S.viewing ? S.viewing.saved_at : hist.latest.saved_at;
+  // Opening the group's first scan compares it with the latest, never with itself.
+  const viewingFirst = S.viewing && S.viewing.id === hist.first.id;
+  const other = S.viewing && !viewingFirst ? { id: S.viewing.id, at: S.viewing.saved_at, n: hist.number } : { id: hist.latest.id, at: hist.latest.saved_at, n: hist.count };
   const pane = (id, label, at) => {
     const img = h("img", "cmp-img"); img.src = `/saved/${id}.jpg`; img.alt = label;
     return h("figure", "cmp", img, h("figcaption", "", h("b", "", label), ` · ${timeOf(at)}`));
   };
   $("sheet").replaceChildren(
     eyebrow(`E · HOW THIS SPOT LOOKS OVER TIME · ${hist.group.toUpperCase()}`),
-    h1(`First check and check ${S.viewing ? hist.number : hist.count} of ${hist.count}`, "small"),
-    h("div", "cmp-row", pane(hist.first.id, "First check", hist.first.saved_at), pane(thisId, "This check", thisAt)),
+    h1(`First check and check ${other.n} of ${hist.count}`, "small"),
+    h("div", "cmp-row", pane(hist.first.id, "First check", hist.first.saved_at), pane(other.id, viewingFirst ? "Latest check" : "This check", other.at)),
     h("p", "lede", hist.compare_advice),
     actions("one", btn("Back to the result", closeOverlays, "btn compact")),
   );
@@ -641,6 +655,7 @@ async function deleteViewed(e) {
   const r = await post(`/saved/${S.viewing.id}/delete`);
   if (r.ok && r.data) S.stats = r.data.saved;
   S.viewing = null;
+  await refreshLiveHistory();
   go("saved");
 }
 
@@ -654,7 +669,7 @@ async function eraseAll(e) {
   }
   S.eraseArmedAt = 0;
   const r = await post("/erase", staffForm());
-  if (r.ok) { S.spots = []; S.stats = r.data.saved; S.filter = null; S.viewing = null; forgetPhoto(); }
+  if (r.ok) { S.spots = []; S.stats = r.data.saved; S.filter = null; S.viewing = null; forgetPhoto(); S.savedId = null; S.history = null; }
   go("settings");
 }
 async function quitKiosk(e) {

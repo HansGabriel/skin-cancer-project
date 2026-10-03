@@ -71,6 +71,10 @@ SPOT_MIN_CONTRAST = 5.0
 # outlined (a morphological close). 3% of 384 px = 11 px: wider than a hair at
 # dermoscope or cone distance, far narrower than any mole worth reading.
 HAIR_KERNEL_FRACTION = 0.03
+# Dark regions touching the frame edge (a vignette) are set aside and the outline
+# redone only while they cover less than this share of the frame: past it, the
+# "vignette" IS the frame - a spot too big for it, which check 3 refuses anyway.
+VIGNETTE_MAX_FRACTION = 0.9
 # The ring of skin a spot is compared against: this share of the frame's width.
 SPOT_RING_FRACTION = 0.06
 
@@ -100,7 +104,7 @@ COLOUR_DISTINCT_DE = 15.0  # two colour groups closer than this (CIE Lab) count 
 COLOUR_GROUPS_K = 5  # colour groups k-means looks for inside the spot
 COLOUR_RIM_PX = 3  # outline pixels skipped before counting colours: spot and skin blend there
 # D is not measured in millimetres: there is no scale calibration on this camera.
-# E needs an earlier photo of the same spot, which this kiosk does not keep.
+# E is a saved group's history shown side by side (kiosk/saved.py), not a measurement.
 
 # --- Questions (dermascan/answers.py) -----------------------------------------
 ANSWER_MATCH_MIN = 0.25  # TF-IDF cosine below this gets the "ask a health worker" answer
@@ -142,7 +146,8 @@ def staff_passcode() -> str | None:
 
     Read from DERMASCAN_PASSCODE, else from ~/.dermascan_passcode (one line, kept
     off git, chmod 600). Read each time, so changing the file needs no restart.
-    The on-screen keypad sends exactly four digits.
+    The on-screen keypad sends exactly four digits, so any other code would lock
+    staff out for good: kiosk/server.py refuses to start with one.
     """
     code = os.environ.get("DERMASCAN_PASSCODE", "").strip()
     if not code:

@@ -22,6 +22,13 @@ The one exception is a switch a developer has to turn on by editing
 photo-check numbers, so the gate can be calibrated against the real camera. It is off,
 and it must stay off whenever the device is used with people rather than test images.
 
+**Saved scans are not locked.** Anyone at the kiosk can open the Saved tab, see the
+photos saved during the event, and delete one. Nothing there names a person (only a body
+site such as "Left arm"), and deleting is allowed so visitors can remove their own. Staff
+should tell visitors this before they save, and tap **End event — erase all** at the end.
+Past 60 saved scans the oldest is dropped, so a long-running group's "first check" can
+become its oldest remaining one.
+
 ## Staff details
 
 **Details for staff** shows the model's three percentages, the A B C D E numbers and the

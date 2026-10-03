@@ -184,7 +184,7 @@ def _dark_spot(l_ch: np.ndarray) -> np.ndarray:
     n, labels = cv2.connectedComponents(dark_all.astype(np.uint8), connectivity=8)
     edge_ids = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
     vignette = np.isin(labels, edge_ids[edge_ids > 0])
-    if vignette.mean() < 0.9:
+    if vignette.mean() < config.VIGNETTE_MAX_FRACTION:
         retry = _central_component(_clean_threshold(255 - l_ch, valid=~vignette) > 0)
         if retry is not None and _looks_like_a_spot(retry):
             return retry

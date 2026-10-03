@@ -229,6 +229,9 @@ _SIGN_WORDS: dict[str, tuple[str, str, str]] = {
 }
 
 
+SIGN_LINE_TEXTS = frozenset(t for words in _SIGN_WORDS.values() for t in words)
+
+
 def sign_lines(signs: list[Sign] | None) -> list[dict]:
     """[{letter, tier, text}] for the signs that were measured; [] when none were."""
     if not signs:

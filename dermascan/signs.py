@@ -11,7 +11,8 @@ one photo, on the outline gate.check drew (no second segmentation, a few ms):
                    (k-means in CIE Lab, groups closer than 15 merged)
     D  diameter    NOT measured: millimetres need a scale this camera does not
                    have. The share of the frame the spot covers is kept for staff.
-    E  evolving    NOT measured: needs an earlier photo of the same spot.
+    E  evolving    NOT measured here: kiosk/saved.py groups a spot's scans and the
+                   page shows the first and latest side by side for a person to judge.
 
 These numbers never change the verdict. The model and thresholds.json decide;
 the signs help a person see what to look at. The definitions and tiers are the
