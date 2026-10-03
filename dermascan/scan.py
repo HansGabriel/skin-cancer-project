@@ -4,12 +4,16 @@
       -> decode, reduce to 1024 px
       -> gate.check          (is this a readable photo of one spot on skin?)
       -> classifier.predict  (only if the gate passed, or the visitor insisted)
+      -> signs.measure       (A B C on the gate's outline; shown, never decides)
       -> verdict             (the words on screen)
+
+run_check is the first half alone (decode + gate, no model), for the "check the
+photo" screen: it answers in milliseconds, before the visitor commits to a scan.
 
 Every stage is timed in milliseconds and logged on one line per scan, so a slow
 device can be diagnosed from the log alone:
 
-    scan status=ok label=malignant conf=61 ms decode=18 gate=55 model=640 total=713
+    scan status=ok label=malignant conf=61 ms decode=18 gate=55 model=640 signs=9 total=722
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-from dermascan import config, gate, verdict
+from dermascan import config, gate, signs, verdict
 from dermascan.classifier import Classifier, Prediction, get_classifier
 
 log = logging.getLogger("dermascan.scan")
@@ -38,6 +42,7 @@ class ScanOutcome:
     stage_ms: dict[str, int] = field(default_factory=dict)
     forced: bool = False
     model_name: str = ""
+    signs: list[signs.Sign] | None = None
 
     def to_dict(self) -> dict:
         """What the web page receives. No image bytes: the page already has the photo."""
@@ -56,6 +61,8 @@ class ScanOutcome:
             "forced": self.forced,
             "caveat": verdict.FORCED_CAVEAT if self.forced else "",
             "model": self.model_name,
+            "signs": [s.to_dict() for s in self.signs] if self.signs else None,
+            "sign_lines": verdict.sign_lines(self.signs),
         }
 
 
@@ -112,6 +119,10 @@ def run_scan(
         log.exception("scan status=error reason=model")
         return ScanOutcome("error", verdict.error_verdict("scanner"), stage_ms=ms)
     lap("model")
+    # Signs only on an outline the gate accepted: a "read anyway" photo's outline is
+    # exactly what the gate did not trust.
+    measured_signs = signs.measure(gate.shrink(rgb), report.outline) if refusal is None else None
+    lap("signs")
 
     out = ScanOutcome(
         "ok",
@@ -122,9 +133,45 @@ def run_scan(
         stage_ms=ms,
         forced=bool(force and refusal is not None),
         model_name=clf.model_path.name,
+        signs=measured_signs,
     )
     _log(out)
     return out
+
+
+def run_check(jpeg_bytes: bytes) -> dict:
+    """Decode + gate only. What the "check the photo" screen shows.
+
+    {"status": "pass" | "refused" | "error", "headline", "lede", "readings": [...],
+     "verdict": refusal/error words or None, "refusal": {...} or None, "measured": {...}}
+    Logged like a scan:  check status=pass ms decode=18 gate=52
+    """
+    t = time.perf_counter()
+    try:
+        rgb = gate.shrink(decode_jpeg(jpeg_bytes), config.MAX_WORK_PX)
+    except ValueError:
+        log.info("check status=error reason=not_a_picture")
+        v = verdict.error_verdict("not_a_picture")
+        return _check_result("error", v.headline, v.body, [], v, None, {})
+    decode_ms = int((time.perf_counter() - t) * 1000)
+    report = gate.check(rgb)
+    gate_ms = int((time.perf_counter() - t) * 1000) - decode_ms
+    r = report.refusal
+    readings = verdict.photo_readings(report.measured, r.code if r else None)
+    log.info("check status=%s ms decode=%d gate=%d", r.code if r else "pass", decode_ms, gate_ms)
+    if r is None:
+        return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured)
+    v = verdict.for_refusal(r)
+    return _check_result("refused", v.headline, v.body, readings, v, r, report.measured)
+
+
+def _check_result(status, headline, lede, readings, v, refusal, measured) -> dict:
+    return {
+        "status": status, "headline": headline, "lede": lede, "readings": readings,
+        "verdict": v.to_dict() if v else None,
+        "refusal": {"code": refusal.code, "can_override": refusal.can_override} if refusal else None,
+        "measured": {k: round(x, 3) for k, x in measured.items()},
+    }
 
 
 def _log(out: ScanOutcome) -> None:

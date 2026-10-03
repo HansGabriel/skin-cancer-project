@@ -62,15 +62,52 @@ SPOT_MIN_SOLIDITY = 0.6
 # ...and differ from the skin around it by this much (CIE Lab distance; ~2.3 is
 # the smallest difference a person can see, 5 means a real mark, not noise).
 SPOT_MIN_CONTRAST = 5.0
+# Hairs thinner than this share of the frame are filled in before the spot is
+# outlined (a morphological close). 3% of 384 px = 11 px: wider than a hair at
+# dermoscope or cone distance, far narrower than any mole worth reading.
+HAIR_KERNEL_FRACTION = 0.03
 # The ring of skin a spot is compared against: this share of the frame's width.
 SPOT_RING_FRACTION = 0.06
 
 # --- Gate 4: does the spot have a real edge? ----------------------------------
 # Edge width = (lightness drop across the outline) / (steepness at the outline),
-# as a percentage of the frame diagonal. Synthetic moles measure 1-3 even blurred
-# by 14 px; a shadow or a lighting gradient measures 6-12. NOT yet measured on Pi
-# captures: switch on SAVE_CAPTURES_DIR and check before trusting it further.
-SPOT_MAX_EDGE_WIDTH_PCT = 4.0
+# as a percentage of the frame diagonal. 267 real HAM10000 lesions through JPEG
+# (2026-10-03) measure median 3.1, max 4.9; a shadow or lighting gradient measures
+# 6-13. 4.0 refused one real lesion in eight. NOT yet measured on Pi captures:
+# switch on SAVE_CAPTURES_DIR and check before trusting it further.
+SPOT_MAX_EDGE_WIDTH_PCT = 5.5
+
+# --- The photo readings on the "check the photo" screen (verdict.photo_readings)
+# Display only: the gate's limits above still decide. These split a passing photo
+# into "good" and "could be better" so the visitor sees why a retake might help.
+FOCUS_SHARP = 50.0  # real dermoscopy photos score median 79; 20-50 reads, but soft
+BRIGHTNESS_GOOD = (40.0, 215.0)  # inside this the light is even; outside, dim or glary
+
+# --- The A B C D E signs (dermascan/signs.py) ---------------------------------
+# Measured on the gate's outline of the spot. Shown to help a person look, never
+# used to decide the verdict: the model and thresholds.json do that alone.
+# Each pair is (borderline from, stands out above), taken from the old app's
+# Notion-agreed tiers so the paper's numbers stay comparable.
+ASYMMETRY_TIERS = (0.15, 0.30)  # share of the outline that does not match when folded
+BORDER_TIERS = (1.8, 2.5)  # perimeter^2 / (4 pi area): a circle is 1.0
+COLOUR_TIERS = (2, 2)  # colour groups: one is normal, two borderline, three or more stand out
+COLOUR_DISTINCT_DE = 15.0  # two colour groups closer than this (CIE Lab) count as one
+COLOUR_GROUPS_K = 5  # colour groups k-means looks for inside the spot
+COLOUR_RIM_PX = 3  # outline pixels skipped before counting colours: spot and skin blend there
+# D is not measured in millimetres: there is no scale calibration on this camera.
+# E needs an earlier photo of the same spot, which this kiosk does not keep.
+
+# --- Questions (dermascan/answers.py) -----------------------------------------
+ANSWER_MATCH_MIN = 0.25  # TF-IDF cosine below this gets the "ask a health worker" answer
+QUESTION_MAX_CHARS = 200  # a typed question is cut here; the page's text box stops at the same
+SUGGESTED_QUESTIONS = 3  # tappable questions under each answer; three fit the 600 px panel
+
+# --- Saved scans (kiosk/saved.py) ---------------------------------------------
+# Kept in the server's memory only, never on the SD card. They vanish on
+# "End event - erase all", on Exit, and on any restart.
+SAVED_MAX = 60  # oldest is dropped past this: a day's event, ~10 MB of RAM
+SAVED_PHOTO_PX = 512  # saved photos are shrunk to this; enough for the aperture
+SAVED_JPEG_QUALITY = 85  # small in memory, still sharp at aperture size
 
 # --- Kiosk camera (kiosk/camera.py) -------------------------------------------
 CAMERA_STILL_SIZE = (1640, 1232)  # IMX219 full field of view, 2x2 binned: sharp and fast
@@ -83,6 +120,9 @@ PREVIEW_JPEG_QUALITY = 70  # the live view only
 
 # --- Kiosk server (kiosk/server.py) -------------------------------------------
 KIOSK_PORT = 8080  # scripts/launch_kiosk.sh uses the same number
+# Staff can flip these two in the Settings tab; they reset to these on restart.
+ALLOW_READ_ANYWAY = True  # offer "Check it anyway" when the spot check refuses a photo
+SHOW_STAFF_DETAILS = True  # show "Details for staff" (numbers, timings) under a result
 QUIT_FLAG = Path("/tmp/dermascan_quit")  # scripts/launch_kiosk.sh watches for this file
 
 # --- Optional: keep raw captures for later calibration ------------------------

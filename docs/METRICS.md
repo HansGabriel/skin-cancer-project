@@ -2,57 +2,39 @@
 
 ## The deployed model
 
-`models/skin_classifier.tflite`, EfficientNetB0, 3 classes, retrained 1 October 2026 on
-HAM10000. The split is **by lesion** (`GroupShuffleSplit` on `lesion_id`, recorded in
-`training/splits.csv`): train 7,002, validation 1,519, test 1,494 images, and no lesion
-appears on both sides of any line. Training images get camera-style augmentation (blur,
-JPEG re-compression, colour cast, exposure drift, glare, a faint screen grid); validation
-and test images are clean dermoscopy.
+`models/skin_classifier.tflite` is the **first model (June 2026, commit `fec7993`)**,
+EfficientNetB0, 3 classes, float32 in/out, decision at `p(pre)+p(mal) >= 0.11`
+(`models/thresholds.json`), temperature 1.54 for the displayed numbers. It was
+**restored on 3 October 2026** after the 1 October retrain read real lesions worse.
 
-Measured on the **test split** through the production path (`python training/eval.py`: the
-exported int8 TFLite model, 4-view TTA, decision at the 0.235 threshold):
+**Why it was restored: a head-to-head on photos neither model ever saw.** 80 HAM10000
+images whose lesions are wholly inside BOTH models' test splits (the old image-level one
+and the new lesion-grouped one), fetched from the ISIC archive, run through the kiosk's
+own path (JPEG decode, 1024 px, 4-view TTA, each model with its own threshold):
 
-| | Test (n=1494) |
-|---|---|
-| Cancer sensitivity (pre-cancerous + malignant flagged) | 0.874 |
-| Benign specificity | 0.698 |
-| 3-class accuracy at the threshold | 0.700 |
-| Argmax accuracy (no threshold) | 0.824 |
-| Benign recall at argmax | 0.920 |
-| Pre-cancerous recall at argmax | 0.556 |
-| Malignant recall at argmax | 0.447 |
-| Cancer sensitivity / benign specificity at argmax | 0.579 / 0.920 |
-
-Test set: 1,176 benign, 63 pre-cancerous, 255 malignant. With only 63 pre-cancerous
-images, any figure for that class is rough.
-
-**What the threshold does.** `p(pre_cancerous) + p(malignant) >= 0.235` flags the spot.
-0.235 is the highest threshold that flags 90% of cancers in the validation set (it
-flagged 0.906, with validation specificity 0.681). On the test set it flagged 0.874: a
-little under the target, as expected for a threshold fitted on other images. The cost is
-that about three in ten benign spots are also flagged ("better to get checked"). For a
-screening tool that is the right trade: a missed cancer costs more than a precautionary
-visit. The threshold is fitted by `training/calibrate.py` on the exported TFLite model with
-4-view TTA, so it describes the device, not the Keras model.
-
-**Quantization costs accuracy.** The Keras model scored better than the exported one on
-the same test split (single view, argmax):
-
-| | Keras | Exported TFLite, 4-view TTA |
+| | First model (deployed) | 1 Oct retrain (rolled back) |
 |---|---|---|
-| Accuracy | 0.849 | 0.824 |
-| Pre-cancerous recall | 0.524 | 0.556 |
-| Malignant recall | 0.620 | 0.447 |
+| Melanomas flagged | **17 / 17** | 14 / 17 (3 called benign) |
+| Cancer sensitivity (pre + mal flagged) | 1.00 | 0.87 |
+| Benign specificity | 0.81 | 0.86 |
 
-Malignant recall drops most. The threshold recovers sensitivity at the price of
-specificity. The cause has not been isolated (int8 quantization is the first suspect;
-trying float16 or dynamic-range export is the obvious experiment).
+57 benign, 6 pre-cancerous, 17 malignant: small, so read it as "the retrain misses
+melanomas the first model catches", not as precise rates. On 199 images from the new test
+split the gap is the same direction (malignant 67/68 vs 49/68), but the first model may
+have trained on some of those lesions, so that set flatters it.
 
-**Not comparable to the first model.** The first model (June 2026) was trained and tested
-on an image-level split that put 40% of test images' lesions into training. Its figures
-(sensitivity 0.911 at threshold 0.11, specificity 0.736 on the full test set; 0.903 / 0.855
-on a leakage-free subset) came from a different, easier test set. Do not quote them next
-to the table above, and do not cite either set of numbers as measured on this model.
+**The 1 October retrain, for the record.** Lesion-grouped split, camera-style
+augmentation, threshold 0.235 fitted on the exported TFLite. Test split (n=1494):
+sensitivity 0.874, specificity 0.698, malignant recall at argmax 0.447 (its own Keras
+model scored 0.620 - the int8 export lost most of it). Kept in git at `e1579a0`; the
+lesion-grouped split and the augmentation are still the right recipe, the export is what
+needs fixing (float16 or dynamic-range is the obvious next try).
+
+**The first model's own figures are optimistic.** It was trained and tested on an
+image-level split that put 40% of test images' lesions into training: sensitivity 0.911
+at 0.11 and specificity 0.736 on that test set, 0.903 / 0.855 on its leakage-free subset.
+Quote the head-to-head above, not those. Its threshold was fitted on validation
+probabilities from training, not on the exported model with TTA as `calibrate.py` does.
 
 **What is not measured at all.** Every number above is on dermoscopy images. The kiosk
 is a bare camera module, and the students demo by photographing images on a phone
@@ -77,8 +59,14 @@ Four checks, every one on a small copy, every threshold in `dermascan/config.py`
 |---|---|---|---|
 | skin fraction | walls, desks, screens showing non-skin | YCrCb + HSV colour box, exposure-normalised | ≥ 0.08 |
 | focus / brightness | blur, black frames, glare | Laplacian variance at 512 px; mean V | ≥ 20; 12–246 |
-| one spot | plain skin, speckle, whole-frame dark | Otsu outline: area 0.4–75%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
-| real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 4.0 (overridable) |
+| one spot | plain skin, speckle, whole-frame dark | Otsu outline (hairs filled in, dark frame edges set aside): area 0.4–75%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
+| real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 5.5 (overridable) |
+
+**On 267 real HAM10000 lesions through JPEG (3 Oct 2026): 91% pass** (was 69%). The
+refusals fixed: hairs across a mole outlined instead of the mole, a dark vignette at the
+frame edge outlined instead of a pale mole, and real edges (median 3.1, max 4.9) refused
+as shadows by the old 4.0 limit. Bare skin, walls, desks and shadows (6–13) are still
+refused. The remaining refusals are mostly faint pink marks and blurred photos.
 
 Measured on synthetic frames through a real JPEG encode (`tests/test_gate.py`): every
 lesion fixture passes (dark, pale, hairy, irregular, vignetted, inside a shadow, blurred

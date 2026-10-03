@@ -112,3 +112,43 @@ def test_the_gate_is_fast_at_any_resolution() -> None:
     t = time.perf_counter()
     gate.check(img)
     assert time.perf_counter() - t < 0.5  # x86 budget; the Pi is ~10x slower and still under 5 s total
+
+
+# --- Failures measured on 267 real HAM10000 lesions (2026-10-03), rebuilt synthetically:
+# the repo ships no dataset, so each fixture copies what the real photo did to the outline.
+
+
+def _hairy(img: np.ndarray, n: int = 40, seed: int = 3) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    h, w = img.shape[:2]
+    out = img.copy()
+    for _ in range(n):
+        p1 = (int(rng.integers(0, w)), int(rng.integers(0, h)))
+        p2 = (int(rng.integers(0, w)), int(rng.integers(0, h)))
+        cv2.line(out, p1, p2, (40, 28, 26), 2)
+    return out
+
+
+def test_a_mole_under_dense_hair_is_outlined_not_the_hairs() -> None:
+    """Hairs crossing a mole used to become the outline: a thin web refused as "plain skin"."""
+    img = _hairy(with_lesion(textured(SKIN_TONES["light"], size=600), colour=(150, 90, 80)))
+    report = gate.check(through_jpeg(img))
+    assert report.passed, (report.refusal, report.measured)
+    assert report.measured["spot_solidity"] >= 0.8
+
+
+def test_a_pale_mole_beside_a_dark_frame_edge_is_still_found() -> None:
+    """A dark vignette at the edge used to win Otsu's threshold, and the brown mole was ignored."""
+    img = with_lesion(textured((205, 170, 160), size=600), colour=(160, 110, 80), radius_frac=0.1)
+    h, w = img.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    edge = np.clip((xx - 0.82 * w) / (0.12 * w), 0, 1)[..., None]  # darkens towards the right edge
+    img = (img.astype(np.float32) * (1 - 0.8 * edge)).astype(np.uint8)
+    report = gate.check(through_jpeg(img))
+    assert report.passed, (report.refusal, report.measured)
+    assert not gate._touches_border(report.outline)
+
+
+def test_a_real_mole_edge_is_not_called_a_shadow() -> None:
+    """Real lesions measure edge width up to ~4.9; shadows 6-13. The limit sits between."""
+    assert 4.9 < gate.config.SPOT_MAX_EDGE_WIDTH_PCT < 6.0

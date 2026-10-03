@@ -66,3 +66,34 @@ def test_each_refusal_code_has_its_own_words() -> None:
     seen = {verdict.for_refusal(Refusal(c, True)).headline for c in verdict._REFUSAL_COPY}
     assert len(seen) == len(verdict._REFUSAL_COPY)
     assert verdict.for_refusal(Refusal("something_new", True)).headline == "NOT A SPOT IT CAN READ"
+
+
+def _plain(text: str) -> None:
+    for word in JARGON:
+        assert not re.search(rf"\b{re.escape(word)}\b", text.lower()), f"'{word}' in {text!r}"
+    assert "%" not in text and not re.search(r"\d", text), f"a number in {text!r}"
+
+
+def test_sign_lines_are_plain_and_skip_what_was_not_measured() -> None:
+    from dermascan.signs import Sign
+
+    for tier in (0, 1, 2):
+        lines = verdict.sign_lines([Sign(l, 0.1, tier) for l in "ABC"] + [Sign("D", 0.2, None), Sign("E", None, None)])
+        assert [x["letter"] for x in lines] == ["A", "B", "C"]
+        for x in lines:
+            _plain(x["text"])
+    assert verdict.sign_lines(None) == []
+
+
+def test_photo_readings_cover_every_refusal() -> None:
+    full = {"brightness": 120.0, "focus": 80.0, "spot_fraction": 0.2}
+    assert [r["level"] for r in verdict.photo_readings(full, None)] == [3, 3, 3]
+    assert verdict.photo_readings({"brightness": 30.0, "focus": 30.0, "spot_fraction": 0.2}, None)[0]["word"] == "dim"
+    for code in list(verdict._REFUSAL_COPY):
+        rows = verdict.photo_readings({"skin_fraction": 0.5}, code)
+        assert any(r["level"] is not None and r["level"] < 3 for r in rows), code
+        for r in rows:
+            _plain(r["word"])
+    for text in (verdict.PHOTO_OK_HEADLINE, verdict.PHOTO_OK_LEDE, verdict.PHOTO_SOFT_LEDE, *verdict.CHIP.values()):
+        _plain(text)
+    assert "SAFE" not in " ".join(verdict.CHIP.values())

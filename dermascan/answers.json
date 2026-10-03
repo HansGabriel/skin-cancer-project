@@ -1,0 +1,194 @@
+{
+  "note": "Every answer a visitor can read in the Questions tab. Plain words, the same timeframes as dermascan/verdict.py, no clinical or model jargon (tests/test_answers.py checks). Bands: clean, checked, urgent, unsure, general. about_spot answers get the visitor's own 'what the scan saw' lines added. To sign an answer off, a health professional fills reviewed_by and reviewed_date; the badge then says so.",
+  "fallback_answer": "That one is outside what this kiosk can answer. A health worker can help with questions about your own health — show them this spot and ask.",
+  "entries": [
+    {
+      "id": "clean_meaning",
+      "band": "clean",
+      "questions": ["What does nothing stood out mean?", "What does my result mean?", "Is my result okay?", "Am I safe?", "What does low concern mean?"],
+      "answer": "The scan did not find the patterns it has learned to pick out in skin cancer. That is good news, but it is not a promise: this kiosk screens, it does not diagnose. No action is needed now. Keep checking your skin from time to time.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "clean_still_see_doctor",
+      "band": "clean",
+      "questions": ["Do I still need to see a doctor?", "Should I get this checked anyway?", "Can I ignore this spot now?"],
+      "answer": "Not urgently, going by this scan. But show it to a health worker if the spot changes in size, colour or shape, or if it starts to itch or bleed.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "clean_can_it_be_wrong",
+      "band": "clean",
+      "questions": ["Can the result be wrong?", "How accurate is this?", "Could it have missed something?"],
+      "answer": "Yes. No screening tool is perfect. This one is set to pick out as many worrying spots as it can, but it can still miss some. If a spot worries you, or it changes over time, have it looked at even after this result.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "checked_meaning",
+      "band": "checked",
+      "questions": ["What does get this checked mean?", "What does my result mean?", "What does important mean?", "Why should I get it checked?"],
+      "answer": "The spot shows some signs that are worth a closer look by a skin doctor. It does not mean you have cancer. See a skin doctor within a month.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "checked_is_it_cancer",
+      "band": "checked",
+      "questions": ["Is this cancer?", "Do I have cancer?", "Is this cancer already?"],
+      "answer": "This scan cannot say that, and it does not mean you have cancer. Some spots like this can change over time and many never do. A skin doctor can look at it properly and, if anything needs doing, deal with it early.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "checked_what_now",
+      "band": "checked",
+      "questions": ["What should I do now?", "What are my next steps?", "What happens next?"],
+      "answer": "See a skin doctor within a month. Until then, do not pick at the spot, keep it out of strong sun, and note when you first noticed it and whether it has changed.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "urgent_meaning",
+      "band": "urgent",
+      "questions": ["What does see a doctor soon mean?", "What does my result mean?", "What does urgent mean?", "Why did it say urgent?"],
+      "answer": "It means this spot has signs a doctor should look at, not that you have cancer. Book an appointment with a skin doctor within one to two weeks and show them this spot.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "urgent_should_i_worry",
+      "band": "urgent",
+      "questions": ["Should I be worried?", "Is this serious?", "Am I going to be okay?", "How scared should I be?", "Is this cancer?"],
+      "answer": "It is important to get checked soon, but this is not a diagnosis. Many spots the scanner picks out turn out to be harmless once a doctor looks at them, and the ones that are not are far easier to treat early. The most useful thing you can do is see a skin doctor within one to two weeks.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "urgent_what_now",
+      "band": "urgent",
+      "questions": ["What should I do now?", "What are my next steps?", "Where do I go from here?"],
+      "answer": "See a skin doctor within one to two weeks. If there is none nearby, start at your health centre and ask to be referred. Do not cut, burn or treat the spot yourself, and keep it out of strong sun until then.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "urgent_can_it_be_wrong",
+      "band": "urgent",
+      "questions": ["Can the result be wrong?", "Could this be a false alarm?", "How accurate is this?"],
+      "answer": "Yes. The scanner is set to be careful, so some spots it picks out turn out to be harmless. Read this result as \"worth showing to a skin doctor soon\", not as an answer about what the spot is.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "unsure_meaning",
+      "band": "unsure",
+      "questions": ["Why is the result not sure?", "Why could it not read my photo?", "Why should I take another photo?", "What does not sure mean?"],
+      "answer": "The scanner could not read this photo well enough to give a clear answer. That usually comes from blur, uneven light, or the spot not filling the ring. Take another photo in good light, holding still. If it keeps happening, or the spot worries you, show it to a health worker anyway.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "unsure_still_see_doctor",
+      "band": "unsure",
+      "questions": ["Should I see a doctor anyway?", "Do I need to get it checked?", "What should I do now?"],
+      "answer": "If the spot is new, changing, itchy or bleeding, show it to a health worker, whatever any scan says. Otherwise, try one more photo in brighter, even light.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "about_why",
+      "band": "general",
+      "about_spot": true,
+      "questions": ["Why did I get this result?", "Why was my spot picked out?", "What did the scan find on my spot?"],
+      "answer": "The result comes from comparing your photo with thousands of photos of skin spots that doctors had already identified. Separately, the scan measures a few of the warning signs doctors look at. Any sign standing out is a reason for a person to look at the spot, not an answer on its own.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "about_signs",
+      "band": "general",
+      "about_spot": true,
+      "questions": ["Which warning signs did it find?", "What do the letters around my photo mean?", "What did it measure on mine?", "Which of the five checks stood out?"],
+      "answer": "The arcs around your photo are the A B C D E warning signs. A sign that stands out does not make a spot dangerous: plenty of harmless moles have an uneven edge or more than one colour. It means a person should look at it, rather than a machine deciding alone.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "about_size",
+      "band": "general",
+      "about_spot": true,
+      "questions": ["How big is my spot?", "What size is it?", "How wide is my mole?", "Is my spot too big?", "Why is D not measured?"],
+      "answer": "This kiosk does not measure size: that needs a ruler in the photo, which it does not have. Doctors pay more attention to spots wider than a pencil eraser, and to any spot that is getting wider, whatever size it started at.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "about_change",
+      "band": "general",
+      "about_spot": true,
+      "questions": ["Has my spot changed?", "Is it bigger than last time?", "What does evolving mean?", "Why is E not measured?"],
+      "answer": "Change over time is the most useful sign of all, and one photo cannot show it. A spot that is growing, changing shape or colour, itching or bleeding should be seen by a health worker even if every other sign looks ordinary. Taking your own photo of it today makes change easier to see later.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_abcde",
+      "band": "general",
+      "questions": ["What is the A B C D E rule?", "What do the letters mean?", "How do I check my own skin?"],
+      "answer": "A B C D E are the warning signs to watch on a mole or spot. A: the two halves look different. B: the edge is ragged or blurred. C: there is more than one colour. D: it is wider than a pencil eraser. E: it is changing in size, shape or colour. Any one of them is a reason to have it checked.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_skin_cancer",
+      "band": "general",
+      "questions": ["What is skin cancer?", "What is melanoma?", "What kinds of skin cancer are there?"],
+      "answer": "Skin cancer is skin cells growing out of control, most often after years of sun damage. Melanoma is the most serious kind because it can spread if it is not treated early, which is why a new or changing mole is worth showing to a health worker.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_how_it_works",
+      "band": "general",
+      "questions": ["How does this kiosk work?", "What does the AI actually do?", "How does the scan work?"],
+      "answer": "The kiosk photographs the spot and compares it with thousands of photos of skin spots that doctors had already identified. It then says which kind of spot yours looks most like, and what to do next. It all runs on this device without the internet. It screens; it does not diagnose.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_is_diagnosis",
+      "band": "general",
+      "questions": ["Is this a diagnosis?", "Can this replace a doctor?", "Is this result final?"],
+      "answer": "No. This kiosk helps decide whether a spot should be shown to a health worker. Only a doctor can say what a spot is, often by taking a small sample of it.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_privacy",
+      "band": "general",
+      "questions": ["Who can see my photo?", "Is my photo stored?", "Where does my data go?", "Is my data private?"],
+      "answer": "Your photo never leaves this device and nothing is sent to the internet. There is no name and no account. If you tap Save, the photo is kept in the kiosk's memory only, never written to its card, and it is erased when staff end the event or the kiosk turns off.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_sun",
+      "band": "general",
+      "questions": ["How do I protect my skin from the sun?", "How do I prevent skin cancer?", "What is good sun protection?"],
+      "answer": "Use a strong sunscreen on skin the sun reaches, wear a hat and covering clothes, and stay out of the midday sun when you can. Check your own skin now and then, and have any new or changing spot looked at.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    },
+    {
+      "id": "general_clinic",
+      "band": "general",
+      "questions": ["What happens at the clinic?", "Who should I go see?", "Where do I get checked?", "What is a dermatologist?"],
+      "answer": "A skin doctor (a dermatologist) will look at the spot, often through a magnifier, and ask when it appeared and whether it has changed. If they want to be sure, they may take a tiny sample. If there is no skin doctor nearby, start at your health centre: they can examine it and refer you.",
+      "reviewed_by": null,
+      "reviewed_date": null
+    }
+  ]
+}
