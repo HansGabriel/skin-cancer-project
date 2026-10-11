@@ -1,0 +1,19 @@
+# Keep the demo image to the core + models + page. The kiosk, training, tests and
+# the local venv (600 MB) never go into the container.
+venv/
+.venv/
+.git/
+.github/
+.devcontainer/
+.cursor/
+training/
+tests/
+kiosk/
+docs/
+scripts/
+datasets/
+captures/
+__pycache__/
+*.pyc
+.pytest_cache/
+**/.ipynb_checkpoints/
