@@ -224,7 +224,12 @@ def _log(out: ScanOutcome, reused_check: bool) -> None:
 
 
 def _maybe_save_capture(jpeg_bytes: bytes, report: gate.GateReport) -> None:
-    """Optional, off by default: keep raw captures to calibrate the gate later."""
+    """Optional, off by default: keep raw captures to calibrate the gate later.
+
+    Runs at the check step (since 2026-10-11), so a photo the gate refused and the
+    visitor never scanned is kept too: those are the ones a gate calibration needs.
+    A scan that reuses its check does not save the photo a second time.
+    """
     folder = config.SAVE_CAPTURES_DIR
     if folder is None:
         return

@@ -94,6 +94,14 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+def _unlink_quietly(path: Path) -> None:
+    """Remove a file if it is there; a card error is logged, never raised at a visitor."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        log.warning("could not remove %s", path, exc_info=True)
+
+
 class SavedScans:
     """The event's saved scans, oldest first. Thread-safe: Flask serves requests in threads.
 
@@ -106,6 +114,7 @@ class SavedScans:
         self._scans: OrderedDict[int, SavedScan] = OrderedDict()
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
+        self._write_ok = True  # False after a failed write: /health shows the card is not keeping saves
         self._load()
 
     # --- the folder ---------------------------------------------------------------
@@ -132,10 +141,14 @@ class SavedScans:
             except (OSError, ValueError, KeyError, TypeError):
                 log.warning("saved scan %d unreadable, skipped", scan_id, exc_info=True)
                 continue
-            if scan.site in SITES:
-                self._scans[scan_id] = scan
-        if self._scans:
-            self._ids = itertools.count(max(self._scans) + 1)
+            if scan.site not in SITES:
+                log.warning("saved scan %d has unknown site %r, skipped", scan_id, scan.site)
+                continue
+            self._scans[scan_id] = scan
+        if jsons:
+            # Continue after every id on the card, skipped ones included, so a new
+            # scan never overwrites an unreadable record's files.
+            self._ids = itertools.count(max(jsons) + 1)
         self._drop_past_max()
         log.info("saved scans: %d loaded from %s", len(self._scans), self.folder)
 
@@ -147,17 +160,16 @@ class SavedScans:
             jpg, js = self._paths(scan.id)
             _write_atomic(jpg, scan.jpeg)
             _write_atomic(js, json.dumps(scan.record(), ensure_ascii=False).encode("utf-8"))
+            self._write_ok = True
         except OSError:
+            self._write_ok = False
             log.warning("saved scan %d kept in memory only: could not write %s", scan.id, self.folder, exc_info=True)
 
     def _discard(self, scan_id: int) -> None:
         if self.folder is None:
             return
         for p in self._paths(scan_id):
-            try:
-                p.unlink(missing_ok=True)
-            except OSError:
-                log.warning("could not remove %s", p, exc_info=True)
+            _unlink_quietly(p)
 
     def _drop_past_max(self) -> None:
         while len(self._scans) > config.SAVED_MAX:
@@ -220,6 +232,7 @@ class SavedScans:
                 "count": len(self._scans),
                 "bytes": sum(len(s.jpeg) for s in self._scans.values()),
                 "folder": str(self.folder) if self.folder is not None else None,
+                "on_disk": self.folder is not None and self._write_ok,  # False: the card is not keeping saves
             }
 
     def delete(self, scan_id: int) -> bool:
@@ -240,10 +253,7 @@ class SavedScans:
             if self.folder is not None and self.folder.is_dir():
                 for leftover in self.folder.iterdir():  # files from an older run, or a skipped unreadable scan
                     if leftover.suffix in (".jpg", ".json", ".tmp"):
-                        try:
-                            leftover.unlink()
-                        except OSError:
-                            log.warning("could not remove %s", leftover, exc_info=True)
+                        _unlink_quietly(leftover)
 
 
 saved = SavedScans(config.SAVED_DIR)

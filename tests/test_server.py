@@ -13,7 +13,9 @@ from kiosk import camera, server
 @pytest.fixture()
 def client(monkeypatch, tmp_path):
     server.last_photo.forget()
-    monkeypatch.setattr(server.saved, "folder", tmp_path / "saved")  # never the developer's ~/.dermascan
+    # Order matters: point the store at a temp folder BEFORE erasing, or the erase
+    # would remove the developer's own ~/.dermascan/saved files.
+    monkeypatch.setattr(server.saved, "folder", tmp_path / "saved")
     server.saved.erase()
     monkeypatch.setitem(server.settings, "allow_read_anyway", True)
     monkeypatch.setitem(server.settings, "show_staff_details", True)

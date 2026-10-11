@@ -61,6 +61,7 @@ def test_leftovers_from_a_power_cut_are_cleaned_up(tmp_path) -> None:
     again = SavedScans(tmp_path)
     assert [s["id"] for g in again.spots() for s in g["scans"]] == [good.id]
     assert not (tmp_path / "7.jpg").exists() and not (tmp_path / "9.json.tmp").exists()
+    assert again.add("Back", PHOTO, OUTCOME).id == 9  # past the unreadable 8, never over it
     again.erase()  # End event removes the unreadable record as well
     assert not list(tmp_path.iterdir())
 
@@ -76,7 +77,9 @@ def test_a_card_that_cannot_be_written_does_not_refuse_the_save(tmp_path) -> Non
     blocker = tmp_path / "saved"
     blocker.write_text("a file where the folder should be")  # mkdir will fail
     store = SavedScans(blocker)
+    assert store.stats()["on_disk"] is True  # nothing has failed yet
     scan = store.add("Back", PHOTO, OUTCOME)
     assert store.get(scan.id) is not None  # kept for this run
+    assert store.stats()["on_disk"] is False  # /health can say the card is not keeping saves
     with pytest.raises(ValueError):
         store.add("Nowhere", PHOTO, OUTCOME)
