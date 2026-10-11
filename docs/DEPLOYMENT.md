@@ -8,7 +8,7 @@
 sudo apt install -y python3-picamera2 surf git
 cd ~/Documents
 git clone <repo> skin-cancer-project && cd skin-cancer-project
-git switch v2/simple-kiosk               # until it is merged to main
+git branch --show-current                # should say main
 python3 -m venv --system-site-packages venv   # so apt's picamera2 is visible inside the venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -58,11 +58,44 @@ and never reopened. If the live view is dead, restart the kiosk; if it is dead a
 `scripts/run_dev.sh` runs the same server with auto-reload. No camera module: the page
 uses the browser's camera (works on `localhost`) or a file picker.
 
-## Streamlit Community Cloud (public web demo)
+## Public web demo
 
-Point the app at `cloud/streamlit_app.py` with `cloud/requirements.txt`; `runtime.txt`
-pins Python 3.12. It is an upload box in front of the same `dermascan/` core. No camera,
-no storage, no passcode needed — nothing is kept.
+The same `dermascan/` core behind an upload box (`cloud/streamlit_app.py`). No camera, no
+storage, no passcode: nothing is kept between uploads. Accuracy is the kiosk's, see
+`docs/METRICS.md`; the page says so.
+
+### Railway (primary)
+
+The repo carries everything Railway needs: `Dockerfile` (python 3.12-slim, installs
+`cloud/requirements.txt`, copies `dermascan/ models/ cloud/ .streamlit/`, binds Streamlit to
+`$PORT`), `.dockerignore` (keeps the venv, training, kiosk and tests out of the image) and
+`railway.json` (Dockerfile builder, health check on `/_stcore/health`, restart on failure).
+No environment variables, no secrets.
+
+Once, in the Railway dashboard:
+
+1. **New Project → Deploy from GitHub repo**, pick this repo, branch `main`, root directory `/`.
+   Railway reads `railway.json` and builds the Dockerfile; the first build takes a few minutes.
+2. **Settings → Networking → Generate Domain.** Leave the port on `8501` if it asks.
+3. Open `https://<your-domain>/_stcore/health` — it must say `ok` — then the page itself:
+   upload a photo, open **Details for staff**, check the timings.
+4. Every push to `main` redeploys. Watch the **Deployments** tab after a model swap.
+
+Cost: free during the trial, then the Hobby plan (about USD 5 a month including usage).
+The container idles at a few hundred MB of RAM; one replica is plenty for a demo.
+
+Locally, the same image:
+
+```bash
+docker build -t epivue-demo . && docker run --rm -p 8501:8501 epivue-demo
+curl -s localhost:8501/_stcore/health     # ok
+```
+
+### Streamlit Community Cloud (fallback)
+
+Still works: point the app at `cloud/streamlit_app.py` with `cloud/requirements.txt`;
+`runtime.txt` pins Python 3.12. Keep it until the Railway URL has been checked, then
+remove this subsection and the Streamlit Cloud mentions in `README.md` and `AGENTS.md`.
 
 ## Offline check before the fair
 

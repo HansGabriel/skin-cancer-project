@@ -1,4 +1,4 @@
-# Streamlit Community Cloud only (cloud/streamlit_app.py). The kiosk does not use Streamlit.
+# The web demo (cloud/streamlit_app.py) on Railway or Streamlit Cloud. The kiosk does not use Streamlit.
 [browser]
 gatherUsageStats = false
 
