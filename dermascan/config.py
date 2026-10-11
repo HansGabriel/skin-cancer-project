@@ -60,7 +60,6 @@ BRIGHTNESS_MAX = 246.0
 # The region the gate outlines must be this share of the frame...
 SPOT_MIN_FRACTION = 0.004  # smaller is noise; "move closer"
 SPOT_MAX_FRACTION = 0.75  # larger is the whole frame; "move back"
-SPOT_IDEAL_FRACTION = 0.18  # a well-framed lesion; used to pick between candidate outlines
 # ...be one compact blob rather than a scatter. Solidity = blob area / area of
 # its convex hull: a mole scores 0.85+, speckle on plain skin scores under 0.4.
 SPOT_MIN_SOLIDITY = 0.6
@@ -112,11 +111,14 @@ QUESTION_MAX_CHARS = 200  # a typed question is cut here; the page's text box st
 SUGGESTED_QUESTIONS = 3  # tappable questions under each answer; three fit the 600 px panel
 
 # --- Saved scans (kiosk/saved.py) ---------------------------------------------
-# Kept in the server's memory only, never on the SD card. They vanish on
-# "End event - erase all", on Exit, and on any restart.
-SAVED_MAX = 60  # oldest is dropped past this: a day's event, ~10 MB of RAM
+# Kept on the SD card in SAVED_DIR, two small files per scan, so they survive
+# Exit, a reboot and a power cut (mentor's decision, 2026-10-11: before this they
+# lived in memory only and a day's groups vanished when the Pi was switched off).
+# Nothing leaves the device. "End event - erase all" empties the folder.
+SAVED_DIR = Path.home() / ".dermascan" / "saved"  # next to ~/.dermascan_passcode; never inside the repo
+SAVED_MAX = 60  # oldest is dropped past this: a day's event, a few MB on the card
 SAVED_PHOTO_PX = 512  # saved photos are shrunk to this; enough for the aperture
-SAVED_JPEG_QUALITY = 85  # small in memory, still sharp at aperture size
+SAVED_JPEG_QUALITY = 85  # small on the card, still sharp at aperture size
 
 # --- Kiosk camera (kiosk/camera.py) -------------------------------------------
 CAMERA_STILL_SIZE = (1640, 1232)  # IMX219 full field of view, 2x2 binned: sharp and fast

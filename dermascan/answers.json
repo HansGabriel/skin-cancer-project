@@ -267,7 +267,7 @@
         "Where does my data go?",
         "Is my data private?"
       ],
-      "answer": "Your photo never leaves this device and nothing is sent to the internet. There is no name and no account. If you tap Save, the photo is kept in the kiosk's memory only, in a group for that spot, never written to its card, and it is erased when staff end the event or the kiosk turns off.",
+      "answer": "Your photo never leaves this device and nothing is sent to the internet. There is no name and no account. If you tap Save, a small copy of the photo is kept on this kiosk only, in a group for that spot, with no name. You can delete it yourself from Saved, and staff erase everything when the event ends. Nothing is sent anywhere.",
       "reviewed_by": null,
       "reviewed_date": null
     },

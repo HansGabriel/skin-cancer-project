@@ -283,7 +283,7 @@ const RENDER = {
       eyebrow("SAVED SPOTS · UNTIL THE EVENT ENDS"),
       h1("Saved spots"),
       total ? filters : null,
-      total ? list : h("p", "empty", "Nothing saved yet. After a check, tap “Save this scan” to keep it here until staff end the event. It is never written to the kiosk’s card."),
+      total ? list : h("p", "empty", "Nothing saved yet. After a check, tap “Save this scan” to keep it here. Saved scans stay on this kiosk, with no name, until staff end the event."),
       actions("even", btn("Add a new check", startCheck, "btn compact primary"),
               latest ? btn("Open latest scan", () => openSaved(latest.id), "btn compact") : null),
     );
@@ -352,7 +352,7 @@ const RENDER = {
       h("div", "mid",
         t("allow_read_anyway", "Refuse photos that are not clear", "Off: an unclear photo can still be read, with a note. On: it is refused and the visitor takes another."),
         t("show_staff_details", "Details for staff under each result", "Numbers and timings behind one button. Visitors see them only if they tap it."),
-        h("div", "fact", h("span", "", "Saved scans, in memory only"), h("b", "", `${S.stats.count} scan${S.stats.count === 1 ? "" : "s"} · ${size(S.stats.bytes)}`)),
+        h("div", "fact", h("span", "", "Saved scans, on this kiosk"), h("b", "", `${S.stats.count} scan${S.stats.count === 1 ? "" : "s"} · ${size(S.stats.bytes)}`)),
         h("div", "fact", h("span", "", "Scanner"), h("b", "", m ? `${m.file} · ${m.tta ? "4 views" : "1 view"}` : "not loaded")),
         h("div", "fact", h("span", "", "Close the kiosk app"), btn("Exit kiosk", quitKiosk, "linkbtn")),
       ),
@@ -493,9 +493,9 @@ function openSiteSheet() {
   const sheet = $("sheet");
   const sites = S.sites.length ? S.sites : ["Face", "Neck", "Chest", "Back", "Left arm", "Right arm", "Left leg", "Right leg", "Other"];
   sheet.replaceChildren(
-    eyebrow("SAVE THIS SCAN · KEPT UNTIL THE EVENT ENDS"),
+    eyebrow("SAVE THIS SCAN · KEPT ON THIS KIOSK"),
     h1("Where is the spot?", "small"),
-    lede("Saved scans stay in this kiosk’s memory only, with no name. Staff erase them at the end of the event."),
+    lede("Saved scans stay on this kiosk only, with no name, until staff end the event. Switching the kiosk off does not delete them."),
     h("div", "sites", sites.map((s) => btn(s, () => pickGroup(s)))),
     actions("one", btn("Cancel", closeOverlays)),
   );

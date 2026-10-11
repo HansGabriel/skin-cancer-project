@@ -33,7 +33,7 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 | Kiosk look | the **EPIVUE Interface** design from Claude Design (project `36f54779…`, file `EPIVUE Interface.dc.html`): navy instrument band + white page, sizes in `clamp(…cqh…)`, stacked under 720 px | restored 2026-10-01; match the design file, not memory |
 | Web demo | Streamlit Community Cloud, `cloud/streamlit_app.py`, upload only | same `dermascan/` core |
 | Camera | picamera2 opened once per process, never torn down; plain pixels to the model | reopening stalled the preview; CLAHE before the model hurt accuracy |
-| Offline | no runtime pip, no downloads, no telemetry; nothing written to disk (saved scans live in RAM until "End event") | barangay / field use |
+| Offline | no runtime pip, no downloads, no telemetry; nothing leaves the device. Saved scans persist in `~/.dermascan/saved/` (two files per scan) until "End event" — *mentor's decision 2026-10-11, replacing RAM-only saves that vanished on every reboot* | barangay / field use |
 
 ### What was removed on 2026-10-01 (old app at commit `246c072`, `pi/last-known-good`)
 
@@ -47,6 +47,9 @@ cite them from `246c072` in the paper if needed.
 (`dermascan/signs.py`, ~10 ms, display only — never feeds the verdict; D shows "no
 scale"), saving in server RAM only (`kiosk/saved.py`), and a Questions tab that
 matches written answers (`dermascan/answers.json`, TF-IDF, no LLM).
+**Saves moved to the SD card on 2026-10-11** (`kiosk/saved.py`, `~/.dermascan/saved/`,
+`<id>.jpg` + `<id>.json`, atomic writes, reload at boot): still no names, no database, no
+network; "End event" empties the folder, "Exit kiosk" no longer does.
 
 **E (evolving), 2026-10-03:** saved scans go into a visitor-chosen group (one group = one
 spot); a group's history starts at its first scan, and "Compare" shows the first and the

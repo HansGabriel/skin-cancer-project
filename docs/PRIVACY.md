@@ -3,19 +3,24 @@
 The kiosk photographs skin. This is what it does with the photo, and the paragraph the
 paper's ethics section can cite.
 
-## Nothing is written to disk
+## What is kept on the device
 
 A photo lives in the server's memory only until the next photo replaces it, and in the
-browser only until **Done**. There is no database and no upload.
+browser only until **Done**. There is no database and no upload; nothing leaves the device.
 
-**Save this scan** keeps a 512 px copy of the photo, its result and a body site ("Left
-arm") in the server's memory, so the visitor can reopen it from **Saved** during the
-event. No name, no account. It is never written to the SD card. A visitor can remove
-their own scan with **Delete this scan** (no staff code needed), and every scan is gone when
-staff tap **End event — erase all**, on **Exit kiosk**, on a crash, or when the Pi is
-switched off. At most 60 scans are held; past that the oldest is dropped.
+**Save this scan** keeps a 512 px copy of the photo, its result, a body site ("Left arm")
+and the time, in a folder on the kiosk's SD card (`~/.dermascan/saved/`, two small files per
+scan). No name, no account. Saved scans survive **Exit kiosk**, a crash, a reboot and a power
+cut, so a group's history is still there the next morning (changed 11 October 2026 on the
+mentor's decision; before that they lived in memory and vanished whenever the Pi was switched
+off). They go when a visitor taps **Delete this scan** (no staff code needed), when staff tap
+**End event — erase all**, or, past 60 saved scans, when the oldest is dropped.
 The log line per scan (`/tmp/dermascan_kiosk.log`) records the label, the confidence and
 the timings — never the image, never a name.
+
+**The SD card therefore carries photos until End event.** Staff should tap **End event —
+erase all** before the card or the Pi leaves their hands, and should tell visitors before
+they save. Nothing on the card names a person.
 
 The one exception is a switch a developer has to turn on by editing
 `dermascan/config.py`: `SAVE_CAPTURES_DIR`. It keeps every capture as a JPEG beside its
