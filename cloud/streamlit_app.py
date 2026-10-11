@@ -38,7 +38,7 @@ with st.spinner("Reading the spot…"):
 v = out.verdict
 
 left, right = st.columns([2, 3])
-left.image(data, use_container_width=True)
+left.image(data, width="stretch")
 with right:
     st.subheader(v.headline)
     st.write(v.body)

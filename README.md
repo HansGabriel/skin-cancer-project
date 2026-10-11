@@ -48,10 +48,10 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Short version: clone to
 
 ```
 tap "Take the photo"        kiosk/camera.py      1024 px centre crop, JPEG, ~0.1 s
-"Check the photo" screen    scan.run_check       decode + gate only: light, focus, spot (~70 ms)
-tap "Check this spot"       dermascan/scan.py
+"Check the photo" screen    scan.check_photo     decode + gate only: light, focus, spot (~70 ms)
    decode + shrink          ~20 ms
    gate                     dermascan/gate.py    ~50 ms   refuses walls, blur, plain skin, shadows
+tap "Check this spot"       scan.run_scan        reuses the check above (decode=0 gate=0 in the log)
    model (4 views)          dermascan/classifier.py       ~0.6 s on a Pi 4
    signs                    dermascan/signs.py   ~10 ms   A B C on the gate's outline
    verdict                  dermascan/verdict.py          words on screen
@@ -81,4 +81,4 @@ at instead; the "spot" refusals can be overridden with "Check it anyway".
 The earlier, much larger Streamlit app (GrabCut ABCDE in millimetres, saved cases on
 disk, the Ollama assistant, heat maps) is at commit `246c072` and on `pi/last-known-good`
 if the paper needs it. This version brings back its look and three of its features in a
-lighter form: A B C on the gate's outline, saving in memory, written answers without an LLM.
+lighter form: A B C on the gate's outline, saved scans on the card, written answers without an LLM.

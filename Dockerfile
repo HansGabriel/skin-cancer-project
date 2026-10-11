@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Dependencies first, so a code change does not reinstall them.
 COPY cloud/requirements.txt cloud/requirements.txt
-RUN pip install --no-cache-dir -r cloud/requirements.txt
+RUN pip install -r cloud/requirements.txt
 
 # Only what the demo runs: the core, the four model files, the page, Streamlit's config.
 COPY dermascan/ dermascan/

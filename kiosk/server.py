@@ -77,7 +77,7 @@ class LastPhoto:
         with self._lock:
             return self._jpeg
 
-    def checked(self, jpeg: bytes, checked: CheckedPhoto) -> None:
+    def remember_check(self, jpeg: bytes, checked: CheckedPhoto) -> None:
         with self._lock:
             if self._jpeg is jpeg:  # still the same photo
                 self._checked = checked
@@ -186,7 +186,7 @@ def check():
     if not jpeg:
         return _error("no_photo", 400)
     checked = check_photo(jpeg)
-    last_photo.checked(jpeg, checked)  # /scan on the same photo skips decode + gate
+    last_photo.remember_check(jpeg, checked)  # /scan on the same photo skips decode + gate
     return jsonify(_apply_read_anyway_setting(check_result(checked)))
 
 

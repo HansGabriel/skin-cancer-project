@@ -32,6 +32,8 @@ check status=pass focus=41.2 brightness=128 ms decode=18 gate=55 total=73
 scan status=ok label=benign conf=71 ms decode=0 gate=0 model=640 signs=9 total=649 check=reused
 ```
 
+(The numbers are illustrative; the Pi has not been timed yet, see `docs/METRICS.md`.)
+
 `check=reused` means the scan used the photo check's decode and gate instead of running
 them again. `python scripts/bench_scan.py` prints the same stages as medians over ten rounds;
 paste its output into `docs/METRICS.md` when the Pi's numbers are measured.
@@ -70,7 +72,7 @@ The repo carries everything Railway needs: `Dockerfile` (python 3.12-slim, insta
 `cloud/requirements.txt`, copies `dermascan/ models/ cloud/ .streamlit/`, binds Streamlit to
 `$PORT`), `.dockerignore` (keeps the venv, training, kiosk and tests out of the image) and
 `railway.json` (Dockerfile builder, health check on `/_stcore/health`, restart on failure).
-No environment variables, no secrets.
+Nothing to set in Railway's Variables tab and no secrets; the container reads only Railway's own `PORT`.
 
 Once, in the Railway dashboard:
 

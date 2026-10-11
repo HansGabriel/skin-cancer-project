@@ -45,7 +45,7 @@ cite them from `246c072` in the paper if needed.
 
 **Brought back, lighter, the same day (mentor's call):** A B C on the gate's own outline
 (`dermascan/signs.py`, ~10 ms, display only — never feeds the verdict; D shows "no
-scale"), saving in server RAM only (`kiosk/saved.py`), and a Questions tab that
+scale"), saving (`kiosk/saved.py`, in RAM at the time), and a Questions tab that
 matches written answers (`dermascan/answers.json`, TF-IDF, no LLM).
 **Saves moved to the SD card on 2026-10-11** (`kiosk/saved.py`, `~/.dermascan/saved/`,
 `<id>.jpg` + `<id>.json`, atomic writes, reload at boot): still no names, no database, no
@@ -67,7 +67,7 @@ kiosk/          server.py camera.py saved.py static/{index.html,kiosk.css,kiosk.
 cloud/          streamlit_app.py requirements.txt
 models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
 training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py requirements.txt splits.csv (*.keras: gitignored)
-scripts/        launch_kiosk.sh run_dev.sh
+scripts/        launch_kiosk.sh run_dev.sh bench_scan.py
 tests/          pytest, < 1 min, no dataset
 docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
 ```

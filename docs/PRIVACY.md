@@ -23,7 +23,7 @@ erase all** before the card or the Pi leaves their hands, and should tell visito
 they save. Nothing on the card names a person.
 
 The one exception is a switch a developer has to turn on by editing
-`dermascan/config.py`: `SAVE_CAPTURES_DIR`. It keeps every capture as a JPEG beside its
+`dermascan/config.py`: `SAVE_CAPTURES_DIR`. It keeps every checked photo, scanned or refused, as a JPEG beside its
 photo-check numbers, so the gate can be calibrated against the real camera. It is off,
 and it must stay off whenever the device is used with people rather than test images.
 
