@@ -21,7 +21,7 @@ explanation). The rest is the screen around it.
 | `dermascan/answers.py`, `answers.json` | the Questions tab: written answers matched to a tapped or typed question, no language model |
 | `kiosk/server.py` | Flask: serves the page, streams the camera, answers `/check`, `/scan`, `/ask`, `/saved` |
 | `kiosk/camera.py` | owns the Pi camera for the life of the process; plain pixels, no enhancement |
-| `kiosk/saved.py` | saved scans, in the server's memory only, until staff end the event |
+| `kiosk/saved.py` | saved scans, two small files each in `~/.dermascan/saved/`, until staff end the event |
 | `kiosk/static/index.html`, `kiosk.css`, `kiosk.js` | the one page: the EPIVUE Interface design — Home, New check, Saved, Questions, Settings |
 | `cloud/streamlit_app.py` | the same core behind an upload box, for Streamlit Community Cloud |
 | `training/` | the notebook that makes the model; `calibrate.py` fits its threshold; `eval.py` scores it |
@@ -75,7 +75,7 @@ at instead; the "spot" refusals can be overridden with "Check it anyway".
 * [docs/HARDWARE_CHECKLIST.md](docs/HARDWARE_CHECKLIST.md) — the panel ribbon, the case, power
 * [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Pi setup, autostart, Streamlit Cloud
 * [docs/METRICS.md](docs/METRICS.md) — how good the model is, honestly
-* [docs/PRIVACY.md](docs/PRIVACY.md) — nothing is written to disk; what that means for the fair
+* [docs/PRIVACY.md](docs/PRIVACY.md) — what the kiosk keeps and for how long; what that means for the fair
 * [AGENTS.md](AGENTS.md) — the technical plan and the decisions behind it
 
 The earlier, much larger Streamlit app (GrabCut ABCDE in millimetres, saved cases on

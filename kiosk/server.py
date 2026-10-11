@@ -302,7 +302,7 @@ def erase():
 def quit_kiosk():
     if not _staff_ok():
         return jsonify({"ok": False}), 403
-    saved.erase()
+    # Saved scans stay on the card: only "End event - erase all" removes them.
     try:
         config.QUIT_FLAG.write_text("quit")
     except OSError:

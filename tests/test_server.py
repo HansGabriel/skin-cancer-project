@@ -11,8 +11,9 @@ from kiosk import camera, server
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     server.last_photo.forget()
+    monkeypatch.setattr(server.saved, "folder", tmp_path / "saved")  # never the developer's ~/.dermascan
     server.saved.erase()
     monkeypatch.setitem(server.settings, "allow_read_anyway", True)
     monkeypatch.setitem(server.settings, "show_staff_details", True)
@@ -102,6 +103,18 @@ def test_quit_writes_the_flag(client, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server.config, "QUIT_FLAG", flag)
     assert client.post("/quit").get_json()["ok"]
     assert flag.read_text() == "quit"
+
+
+def test_quit_keeps_saved_scans_and_erase_removes_their_files(client, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server.config, "QUIT_FLAG", tmp_path / "quit")
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])))
+    sid = client.post("/saved", data={"site": "Back"}).get_json()["scan"]["id"]
+    folder = tmp_path / "saved"
+    assert (folder / f"{sid}.jpg").exists() and (folder / f"{sid}.json").exists()
+    assert client.post("/quit").get_json()["ok"]
+    assert client.get(f"/saved/{sid}").status_code == 200  # Exit kiosk keeps the day's saves
+    assert client.post("/erase").get_json()["saved"]["count"] == 0
+    assert not list(folder.glob("*"))
 
 
 def test_quit_needs_the_staff_code_when_one_is_set(client, tmp_path, monkeypatch) -> None:
