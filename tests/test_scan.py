@@ -96,3 +96,19 @@ def test_captures_are_saved_only_when_asked(classifier, tmp_path, monkeypatch) -
     monkeypatch.setattr(config, "SAVE_CAPTURES_DIR", tmp_path)
     scan.run_scan(jpeg(textured(SKIN_TONES["light"])), classifier=classifier)
     assert len(list(tmp_path.glob("*.jpg"))) == 1 and len(list(tmp_path.glob("*.txt"))) == 1
+
+
+def test_a_checked_photo_is_not_decoded_or_gated_twice(classifier) -> None:
+    from dermascan.scan import check_photo, check_result, run_check, run_scan
+
+    data = jpeg(with_lesion(textured(SKIN_TONES["light"])))
+    checked = check_photo(data)
+    assert checked.rgb is not None and checked.report is not None and checked.report.small is not None
+    assert check_result(checked) == run_check(data)
+    out = run_scan(data, classifier=classifier, checked=checked)
+    assert out.status == "ok" and out.stage_ms["decode"] == 0 and out.stage_ms["gate"] == 0
+    assert out.measured == checked.report.measured and out.abc_signs
+    assert run_scan(data, classifier=classifier).prediction.label == out.prediction.label
+    bad = check_photo(b"not a jpeg")
+    assert bad.rgb is None and check_result(bad)["status"] == "error"
+    assert run_scan(b"not a jpeg", classifier=classifier, checked=bad).status == "error"

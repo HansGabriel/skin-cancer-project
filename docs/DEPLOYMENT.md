@@ -24,12 +24,17 @@ on-screen keypad when one is set; otherwise it is two taps. Set the code once:
 printf %s '2468' > ~/.dermascan_passcode && chmod 600 ~/.dermascan_passcode   # pick your own 4 digits
 ```
 
-Copy `EPIVUE.desktop` to `~/Desktop/` and mark it executable. The log is `/tmp/dermascan_kiosk.log`; one line per
-scan looks like
+Copy `EPIVUE.desktop` to `~/Desktop/` and mark it executable. The log is `/tmp/dermascan_kiosk.log`; a visitor's
+check and scan look like
 
 ```
-scan status=ok label=benign conf=71 ms decode=18 gate=55 model=640 total=713
+check status=pass focus=41.2 brightness=128 ms decode=18 gate=55 total=73
+scan status=ok label=benign conf=71 ms decode=0 gate=0 model=640 signs=9 total=649 check=reused
 ```
+
+`check=reused` means the scan used the photo check's decode and gate instead of running
+them again. `python scripts/bench_scan.py` prints the same stages as medians over ten rounds;
+paste its output into `docs/METRICS.md` when the Pi's numbers are measured.
 
 **Autostart at boot** (optional): add to `~/.config/labwc/autostart`
 

@@ -48,6 +48,9 @@ class GateReport:
     # The spot's outline on the GATE_WORK_PX copy, once check 3 has drawn one.
     # signs.py measures A, B and C on it, so nothing outlines the spot twice.
     outline: np.ndarray | None = field(default=None, repr=False, compare=False)
+    # The GATE_WORK_PX copy itself, so signs.py measures on the same pixels and
+    # nobody shrinks the photo a second time.
+    small: np.ndarray | None = field(default=None, repr=False, compare=False)
 
     @property
     def passed(self) -> bool:
@@ -285,20 +288,22 @@ def check(rgb: np.ndarray) -> GateReport:
     check, and "hold still" is useless advice for it.
     """
     measured: dict[str, float] = {}
-
+    # One small copy for checks 1, 3 and 4 (check 2 wants its own 512 px copy).
+    # shrink() never enlarges, so handing `small` on costs nothing.
+    small = shrink(rgb)
     outline: np.ndarray | None = None
 
     def refuse(code: RefusalCode, can_override: bool) -> GateReport:
-        return GateReport(Refusal(code, can_override), measured, outline)
+        return GateReport(Refusal(code, can_override), measured, outline, small)
 
     # 1. Is there skin?
-    measured["skin_fraction"] = skin_fraction(rgb)
+    measured["skin_fraction"] = skin_fraction(small)
     if measured["skin_fraction"] < config.SKIN_MIN_FRACTION:
         return refuse("no_skin", False)
 
     # 2. Can it be read?
     measured["focus"] = focus_score(rgb)
-    measured["brightness"] = brightness(rgb)
+    measured["brightness"] = brightness(small)
     if measured["focus"] < config.FOCUS_MIN:
         return refuse("too_blurry", False)
     if measured["brightness"] < config.BRIGHTNESS_MIN:
@@ -307,7 +312,6 @@ def check(rgb: np.ndarray) -> GateReport:
         return refuse("too_bright", False)
 
     # 3. Is there one spot on it?
-    small = shrink(rgb)
     mask = outline = outline_spot(small)
     measured["spot_fraction"] = float(mask.mean())
     measured["spot_solidity"] = solidity(mask)
@@ -323,4 +327,4 @@ def check(rgb: np.ndarray) -> GateReport:
     measured["edge_width"] = edge_width(small, mask)
     if measured["edge_width"] > config.SPOT_MAX_EDGE_WIDTH_PCT:
         return refuse("soft_edge", True)
-    return GateReport(None, measured, outline)
+    return GateReport(None, measured, outline, small)

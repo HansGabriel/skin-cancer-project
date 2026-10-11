@@ -77,15 +77,30 @@ def test_a_scan_reads_its_own_upload_even_if_another_arrives_meanwhile(client, m
     mine = jpeg(with_lesion(textured(SKIN_TONES["light"])))
     seen = []
 
-    def spy(data, force=False):
+    def spy(data, force=False, checked=None):
         server.last_photo.put(b"someone else's photo")  # a second request lands mid-scan
         seen.append(data)
         from dermascan.scan import run_scan
-        return run_scan(data, force=force)
+        return run_scan(data, force=force, checked=checked)
 
     monkeypatch.setattr(server, "run_scan", spy)
     client.post("/scan", data={"image": (io.BytesIO(mine), "a.jpg")}, content_type="multipart/form-data")
     assert seen == [mine]
+
+
+def test_a_scan_after_a_check_does_not_gate_the_photo_again(client) -> None:
+    """The visitor path: /check, then /scan on the same bytes. The second must reuse the first."""
+    data = {"image": (io.BytesIO(jpeg(with_lesion(textured(SKIN_TONES["light"])))), "spot.jpg")}
+    check = client.post("/check", data=data, content_type="multipart/form-data").get_json()
+    assert check["status"] == "pass" and check["measured"]["focus"] > 0
+    scan = client.post("/scan").get_json()
+    assert scan["status"] == "ok"
+    assert scan["stage_ms"]["decode"] == 0 and scan["stage_ms"]["gate"] == 0
+    assert scan["measured"] == check["measured"]  # the same gate numbers, not a second run
+    assert scan["signs"] is not None  # signs still measured on the gate's outline
+    # A fresh upload straight to /scan still runs the gate itself.
+    fresh = client.post("/scan", data={"image": (io.BytesIO(jpeg(with_lesion(textured(SKIN_TONES["medium"])))), "b.jpg")}, content_type="multipart/form-data").get_json()
+    assert fresh["status"] == "ok" and fresh["stage_ms"]["gate"] > 0
 
 
 def test_capture_and_scan_with_a_fake_camera(client, monkeypatch) -> None:

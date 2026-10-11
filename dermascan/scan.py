@@ -7,13 +7,16 @@
       -> signs.measure       (A B C on the gate's outline; shown, never decides)
       -> verdict             (the words on screen)
 
-run_check is the first half alone (decode + gate, no model), for the "check the
+check_photo is the first half alone (decode + gate, no model), for the "check the
 photo" screen: it answers in milliseconds, before the visitor commits to a scan.
+The kiosk keeps that CheckedPhoto and hands it to run_scan, so the photo is not
+decoded and gated a second time (the web demo has no check step and runs both).
 
 Every stage is timed in milliseconds and logged on one line per scan, so a slow
 device can be diagnosed from the log alone:
 
-    scan status=ok label=malignant conf=61 ms decode=18 gate=55 model=640 signs=9 total=722
+    check status=pass focus=41.2 brightness=128 ms decode=18 gate=55 total=73
+    scan status=ok label=malignant conf=61 ms decode=0 gate=0 model=640 signs=9 total=649 check=reused
 """
 
 from __future__ import annotations
@@ -73,17 +76,57 @@ def decode_jpeg(data: bytes) -> np.ndarray:
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
+@dataclass
+class CheckedPhoto:
+    """A photo after decode + gate: everything run_scan needs before the model.
+
+    `rgb` is None when the bytes were not a picture at all.
+    """
+
+    rgb: np.ndarray | None
+    report: gate.GateReport | None
+    stage_ms: dict[str, int]  # decode, gate
+
+
+def check_photo(jpeg_bytes: bytes) -> CheckedPhoto:
+    """Decode to at most MAX_WORK_PX and run the gate. Logged as one `check` line."""
+    ms: dict[str, int] = {}
+    t = time.perf_counter()
+    try:
+        rgb = gate.shrink(decode_jpeg(jpeg_bytes), config.MAX_WORK_PX)
+    except ValueError:
+        log.info("check status=error reason=not_a_picture")
+        return CheckedPhoto(None, None, ms)
+    ms["decode"] = int((time.perf_counter() - t) * 1000)
+    t = time.perf_counter()
+    report = gate.check(rgb)
+    ms["gate"] = int((time.perf_counter() - t) * 1000)
+    _maybe_save_capture(jpeg_bytes, report)
+    r = report.refusal
+    log.info(
+        "check status=%s focus=%.1f brightness=%.0f ms decode=%d gate=%d total=%d",
+        r.code if r else "pass", report.measured.get("focus", -1), report.measured.get("brightness", -1),
+        ms["decode"], ms["gate"], ms["decode"] + ms["gate"],
+    )
+    return CheckedPhoto(rgb, report, ms)
+
+
 def run_scan(
     jpeg_bytes: bytes,
     *,
     force: bool = False,
     classifier: Classifier | None = None,
+    checked: CheckedPhoto | None = None,
 ) -> ScanOutcome:
     """`force=True` reads the photo even when the gate's spot check refused it.
 
     The gate still runs and its numbers are still reported, but a refusal the
     visitor is allowed to override no longer stops the scan. Refusals that
     cannot be overridden (no skin, unreadable) always stop it.
+
+    `checked` is the CheckedPhoto of exactly these bytes from the "check the
+    photo" step; given one, decode and gate are not run again (their stage
+    times are then 0 and the log line says `check=reused`).
     """
     ms: dict[str, int] = {}
     t = time.perf_counter()
@@ -94,22 +137,20 @@ def run_scan(
         ms[name] = int((now - t) * 1000)
         t = now
 
-    try:
-        rgb = decode_jpeg(jpeg_bytes)
-        rgb = gate.shrink(rgb, config.MAX_WORK_PX)
-        lap("decode")
-    except ValueError:
+    reused = checked is not None
+    if checked is None:
+        checked = check_photo(jpeg_bytes)
+    if checked.rgb is None or checked.report is None:
         log.info("scan status=error reason=not_a_picture")
-        return ScanOutcome("error", verdict.error_verdict("not_a_picture"), stage_ms=ms)
-
-    report = gate.check(rgb)
-    lap("gate")
-    _maybe_save_capture(jpeg_bytes, report)
+        return ScanOutcome("error", verdict.error_verdict("not_a_picture"), stage_ms=dict(checked.stage_ms))
+    rgb, report = checked.rgb, checked.report
+    ms["decode"], ms["gate"] = (0, 0) if reused else (checked.stage_ms["decode"], checked.stage_ms["gate"])
+    t = time.perf_counter()
 
     refusal = report.refusal
     if refusal is not None and not (force and refusal.can_override):
         out = ScanOutcome("refused", verdict.for_refusal(refusal), refusal=refusal, measured=report.measured, stage_ms=ms)
-        _log(out)
+        _log(out, reused)
         return out
 
     clf = classifier or get_classifier()
@@ -121,7 +162,8 @@ def run_scan(
     lap("model")
     # Signs only on an outline the gate accepted: a "read anyway" photo's outline is
     # exactly what the gate did not trust.
-    measured_signs = signs.measure(gate.shrink(rgb), report.outline) if refusal is None else None
+    small = report.small if report.small is not None else gate.shrink(rgb)
+    measured_signs = signs.measure(small, report.outline) if refusal is None else None
     lap("signs")
 
     out = ScanOutcome(
@@ -135,37 +177,31 @@ def run_scan(
         model_name=clf.model_path.name,
         abc_signs=measured_signs,
     )
-    _log(out)
+    _log(out, reused)
     return out
 
 
-def run_check(jpeg_bytes: bytes) -> dict:
-    """Decode + gate only. What the "check the photo" screen shows.
+def check_result(checked: CheckedPhoto) -> dict:
+    """What the "check the photo" screen shows, from a CheckedPhoto.
 
     {"status": "pass" | "refused" | "error", "headline", "lede", "readings": [...],
      "verdict": refusal/error words or None, "refusal": {...} or None, "measured": {...}}
-    Logged like a scan:  check status=pass ms decode=18 gate=52
     """
-    t = time.perf_counter()
-    try:
-        rgb = gate.shrink(decode_jpeg(jpeg_bytes), config.MAX_WORK_PX)
-    except ValueError:
-        log.info("check status=error reason=not_a_picture")
+    if checked.report is None:
         v = verdict.error_verdict("not_a_picture")
         return _check_result("error", v.headline, v.body, [], v, None, {})
-    decode_ms = int((time.perf_counter() - t) * 1000)
-    report = gate.check(rgb)
-    gate_ms = int((time.perf_counter() - t) * 1000) - decode_ms
+    report = checked.report
     r = report.refusal
     readings = verdict.photo_readings(report.measured, r.code if r else None)
-    log.info(
-        "check status=%s focus=%.1f brightness=%.0f ms decode=%d gate=%d total=%d",
-        r.code if r else "pass", report.measured.get("focus", -1), report.measured.get("brightness", -1), decode_ms, gate_ms, decode_ms + gate_ms,
-    )
     if r is None:
         return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured)
     v = verdict.for_refusal(r)
     return _check_result("refused", v.headline, v.body, readings, v, r, report.measured)
+
+
+def run_check(jpeg_bytes: bytes) -> dict:
+    """Decode + gate only, as one call: check_photo then check_result."""
+    return check_result(check_photo(jpeg_bytes))
 
 
 def _check_result(status, headline, lede, readings, v, refusal, measured) -> dict:
@@ -177,13 +213,14 @@ def _check_result(status, headline, lede, readings, v, refusal, measured) -> dic
     }
 
 
-def _log(out: ScanOutcome) -> None:
+def _log(out: ScanOutcome, reused_check: bool) -> None:
     stages = " ".join(f"{k}={v}" for k, v in out.stage_ms.items())
     if out.prediction:
         head = f"label={out.prediction.label} conf={out.prediction.confidence_pct:.0f}"
     else:
         head = f"refused={out.refusal.code if out.refusal else '?'}"
-    log.info("scan status=%s %s ms %s total=%d", out.status, head, stages, sum(out.stage_ms.values()))
+    tail = " check=reused" if reused_check else ""
+    log.info("scan status=%s %s ms %s total=%d%s", out.status, head, stages, sum(out.stage_ms.values()), tail)
 
 
 def _maybe_save_capture(jpeg_bytes: bytes, report: gate.GateReport) -> None:

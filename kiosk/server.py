@@ -44,7 +44,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from dermascan import config
 from dermascan.answers import BAND_FOR_STATE, get_bank
 from dermascan.classifier import get_classifier
-from dermascan.scan import ScanOutcome, run_check, run_scan
+from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, run_scan
 from dermascan.verdict import EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
@@ -64,17 +64,27 @@ class LastPhoto:
 
     def __init__(self) -> None:
         self._jpeg: bytes | None = None
+        self._checked: CheckedPhoto | None = None  # the "check the photo" result, so /scan does not redo it
         self._outcome: dict | None = None
         self._lock = threading.Lock()
 
     def put(self, jpeg: bytes) -> bytes:
         with self._lock:
-            self._jpeg, self._outcome = jpeg, None
+            self._jpeg, self._checked, self._outcome = jpeg, None, None
         return jpeg
 
     def get(self) -> bytes | None:
         with self._lock:
             return self._jpeg
+
+    def checked(self, jpeg: bytes, checked: CheckedPhoto) -> None:
+        with self._lock:
+            if self._jpeg is jpeg:  # still the same photo
+                self._checked = checked
+
+    def last_check(self, jpeg: bytes) -> CheckedPhoto | None:
+        with self._lock:
+            return self._checked if self._jpeg is jpeg else None
 
     def scanned(self, jpeg: bytes, outcome: dict) -> None:
         with self._lock:
@@ -87,7 +97,7 @@ class LastPhoto:
 
     def forget(self) -> None:
         with self._lock:
-            self._jpeg, self._outcome = None, None
+            self._jpeg, self._checked, self._outcome = None, None, None
 
 
 last_photo = LastPhoto()
@@ -175,7 +185,9 @@ def check():
     jpeg = _photo_from_request()
     if not jpeg:
         return _error("no_photo", 400)
-    return jsonify(_apply_read_anyway_setting(run_check(jpeg)))
+    checked = check_photo(jpeg)
+    last_photo.checked(jpeg, checked)  # /scan on the same photo skips decode + gate
+    return jsonify(_apply_read_anyway_setting(check_result(checked)))
 
 
 @app.post("/scan")
@@ -186,7 +198,9 @@ def scan():
     if not jpeg:
         return _error("no_photo", 400)
     force = request.form.get("force", request.args.get("force", "0")) == "1"
-    outcome = _apply_read_anyway_setting(run_scan(jpeg, force=force and settings["allow_read_anyway"]).to_dict())
+    outcome = _apply_read_anyway_setting(
+        run_scan(jpeg, force=force and settings["allow_read_anyway"], checked=last_photo.last_check(jpeg)).to_dict()
+    )
     last_photo.scanned(jpeg, outcome)
     return jsonify(outcome)
 
