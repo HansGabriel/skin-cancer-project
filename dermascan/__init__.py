@@ -8,3 +8,5 @@ Read the files in this order:
     classifier.py   the TFLite model, 4-view TTA, the screening threshold
     verdict.py      label + confidence -> plain-language words on screen
 """
+
+from dermascan import config  # noqa: F401 - sets OpenCV's picture-size limit before cv2 is imported
