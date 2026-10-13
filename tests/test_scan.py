@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -112,3 +116,24 @@ def test_a_checked_photo_is_not_decoded_or_gated_twice(classifier) -> None:
     bad = check_photo(b"not a jpeg")
     assert bad.rgb is None and check_result(bad)["status"] == "error"
     assert run_scan(b"not a jpeg", classifier=classifier, checked=bad).status == "error"
+
+
+
+def test_a_picture_too_large_to_open_is_not_a_picture() -> None:
+    """A small PNG that claims a huge picture is refused, not decoded into gigabytes.
+
+    OpenCV reads its limit once, when cv2 is first imported, so this runs in a fresh
+    process that imports dermascan first, as the kiosk and the web demo do.
+    """
+    code = (
+        "import dermascan, cv2, numpy as np\n"
+        "from dermascan.scan import check_photo\n"
+        "big = cv2.imencode('.png', np.zeros((8000, 8000, 3), np.uint8))[1].tobytes()  # 64 MP, ~200 KB\n"
+        "assert check_photo(big).rgb is None\n"
+        "phone = cv2.imencode('.jpg', np.zeros((3000, 4000, 3), np.uint8))[1].tobytes()  # 12 MP\n"
+        "assert check_photo(phone).rgb is not None\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "OPENCV_IO_MAX_IMAGE_PIXELS"}
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
+    r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr

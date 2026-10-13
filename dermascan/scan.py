@@ -22,6 +22,7 @@ device can be diagnosed from the log alone:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -69,8 +70,15 @@ class ScanOutcome:
         }
 
 
+_decode_slots = threading.BoundedSemaphore(config.MAX_PARALLEL_DECODES)
+
+
 def decode_jpeg(data: bytes) -> np.ndarray:
-    bgr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    with _decode_slots:
+        try:
+            bgr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        except cv2.error:  # larger than MAX_DECODE_PIXELS, or a broken file
+            bgr = None
     if bgr is None:
         raise ValueError("not an image")
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)

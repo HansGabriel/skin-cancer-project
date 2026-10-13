@@ -33,6 +33,12 @@ CONFIDENCE_FLOOR_PCT = 45.0  # below this the verdict says "not sure" instead of
 MAX_WORK_PX = 1024  # longest edge any photo is reduced to before anything looks at it
 GATE_WORK_PX = 384  # the gate measures a 384 px copy: fast on a Pi, same answer
 FOCUS_WORK_PX = 512  # focus is measured at one fixed size, so a webcam and the Pi score alike
+# A small file can claim a huge picture (a 1 MB PNG of 20000x20000 decodes to 1.2 GB).
+# OpenCV refuses anything larger; it reads this once, so dermascan/__init__.py loads
+# this file before anything imports cv2.
+MAX_DECODE_PIXELS = 50_000_000  # a 50 MP phone photo still opens (~150 MB while decoding)
+os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", str(MAX_DECODE_PIXELS))
+MAX_PARALLEL_DECODES = 2  # photos opened at once; the rest wait, so memory stays bounded
 
 # --- Gate 1: is there skin? ---------------------------------------------------
 # Fraction of the frame that must look like skin. 0.08 sits above the worst
