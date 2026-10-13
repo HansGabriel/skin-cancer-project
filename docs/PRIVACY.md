@@ -51,6 +51,16 @@ doctor" until a health professional fills in `reviewed_by` and `reviewed_date`.
 
 Pressing **Done** drops the photo from the page and from the server's memory.
 
+## The public web demo
+
+The website (`epivue.up.railway.app`, the kiosk page run with `--web`) is the one place a
+photo does leave the visitor's device: it is uploaded to the project's server, checked, and
+dropped when the answer is sent. The server keeps no photo between requests, has no Saved
+tab and no staff controls, and refuses to start in web mode if `SAVE_CAPTURES_DIR` is on.
+Railway's log keeps the same line per scan as the kiosk (label, confidence, timings, never
+the image or a name). The page and its Questions answer say this ("your photo is checked,
+then dropped; it is not kept"), not the kiosk's "nothing leaves this device".
+
 ## Before photographing students for the study
 
 Capturing students' skin as research data is human-participants research under ISEF

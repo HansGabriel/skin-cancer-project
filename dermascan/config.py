@@ -34,10 +34,12 @@ MAX_WORK_PX = 1024  # longest edge any photo is reduced to before anything looks
 GATE_WORK_PX = 384  # the gate measures a 384 px copy: fast on a Pi, same answer
 FOCUS_WORK_PX = 512  # focus is measured at one fixed size, so a webcam and the Pi score alike
 # A small file can claim a huge picture (a 1 MB PNG of 20000x20000 decodes to 1.2 GB).
-# OpenCV refuses anything larger; it reads this once, so dermascan/__init__.py loads
-# this file before anything imports cv2.
+# OpenCV refuses anything larger. It reads the limit once, when cv2 is first imported,
+# so dermascan/__init__.py loads this file first; that holds for kiosk.server,
+# cloud/streamlit_app.py and scripts/bench_scan.py (not for training/ or the tests,
+# which import cv2 themselves and never open strangers' uploads).
 MAX_DECODE_PIXELS = 50_000_000  # a 50 MP phone photo still opens (~150 MB while decoding)
-os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", str(MAX_DECODE_PIXELS))
+os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = str(MAX_DECODE_PIXELS)  # OpenCV's own switch, set here, never from outside
 MAX_PARALLEL_DECODES = 2  # photos opened at once; the rest wait, so memory stays bounded
 
 # --- Gate 1: is there skin? ---------------------------------------------------

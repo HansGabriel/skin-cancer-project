@@ -80,7 +80,7 @@ class SavedScan:
 
 
 def _shrink_jpeg(jpeg: bytes) -> bytes:
-    rgb = gate.shrink(decode_jpeg(jpeg), config.SAVED_PHOTO_PX)
+    rgb = decode_jpeg(jpeg, config.SAVED_PHOTO_PX)
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, config.SAVED_JPEG_QUALITY])
     if not ok:
         raise ValueError("could not encode the saved photo")

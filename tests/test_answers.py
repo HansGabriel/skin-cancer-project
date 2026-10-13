@@ -18,7 +18,8 @@ def bank():
 
 def test_every_answer_is_plain_language(bank) -> None:
     raw = json.loads(answers.ANSWERS_PATH.read_text())
-    texts = [raw["fallback_answer"]] + [e.answer for e in bank.entries] + [q for e in bank.entries for q in e.questions]
+    texts = [raw["fallback_answer"]] + [e.answer for e in bank.entries] + [e.web_answer for e in bank.entries if e.web_answer]
+    texts += [q for e in bank.entries for q in e.questions]
     for text in texts:
         for word in JARGON:
             assert not re.search(rf"\b{re.escape(word)}\b", text.lower()), f"'{word}' in {text!r}"

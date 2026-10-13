@@ -10,6 +10,9 @@ and a match takes well under a millisecond on the Pi.
       -> its answer, plus the visitor's own sign lines if it is about their spot
       -> below ANSWER_MATCH_MIN: the fallback ("ask a health worker")
 
+An entry may also carry a `web_answer`: the words the public web demo shows instead,
+where the kiosk's answer would not be true there (the photo is uploaded; nothing is saved).
+
 An answer is "reviewed" only when a health professional has filled in
 reviewed_by and reviewed_date in answers.json. Until then the page says it was
 written by the project team. Nothing is hidden for being unreviewed: the badge
@@ -54,6 +57,7 @@ class Entry:
     about_spot: bool = False
     reviewed_by: str | None = None
     reviewed_date: str | None = None
+    web_answer: str | None = None  # the web demo's words, where `answer` is only true on the kiosk
 
     @property
     def reviewed(self) -> bool:
@@ -96,7 +100,7 @@ class AnswerBank:
                 raise ValueError(f"answers.json: {e['id']} needs questions and an answer")
             self.entries.append(Entry(
                 e["id"], e["band"], tuple(e["questions"]), e["answer"], bool(e.get("about_spot")),
-                e.get("reviewed_by"), e.get("reviewed_date"),
+                e.get("reviewed_by"), e.get("reviewed_date"), e.get("web_answer"),
             ))
         if len({e.id for e in self.entries}) != len(self.entries):
             raise ValueError("answers.json: two entries share an id")
@@ -142,14 +146,17 @@ class AnswerBank:
         ranked = rest + spot if band == "general" else own[: n - 1] + spot[:1] + own[n - 1 :] + spot[1:] + rest
         return [e.questions[0] for e in ranked if e.id != exclude][:n]
 
-    def ask(self, question: str, state: str | None = None, sign_lines: list[str] | None = None) -> Answer:
-        """The answer to `question` for a visitor whose result is `state` (a verdict state, or None)."""
+    def ask(self, question: str, state: str | None = None, sign_lines: list[str] | None = None, *, web: bool = False) -> Answer:
+        """The answer to `question` for a visitor whose result is `state` (a verdict state, or None).
+
+        `web=True` (the public web demo) uses an entry's `web_answer` when it has one.
+        """
         sign_lines = [line.strip() for line in sign_lines or [] if line.strip()]
         band = BAND_FOR_STATE.get(state or "", "general")
         entry, _ = self.match(question, band)
         if entry is None:
             return Answer(question, self.fallback, None, None, self.suggestions(band))
-        text = entry.answer
+        text = entry.web_answer if web and entry.web_answer else entry.answer
         if entry.about_spot and sign_lines:
             text += " On your photo: " + "; ".join(line[0].lower() + line[1:] for line in sign_lines) + "."
         return Answer(question, text, entry.id, entry.reviewed_by if entry.reviewed else None, self.suggestions(band, exclude=entry.id))

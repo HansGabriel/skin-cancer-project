@@ -10,9 +10,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Dependencies first, so a code change does not reinstall them. The kiosk's own pins.
+# Dependencies first, so a code change does not reinstall them. The kiosk's own pins,
+# minus pytest (tests do not ship).
 COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+RUN grep -v '^pytest' requirements.txt > /tmp/runtime.txt && pip install -r /tmp/runtime.txt
 
 # Only what the demo runs: the core, the four model files, the kiosk server and page.
 COPY dermascan/ dermascan/

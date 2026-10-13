@@ -1,4 +1,4 @@
-# The public web demo: Railway (Dockerfile) and Streamlit Community Cloud. App file: cloud/streamlit_app.py.
+# The Streamlit fallback page on Streamlit Community Cloud. App file: cloud/streamlit_app.py. (Railway runs the kiosk: see Dockerfile.)
 streamlit==1.57.0
 ai-edge-litert==2.1.5
 numpy==2.2.4
