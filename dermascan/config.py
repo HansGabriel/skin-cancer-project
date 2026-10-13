@@ -135,6 +135,7 @@ KIOSK_PORT = 8080  # scripts/launch_kiosk.sh uses the same number
 ALLOW_READ_ANYWAY = True  # offer "Check it anyway" when the spot check refuses a photo
 SHOW_STAFF_DETAILS = True  # show "Details for staff" (numbers, timings) under a result
 QUIT_FLAG = Path("/tmp/dermascan_quit")  # scripts/launch_kiosk.sh watches for this file
+WEB_MAX_UPLOAD_MB = 8  # web demo only: a phone photo fits; a bigger upload is refused before it is read
 
 # --- Optional: keep raw captures for later calibration ------------------------
 # Set to a directory (Path) to save every capture as a JPEG next to its gate

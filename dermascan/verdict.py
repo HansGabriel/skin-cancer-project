@@ -197,6 +197,7 @@ FORCED_CAVEAT = (
 _ERROR_BODY = {
     "not_a_picture": "That file is not a picture the scanner can open.",
     "no_photo": "There is no photo to check yet.",
+    "too_big": "That picture is too large to send. Choose a smaller one.",
     "camera": "The camera did not take the photo.",
     "scanner": "The scanner could not finish reading this photo.",
 }

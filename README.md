@@ -23,7 +23,7 @@ explanation). The rest is the screen around it.
 | `kiosk/camera.py` | owns the Pi camera for the life of the process; plain pixels, no enhancement |
 | `kiosk/saved.py` | saved scans, two small files each in `~/.dermascan/saved/`, until staff end the event |
 | `kiosk/static/index.html`, `kiosk.css`, `kiosk.js` | the one page: the EPIVUE Interface design — Home, New check, Saved, Questions, Settings |
-| `cloud/streamlit_app.py` | the same core behind an upload box: the public web demo (Railway via `Dockerfile`; Streamlit Cloud as fallback) |
+| `cloud/streamlit_app.py` | the same core behind a plain upload box: the Streamlit Cloud fallback (the public web demo on Railway is the kiosk page in web mode, see `Dockerfile`) |
 | `training/` | the notebook that makes the model; `calibrate.py` fits its threshold; `eval.py` scores it |
 
 ## Run it on a laptop (no Pi)

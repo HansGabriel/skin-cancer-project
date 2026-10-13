@@ -27,8 +27,14 @@ Every answer from /capture and /scan that is not a photo has the same shape as a
 scan outcome, so the page renders errors with the same code as results, in words
 from dermascan/verdict.py.
 
+Web mode (`--web`, the public demo on Railway): the same page for many strangers at
+once, so the server holds nothing between requests. Every /check and /scan carries its
+own photo, nothing is remembered or saved, and the saved-scan and staff routes are
+switched off (404). Staff settings stay at config.py's values.
+
 Run it:  python -m kiosk.server            (Pi, or a laptop with upload/webcam)
          python -m kiosk.server --debug    (auto-reload while editing)
+         python -m kiosk.server --web --host 0.0.0.0 --port 8080   (the web demo)
 """
 
 from __future__ import annotations
@@ -105,9 +111,26 @@ last_photo = LastPhoto()
 # What staff changed in Settings. Back to config.py's values on every restart.
 settings = {"allow_read_anyway": config.ALLOW_READ_ANYWAY, "show_staff_details": config.SHOW_STAFF_DETAILS}
 
+# Set by `--web`. Routes that keep or change anything shared between visitors.
+app.config["WEB_DEMO"] = False
+WEB_OFF = {"capture", "preview", "saved_list", "saved_add", "saved_one", "saved_photo", "saved_delete",
+           "staff_unlock", "change_settings", "erase", "quit_kiosk"}
+
+
+@app.before_request
+def _web_demo_guard():
+    if app.config["WEB_DEMO"] and request.endpoint in WEB_OFF:
+        return jsonify({"ok": False}), 404
+    return None
+
 
 def _error(kind: str, http_status: int):
     return jsonify(ScanOutcome("error", error_verdict(kind)).to_dict()), http_status
+
+
+@app.errorhandler(413)
+def _too_big(_exc):  # web demo: an upload over WEB_MAX_UPLOAD_MB
+    return _error("too_big", 413)
 
 
 def _staff_ok() -> bool:
@@ -128,6 +151,8 @@ def _apply_read_anyway_setting(result: dict) -> dict:
 
 def _photo_from_request() -> bytes | None:
     upload = request.files.get("image")
+    if app.config["WEB_DEMO"]:  # never remember a stranger's photo; it comes with every request
+        return upload.read() if upload is not None else None
     return last_photo.put(upload.read()) if upload is not None else last_photo.get()
 
 
@@ -138,7 +163,8 @@ def index() -> Response:
 
 @app.get("/health")
 def health():
-    status = {
+    status = {"web": True, "camera": False, "settings": settings} if app.config["WEB_DEMO"] else {
+        "web": False,
         "camera": cam.camera.running,
         "exit_needs_code": config.staff_passcode() is not None,
         "settings": settings,
@@ -329,6 +355,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=config.KIOSK_PORT)
     parser.add_argument("--debug", action="store_true", help="auto-reload on edits (laptop only)")
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 opens it to the network")
+    parser.add_argument("--web", action="store_true", help="public web demo: no camera, nothing kept, no staff routes")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -336,7 +363,11 @@ def main() -> None:
     if code is not None and not (len(code) == 4 and code.isdigit()):
         raise SystemExit("The staff code must be exactly 4 digits (the on-screen keypad sends 4). Fix ~/.dermascan_passcode.")
     get_classifier()  # load the model before the first visitor, not during their scan
-    cam.camera.start()
+    if args.web:
+        app.config["WEB_DEMO"] = True
+        app.config["MAX_CONTENT_LENGTH"] = config.WEB_MAX_UPLOAD_MB * 1024 * 1024
+    else:
+        cam.camera.start()
     log.info(
         "model %s, camera %s, exit %s, http://%s:%d",
         config.MODEL_PATH.name,

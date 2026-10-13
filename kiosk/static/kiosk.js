@@ -9,6 +9,10 @@
      "webcam"  the browser's own camera, on a laptop or phone
      "off"     no camera: choose a picture
 
+   The web demo (S.web, from /health): the same page on the internet. The server
+   keeps nothing, so every request carries its photo, and Saved and Settings are
+   gone. The words that promise "nothing leaves this device" change to what is true there.
+
    Every verdict, photo reading and answer a visitor reads comes from the server
    (dermascan/verdict.py, dermascan/answers.py). This file holds only the screen
    chrome from the design (titles, steps, button labels) and the two messages for
@@ -25,7 +29,7 @@ const S = {
   savedAs: null, savedId: null, history: null, thread: [], suggestions: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
-  staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null,
+  staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null, web: false,
 };
 
 const NO_ANSWER = {
@@ -129,7 +133,7 @@ function paintInstrument() {
   $("ap-rest").textContent = S.screen === "frame" && S.camera === "off"
     ? "No camera here — choose a picture" : "Put the spot inside the ring";
   $("cap-standby").textContent = !S.health || !S.health.ok ? "THE SCANNER IS NOT READY — ASK STAFF"
-    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : "READY · ON-DEVICE MODEL";
+    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : S.web ? "READY · WEB DEMO" : "READY · ON-DEVICE MODEL";
   document.querySelectorAll(".nav button").forEach((b) => {
     const mine = b.dataset.go === S.screen || (b.dataset.go === "frame" && ["check", "reading", "result"].includes(S.screen) && !S.viewing);
     if (mine) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
@@ -173,10 +177,11 @@ const RENDER = {
     setScreen(
       eyebrow("SKIN CHECK · TAKES ABOUT A MINUTE"),
       h1("Check a spot on your skin"),
-      lede("Nothing you photograph leaves this device. No name, no account."),
+      lede(S.web ? "Your photo is checked, then dropped. Nothing is stored. No name, no account."
+                 : "Nothing you photograph leaves this device. No name, no account."),
       h("div", "mid", ["Fill the ring with the spot and hold still", "Tap once to take the photo", "Read what to do next, in plain words"]
         .map((t, i) => h("div", "row", h("span", "num", i + 1), h("span", "", t)))),
-      actions("", btn("Start a skin check", startCheck, "btn primary"), btn("Saved spots", () => go("saved"))),
+      actions(S.web ? "one" : "", btn("Start a skin check", startCheck, "btn primary"), S.web ? null : btn("Saved spots", () => go("saved"))),
     );
   },
 
@@ -217,14 +222,14 @@ const RENDER = {
 
   reading() {
     // Honest steps: the photo check already ran (/check); the rest is one request.
-    const steps = [["Found the spot and drew its outline", "done"], ["Comparing with the on-device model", ""], ["Measuring the warning signs", ""]]
+    const steps = [["Found the spot and drew its outline", "done"], [S.web ? "Comparing with the model" : "Comparing with the on-device model", ""], ["Measuring the warning signs", ""]]
       .map(([t, state]) => h("div", "step " + state, h("i"), t));
     setScreen(
       eyebrow("STEP 3 OF 3 · READING"),
       h1("Reading the spot…"),
       h("div", "progress", h("i")),
       h("div", "steps", steps),
-      h("p", "note-small", "Everything happens on this device. No internet needed."),
+      h("p", "note-small", S.web ? "Nothing is stored. The photo is dropped after the reading." : "Everything happens on this device. No internet needed."),
       actions("one", btn("Cancel", retake, "btn")),
     );
   },
@@ -235,7 +240,7 @@ const RENDER = {
     const v = o.verdict, ok = o.status === "ok";
     const lines = (o.sign_lines || []).map((l) => h("div", "sign", h("i", "", ""), h("span", "", l.text)));
     lines.forEach((n, i) => { n.firstChild.style.background = LINE[o.sign_lines[i].tier]; });
-    const saving = S.viewing ? null : saveButton(o);
+    const saving = S.viewing || S.web ? null : saveButton(o);
     // E: a spot saved more than once gets "Compare" - first photo beside this one.
     const hist = currentHistory();
     const compare = hist && hist.count > 1 ? btn(`Compare · ${hist.count} scans`, openCompare, "soft history") : null;
@@ -249,7 +254,7 @@ const RENDER = {
       o.caveat ? h("p", "caveat", o.caveat) : null,
       lines.length ? h("div", "saw", h("div", "label", "WHAT THE SCAN SAW"), lines) : null,
       v.note ? h("div", "notebox", h("div", "label", v.note_label), h("p", "", v.note)) : null,
-      ok ? actions(lines.length ? "even flush" : "even",
+      ok ? actions((saving || S.viewing ? "even" : "one") + (lines.length ? " flush" : ""),
                    S.viewing ? btn("Back to saved", () => go("saved"), "btn compact primary") : btn("Done", finish, "btn compact primary"),
                    S.viewing ? btn("Delete this scan", deleteViewed, "btn compact danger") : saving)
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
@@ -434,13 +439,13 @@ async function usePhoto(blob, onServer, source) {
   const r = await post("/check", f);
   if (S.photoBlob !== blob) return; // another photo replaced this one meanwhile
   if (!r.data) return showOutcome(NO_ANSWER);
-  S.photoOnServer = true;
+  S.photoOnServer = !S.web; // the web server keeps nothing: /scan sends the photo again
   S.check = r.data;
   if (S.screen === "check") go("check");
 }
 function forgetPhoto() {
   if (S.photoUrl) URL.revokeObjectURL(S.photoUrl);
-  if (S.photoBlob || S.outcome) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
+  if (!S.web && (S.photoBlob || S.outcome)) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
   Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [] });
   if (!S.viewing) showPhotoUrl(null);
 }
@@ -451,7 +456,7 @@ function finish() { forgetPhoto(); S.viewing = null; loadSuggestions(); go("home
 async function scan(force) {
   go("reading");
   const f = new FormData();
-  if (S.photoBlob && !S.photoOnServer) { f.append("image", S.photoBlob, "photo.jpg"); S.photoOnServer = true; }
+  if (S.photoBlob && !S.photoOnServer) { f.append("image", S.photoBlob, "photo.jpg"); S.photoOnServer = !S.web; }
   if (force) f.append("force", "1");
   const ctrl = new AbortController();
   S.scanAbort = ctrl;
@@ -692,9 +697,11 @@ async function boot() {
     S.settings = hl.settings || S.settings;
     S.stats = hl.saved || S.stats;
     S.camera = hl.camera ? "pi" : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? "webcam" : "off");
+    S.web = !!hl.web;
   }
+  if (S.web) { app.dataset.web = ""; $("offline").textContent = "WEB DEMO"; }
   loadSuggestions();
-  loadSaved();
+  if (!S.web) loadSaved();
   go("home");
 }
 boot();

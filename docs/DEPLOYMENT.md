@@ -62,25 +62,32 @@ uses the browser's camera (works on `localhost`) or a file picker.
 
 ## Public web demo
 
-The same `dermascan/` core behind an upload box (`cloud/streamlit_app.py`). No camera, no
-storage, no passcode: nothing is kept between uploads. Accuracy is the kiosk's, see
-`docs/METRICS.md`; the page says so.
+The kiosk's own page and server in web mode (`python -m kiosk.server --web`), so the site
+looks like the Pi. Web mode is for many strangers at once: every check and scan carries its
+own photo and the server keeps none of them, there is no Saved tab and no staff Settings
+(those routes answer 404), uploads stop at `WEB_MAX_UPLOAD_MB`, and the page says "nothing
+is stored" instead of "nothing leaves this device". Phones get the camera (the site is
+HTTPS) or a file picker. Accuracy is the kiosk's, see `docs/METRICS.md`.
+
+Try it on the Mac: `python -m kiosk.server --web --port 8080`, then http://127.0.0.1:8080.
 
 ### Railway (primary)
 
-The repo carries everything Railway needs: `Dockerfile` (python 3.12-slim, installs
-`cloud/requirements.txt`, copies `dermascan/ models/ cloud/ .streamlit/`, binds Streamlit to
-`$PORT`), `.dockerignore` (keeps the venv, training, kiosk and tests out of the image) and
-`railway.json` (Dockerfile builder, health check on `/_stcore/health`, restart on failure).
+The repo carries everything Railway needs: `Dockerfile` (python 3.12-slim, installs the
+kiosk's `requirements.txt`, copies `dermascan/ models/ kiosk/`, runs the server in web mode
+on `$PORT`), `.dockerignore` (keeps the venv, training and tests out of the image) and
+`railway.json` (Dockerfile builder, health check on `/health`, restart on failure).
 Nothing to set in Railway's Variables tab and no secrets; the container reads only Railway's own `PORT`.
 
 Once, in the Railway dashboard:
 
 1. **New Project → Deploy from GitHub repo**, pick this repo, branch `main`, root directory `/`.
    Railway reads `railway.json` and builds the Dockerfile; the first build takes a few minutes.
-2. **Settings → Networking → Generate Domain.** Leave the port on `8501` if it asks.
-3. Open `https://<your-domain>/_stcore/health` — it must say `ok` — then the page itself:
-   upload a photo, open **Details for staff**, check the timings.
+2. **Settings → Networking → Generate Domain.** The port must match the one in the Deploy
+   Logs line `http://0.0.0.0:<port>` (Railway sets `PORT`, usually `8080`); a mismatch
+   gives "Application failed to respond" (502) while the deploy shows Active.
+3. Open `https://<your-domain>/health` — it must show `"ok": true, "web": true` — then the
+   page itself: choose a photo, read the result, open **Details for staff**.
 4. Every push to `main` redeploys. Watch the **Deployments** tab after a model swap.
 
 Cost: free during the trial, then the Hobby plan (about USD 5 a month including usage).
@@ -89,13 +96,13 @@ The container idles at a few hundred MB of RAM; one replica is plenty for a demo
 Locally, the same image:
 
 ```bash
-docker build -t epivue-demo . && docker run --rm -p 8501:8501 epivue-demo
-curl -s localhost:8501/_stcore/health     # ok
+docker build -t epivue-demo . && docker run --rm -p 8080:8080 epivue-demo
+curl -s localhost:8080/health     # "ok": true, "web": true
 ```
 
 ### Streamlit Community Cloud (fallback)
 
-Still works: point the app at `cloud/streamlit_app.py` with `cloud/requirements.txt`;
+The older plain upload page, kept as a backup: point the app at `cloud/streamlit_app.py` with `cloud/requirements.txt`;
 `runtime.txt` pins Python 3.12. Keep it until the Railway URL has been checked, then
 remove this subsection and the Streamlit Cloud mentions in `README.md` and `AGENTS.md`.
 
