@@ -1,7 +1,7 @@
 """The kiosk web server. One page, a few routes, one remembered photo, and the event's saved scans.
 
     GET  /               the page (static/index.html)
-    GET  /health         model, camera, staff settings, saved-scan count
+    GET  /health         model, camera, staff settings, saved-scan count (web mode: model and settings only)
     GET  /preview.mjpg   live camera stream, when a Pi camera is present
     POST /capture        take a photo; returns the JPEG and remembers it
     POST /check          the photo check only (no model): light, focus, spot
@@ -51,7 +51,7 @@ from dermascan import config
 from dermascan.answers import BAND_FOR_STATE, get_bank
 from dermascan.classifier import get_classifier
 from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, run_scan
-from dermascan.verdict import EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
+from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
@@ -111,21 +111,36 @@ last_photo = LastPhoto()
 # What staff changed in Settings. Back to config.py's values on every restart.
 settings = {"allow_read_anyway": config.ALLOW_READ_ANYWAY, "show_staff_details": config.SHOW_STAFF_DETAILS}
 
-# Set by `--web`. Routes that keep or change anything shared between visitors.
+# Set by `--web` (use_web_mode). In web mode only these routes answer; anything else,
+# including a route added later, is 404 until it is listed here on purpose.
 app.config["WEB_DEMO"] = False
-WEB_OFF = {"capture", "preview", "saved_list", "saved_add", "saved_one", "saved_photo", "saved_delete",
-           "staff_unlock", "change_settings", "erase", "quit_kiosk"}
+WEB_ROUTES = {"index", "health", "check", "scan", "forget", "questions", "ask", "static"}
+
+
+def use_web_mode() -> None:
+    """Switch this server to the public web demo: nothing kept, no camera, no staff routes."""
+    if config.SAVE_CAPTURES_DIR is not None:
+        raise SystemExit("--web with SAVE_CAPTURES_DIR set would keep strangers' photos. Set it to None in config.py.")
+    app.config["WEB_DEMO"] = True
+    app.config["MAX_CONTENT_LENGTH"] = config.WEB_MAX_UPLOAD_MB * 1024 * 1024
 
 
 @app.before_request
 def _web_demo_guard():
-    if app.config["WEB_DEMO"] and request.endpoint in WEB_OFF:
+    if app.config["WEB_DEMO"] and request.endpoint not in WEB_ROUTES:
         return jsonify({"ok": False}), 404
     return None
 
 
 def _error(kind: str, http_status: int):
-    return jsonify(ScanOutcome("error", error_verdict(kind)).to_dict()), http_status
+    return jsonify(_web_words(ScanOutcome("error", error_verdict(kind)).to_dict())), http_status
+
+
+def _web_words(result: dict) -> dict:
+    """On the web there is no staff member to ask, so an error carries the web demo's advice."""
+    if app.config["WEB_DEMO"] and result.get("status") == "error" and result.get("verdict"):
+        result["verdict"]["advice"] = ERROR_ADVICE_WEB
+    return result
 
 
 @app.errorhandler(413)
@@ -213,7 +228,7 @@ def check():
         return _error("no_photo", 400)
     checked = check_photo(jpeg)
     last_photo.remember_check(jpeg, checked)  # /scan on the same photo skips decode + gate
-    return jsonify(_apply_read_anyway_setting(check_result(checked)))
+    return jsonify(_web_words(_apply_read_anyway_setting(check_result(checked))))
 
 
 @app.post("/scan")
@@ -228,7 +243,7 @@ def scan():
         run_scan(jpeg, force=force and settings["allow_read_anyway"], checked=last_photo.last_check(jpeg)).to_dict()
     )
     last_photo.scanned(jpeg, outcome)
-    return jsonify(outcome)
+    return jsonify(_web_words(outcome))
 
 
 @app.post("/forget")
@@ -255,7 +270,7 @@ def ask():
     # Only lines verdict.py itself writes: the answer carries the project's badge,
     # so the page must not be able to append text of its own to it.
     lines = [x for x in (body.get("sign_lines") or []) if x in SIGN_LINE_TEXTS]
-    return jsonify(get_bank().ask(question, body.get("state"), lines).to_dict())
+    return jsonify(get_bank().ask(question, body.get("state"), lines, web=app.config["WEB_DEMO"]).to_dict())
 
 
 # --- Saved scans ----------------------------------------------------------------
@@ -364,8 +379,7 @@ def main() -> None:
         raise SystemExit("The staff code must be exactly 4 digits (the on-screen keypad sends 4). Fix ~/.dermascan_passcode.")
     get_classifier()  # load the model before the first visitor, not during their scan
     if args.web:
-        app.config["WEB_DEMO"] = True
-        app.config["MAX_CONTENT_LENGTH"] = config.WEB_MAX_UPLOAD_MB * 1024 * 1024
+        use_web_mode()
     else:
         cam.camera.start()
     log.info(

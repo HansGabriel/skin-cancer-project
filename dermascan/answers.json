@@ -206,6 +206,7 @@
         "How do I compare with my last check?",
         "Why is E not measured?"
       ],
+      "web_answer": "Change over time is the most useful sign of all, and one photo cannot show it. This website keeps nothing, so take a photo of the same spot every few weeks yourself and compare them, looking for a change in size, shape or colour. The kiosk at our events can keep a spot's photos side by side for you. A spot that is growing, changing, itching or bleeding should be seen by a health worker even if every other sign looks ordinary.",
       "answer": "Change over time is the most useful sign of all, and one photo cannot show it. If you save each check of the same spot into one group, the kiosk shows your first and latest photo side by side, so you or a health worker can look for a change in size, shape or colour. The kiosk does not decide that on its own. A spot that is growing, changing, itching or bleeding should be seen by a health worker even if every other sign looks ordinary.",
       "reviewed_by": null,
       "reviewed_date": null
@@ -268,6 +269,7 @@
         "Is my data private?"
       ],
       "answer": "Your photo never leaves this device and nothing is sent to the internet. There is no name and no account. If you tap Save, a small copy of the photo is kept on this kiosk only, in a group for that spot, with no name. You can delete it yourself from Saved, and staff erase everything when the event ends. Nothing is sent anywhere.",
+      "web_answer": "On this website your photo is sent to the project's server, checked, and then dropped. It is not kept and cannot be saved here. There is no name and no account. The server's log keeps only the result and how long the check took, never the photo.",
       "reviewed_by": null,
       "reviewed_date": null
     },

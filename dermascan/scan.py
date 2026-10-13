@@ -10,7 +10,8 @@
 check_photo is the first half alone (decode + gate, no model), for the "check the
 photo" screen: it answers in milliseconds, before the visitor commits to a scan.
 The kiosk keeps that CheckedPhoto and hands it to run_scan, so the photo is not
-decoded and gated a second time (the web demo has no check step and runs both).
+decoded and gated a second time (the Streamlit page and the kiosk's web mode keep
+nothing between requests, so their scans run both).
 
 Every stage is timed in milliseconds and logged on one line per scan, so a slow
 device can be diagnosed from the log alone:
@@ -73,15 +74,20 @@ class ScanOutcome:
 _decode_slots = threading.BoundedSemaphore(config.MAX_PARALLEL_DECODES)
 
 
-def decode_jpeg(data: bytes) -> np.ndarray:
+def decode_jpeg(data: bytes, max_px: int) -> np.ndarray:
+    """Open a photo and shrink it to at most `max_px` on its longest edge, as RGB.
+
+    The full-size picture exists only inside a decode slot, so at most
+    MAX_PARALLEL_DECODES of them are in memory at once.
+    """
     with _decode_slots:
         try:
             bgr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
         except cv2.error:  # larger than MAX_DECODE_PIXELS, or a broken file
             bgr = None
-    if bgr is None:
-        raise ValueError("not an image")
-    return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        if bgr is None:
+            raise ValueError("not an image")
+        return cv2.cvtColor(gate.shrink(bgr, max_px), cv2.COLOR_BGR2RGB)
 
 
 @dataclass
@@ -101,7 +107,7 @@ def check_photo(jpeg_bytes: bytes) -> CheckedPhoto:
     ms: dict[str, int] = {}
     t = time.perf_counter()
     try:
-        rgb = gate.shrink(decode_jpeg(jpeg_bytes), config.MAX_WORK_PX)
+        rgb = decode_jpeg(jpeg_bytes, config.MAX_WORK_PX)
     except ValueError:
         log.info("check status=error reason=not_a_picture")
         return CheckedPhoto(None, None, ms)

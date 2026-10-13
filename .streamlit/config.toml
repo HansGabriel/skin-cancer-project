@@ -1,4 +1,4 @@
-# The web demo (cloud/streamlit_app.py) on Railway or Streamlit Cloud. The kiosk does not use Streamlit.
+# The Streamlit fallback page (cloud/streamlit_app.py) on Streamlit Cloud. Railway and the kiosk do not use Streamlit.
 [browser]
 gatherUsageStats = false
 

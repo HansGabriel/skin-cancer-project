@@ -74,7 +74,7 @@ def test_a_forced_result_carries_the_caveat_and_a_normal_one_does_not(classifier
 
 
 def test_two_threads_sharing_one_classifier_get_their_own_answers(classifier) -> None:
-    """Streamlit Cloud serves each visitor on its own thread with one shared model."""
+    """The web demo serves each visitor on its own thread with one shared model."""
     from concurrent.futures import ThreadPoolExecutor
 
     lesion = with_lesion(textured(SKIN_TONES["light"]))
@@ -118,12 +118,12 @@ def test_a_checked_photo_is_not_decoded_or_gated_twice(classifier) -> None:
     assert run_scan(b"not a jpeg", classifier=classifier, checked=bad).status == "error"
 
 
-
 def test_a_picture_too_large_to_open_is_not_a_picture() -> None:
     """A small PNG that claims a huge picture is refused, not decoded into gigabytes.
 
     OpenCV reads its limit once, when cv2 is first imported, so this runs in a fresh
-    process that imports dermascan first, as the kiosk and the web demo do.
+    process that imports dermascan first, as the kiosk and the web demo do. A limit
+    set from outside must not loosen it.
     """
     code = (
         "import dermascan, cv2, numpy as np\n"
@@ -133,7 +133,7 @@ def test_a_picture_too_large_to_open_is_not_a_picture() -> None:
         "phone = cv2.imencode('.jpg', np.zeros((3000, 4000, 3), np.uint8))[1].tobytes()  # 12 MP\n"
         "assert check_photo(phone).rgb is not None\n"
     )
-    env = {k: v for k, v in os.environ.items() if k != "OPENCV_IO_MAX_IMAGE_PIXELS"}
+    env = {**os.environ, "OPENCV_IO_MAX_IMAGE_PIXELS": "999999999"}
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr

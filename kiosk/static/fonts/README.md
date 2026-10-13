@@ -1,14 +1,11 @@
 # Vendored fonts
 
-Served by Streamlit's static file server at `app/static/fonts/` (enabled via
-`enableStaticServing` in `.streamlit/config.toml`) and declared in
-`frontend/theme/css.py`.
+Served by the kiosk's Flask server at `/static/fonts/` and declared in
+`kiosk/static/kiosk.css`.
 
 They are committed rather than downloaded because the kiosk runs fully offline
-(AGENTS.md, Agent default 6: no runtime external downloads or CDN-only assets on
-demo-critical paths). They are served as files rather than inlined as base64
-because Streamlit re-sends the stylesheet on every rerun; as files the browser
-caches them once.
+(AGENTS.md: no downloads, nothing leaves the device). As files the browser caches
+them once.
 
 | File | Family | Weight | Used for |
 |---|---|---|---|

@@ -11,7 +11,8 @@
 
    The web demo (S.web, from /health): the same page on the internet. The server
    keeps nothing, so every request carries its photo, and Saved and Settings are
-   gone. The words that promise "nothing leaves this device" change to what is true there.
+   gone. The words that promise "nothing leaves this device" or send visitors to staff
+   change to what is true there (the WEB table, applied once at boot).
 
    Every verdict, photo reading and answer a visitor reads comes from the server
    (dermascan/verdict.py, dermascan/answers.py). This file holds only the screen
@@ -40,6 +41,19 @@ const NO_ANSWER = {
 };
 
 const NO_REPLY = { text: "The kiosk did not answer. Ask a staff member.", badge: "", reviewed: false };
+
+// The web demo's own words for the page's promises and its two no-answer messages.
+const WEB = {
+  badge: "WEB DEMO",
+  ready: "READY · WEB DEMO",
+  notReady: "THE SCANNER IS NOT READY — TRY AGAIN SOON",
+  homeLede: "Your photo is checked, then dropped. It is not kept. No name, no account.",
+  noCamera: "No camera here, or it is blocked for this page. Pick a close, sharp photo of one spot on skin.",
+  model: "Comparing with the model",
+  readingNote: "Your photo is not kept. It is dropped after the reading.",
+  noAnswerAdvice: "Take another photo, or try again in a minute.",
+  noReply: "The site did not answer. Try again in a minute.",
+};
 
 // Arc and line colours for the A B C D E signs, by tier (null = not measured).
 const ARC = { 0: "#8C9BB0", 1: "#C79A6B", 2: "#E0645A", null: "#7E9BD0" };
@@ -132,8 +146,8 @@ function paintInstrument() {
   }
   $("ap-rest").textContent = S.screen === "frame" && S.camera === "off"
     ? "No camera here — choose a picture" : "Put the spot inside the ring";
-  $("cap-standby").textContent = !S.health || !S.health.ok ? "THE SCANNER IS NOT READY — ASK STAFF"
-    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : S.web ? "READY · WEB DEMO" : "READY · ON-DEVICE MODEL";
+  $("cap-standby").textContent = !S.health || !S.health.ok ? (S.web ? WEB.notReady : "THE SCANNER IS NOT READY — ASK STAFF")
+    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : S.web ? WEB.ready : "READY · ON-DEVICE MODEL";
   document.querySelectorAll(".nav button").forEach((b) => {
     const mine = b.dataset.go === S.screen || (b.dataset.go === "frame" && ["check", "reading", "result"].includes(S.screen) && !S.viewing);
     if (mine) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
@@ -177,8 +191,7 @@ const RENDER = {
     setScreen(
       eyebrow("SKIN CHECK · TAKES ABOUT A MINUTE"),
       h1("Check a spot on your skin"),
-      lede(S.web ? "Your photo is checked, then dropped. Nothing is stored. No name, no account."
-                 : "Nothing you photograph leaves this device. No name, no account."),
+      lede(S.web ? WEB.homeLede : "Nothing you photograph leaves this device. No name, no account."),
       h("div", "mid", ["Fill the ring with the spot and hold still", "Tap once to take the photo", "Read what to do next, in plain words"]
         .map((t, i) => h("div", "row", h("span", "num", i + 1), h("span", "", t)))),
       actions(S.web ? "one" : "", btn("Start a skin check", startCheck, "btn primary"), S.web ? null : btn("Saved spots", () => go("saved"))),
@@ -190,7 +203,7 @@ const RENDER = {
     setScreen(
       eyebrow("STEP 1 OF 3 · FRAME THE SPOT"),
       h1(off ? "Choose a photo of the spot" : "Fill the ring, then hold still"),
-      lede(off ? "This computer has no camera. Pick a close, sharp photo of one spot on skin."
+      lede(off ? (S.web ? WEB.noCamera : "This computer has no camera. Pick a close, sharp photo of one spot on skin.")
                : "Rest the camera on the skin so the spot sits in the middle of the ring."),
       h("div", "mid", ["Spot inside the ring, edges included", "Even light — no shadow, no glare", off ? "One spot, close up and in focus" : "Two seconds still, then tap"]
         .map((t) => h("div", "row", h("span", "tick"), t))),
@@ -222,14 +235,14 @@ const RENDER = {
 
   reading() {
     // Honest steps: the photo check already ran (/check); the rest is one request.
-    const steps = [["Found the spot and drew its outline", "done"], [S.web ? "Comparing with the model" : "Comparing with the on-device model", ""], ["Measuring the warning signs", ""]]
+    const steps = [["Found the spot and drew its outline", "done"], [S.web ? WEB.model : "Comparing with the on-device model", ""], ["Measuring the warning signs", ""]]
       .map(([t, state]) => h("div", "step " + state, h("i"), t));
     setScreen(
       eyebrow("STEP 3 OF 3 · READING"),
       h1("Reading the spot…"),
       h("div", "progress", h("i")),
       h("div", "steps", steps),
-      h("p", "note-small", S.web ? "Nothing is stored. The photo is dropped after the reading." : "Everything happens on this device. No internet needed."),
+      h("p", "note-small", S.web ? WEB.readingNote : "Everything happens on this device. No internet needed."),
       actions("one", btn("Cancel", retake, "btn")),
     );
   },
@@ -241,6 +254,7 @@ const RENDER = {
     const lines = (o.sign_lines || []).map((l) => h("div", "sign", h("i", "", ""), h("span", "", l.text)));
     lines.forEach((n, i) => { n.firstChild.style.background = LINE[o.sign_lines[i].tier]; });
     const saving = S.viewing || S.web ? null : saveButton(o);
+    const second = S.viewing ? btn("Delete this scan", deleteViewed, "btn compact danger") : saving; // none on the web
     // E: a spot saved more than once gets "Compare" - first photo beside this one.
     const hist = currentHistory();
     const compare = hist && hist.count > 1 ? btn(`Compare · ${hist.count} scans`, openCompare, "soft history") : null;
@@ -254,9 +268,9 @@ const RENDER = {
       o.caveat ? h("p", "caveat", o.caveat) : null,
       lines.length ? h("div", "saw", h("div", "label", "WHAT THE SCAN SAW"), lines) : null,
       v.note ? h("div", "notebox", h("div", "label", v.note_label), h("p", "", v.note)) : null,
-      ok ? actions((saving || S.viewing ? "even" : "one") + (lines.length ? " flush" : ""),
+      ok ? actions((second ? "even" : "one") + (lines.length ? " flush" : ""),
                    S.viewing ? btn("Back to saved", () => go("saved"), "btn compact primary") : btn("Done", finish, "btn compact primary"),
-                   S.viewing ? btn("Delete this scan", deleteViewed, "btn compact danger") : saving)
+                   second)
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
       ok ? h("div", "subrow", compare, btn(compare ? "Ask a question" : "Ask a question about this", () => go("questions"), "soft"), staff) : null,
     );
@@ -439,6 +453,7 @@ async function usePhoto(blob, onServer, source) {
   const r = await post("/check", f);
   if (S.photoBlob !== blob) return; // another photo replaced this one meanwhile
   if (!r.data) return showOutcome(NO_ANSWER);
+  if (!("headline" in r.data)) return showOutcome(r.data); // refused before any check (e.g. too large): shown as a result
   S.photoOnServer = !S.web; // the web server keeps nothing: /scan sends the photo again
   S.check = r.data;
   if (S.screen === "check") go("check");
@@ -699,7 +714,12 @@ async function boot() {
     S.camera = hl.camera ? "pi" : (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? "webcam" : "off");
     S.web = !!hl.web;
   }
-  if (S.web) { app.dataset.web = ""; $("offline").textContent = "WEB DEMO"; }
+  if (S.web) {
+    app.dataset.web = "";
+    $("offline").textContent = WEB.badge;
+    NO_ANSWER.verdict.advice = WEB.noAnswerAdvice;
+    NO_REPLY.text = WEB.noReply;
+  }
   loadSuggestions();
   if (!S.web) loadSaved();
   go("home");

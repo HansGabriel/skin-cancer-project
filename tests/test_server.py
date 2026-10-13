@@ -278,8 +278,10 @@ def test_ask_only_appends_sign_lines_the_kiosk_wrote(client) -> None:
 
 @pytest.fixture()
 def web(client, monkeypatch):
-    monkeypatch.setitem(server.app.config, "WEB_DEMO", True)
-    monkeypatch.setitem(server.app.config, "MAX_CONTENT_LENGTH", server.config.WEB_MAX_UPLOAD_MB * 1024 * 1024)
+    # Recorded first so monkeypatch puts the kiosk's values back after the test.
+    monkeypatch.setitem(server.app.config, "WEB_DEMO", False)
+    monkeypatch.setitem(server.app.config, "MAX_CONTENT_LENGTH", None)
+    server.use_web_mode()
     return client
 
 
@@ -305,10 +307,37 @@ def test_web_mode_switches_off_saving_staff_and_camera(web) -> None:
 
 def test_web_mode_refuses_a_huge_upload_in_words(web) -> None:
     big = b"\xff\xd8" + b"0" * (server.config.WEB_MAX_UPLOAD_MB * 1024 * 1024 + 1)
-    r = web.post("/scan", data={"image": (io.BytesIO(big), "big.jpg")}, content_type="multipart/form-data")
-    assert r.status_code == 413 and r.get_json()["verdict"]["body"].startswith("That picture is too large")
+    for route in ["/check", "/scan"]:  # the page always sends a new photo to /check first
+        r = web.post(route, data={"image": (io.BytesIO(big), "big.jpg")}, content_type="multipart/form-data")
+        body = r.get_json()
+        assert r.status_code == 413 and body["verdict"]["body"].startswith("That picture is too large"), route
+        assert "headline" not in body  # the page shows it as a result, not as a photo check
 
 
-def test_web_mode_still_answers_questions(web) -> None:
+def test_web_mode_sends_no_one_to_staff(web) -> None:
+    from dermascan.verdict import ERROR_ADVICE_WEB
+
+    for route in ["/check", "/scan"]:
+        broken = {"image": (io.BytesIO(b"not a picture"), "x.jpg")}
+        body = web.post(route, data=broken, content_type="multipart/form-data").get_json()
+        assert body["status"] == "error" and body["verdict"]["advice"] == ERROR_ADVICE_WEB, route
+    assert web.post("/scan").get_json()["verdict"]["advice"] == ERROR_ADVICE_WEB
+
+
+def test_web_mode_still_answers_questions_in_its_own_words(web, client) -> None:
     assert web.get("/questions?state=").get_json()["suggestions"]
     assert web.post("/ask", json={"question": "Is this cancer?"}).get_json()["text"]
+    privacy = web.post("/ask", json={"question": "Is my photo stored?"}).get_json()["text"]
+    assert "never leaves this device" not in privacy and "not kept" in privacy
+
+
+def test_kiosk_mode_keeps_the_kiosk_privacy_answer(client) -> None:
+    assert "never leaves this device" in client.post("/ask", json={"question": "Is my photo stored?"}).get_json()["text"]
+
+
+def test_web_mode_will_not_start_while_captures_are_kept(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(server.config, "SAVE_CAPTURES_DIR", tmp_path)
+    monkeypatch.setitem(server.app.config, "WEB_DEMO", False)
+    with pytest.raises(SystemExit):
+        server.use_web_mode()
+    assert server.app.config["WEB_DEMO"] is False

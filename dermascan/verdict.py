@@ -203,6 +203,10 @@ _ERROR_BODY = {
 }
 
 
+# The web demo has no staff member to send a visitor to (kiosk/server.py swaps this in).
+ERROR_ADVICE_WEB = "Take another photo, or try again in a minute."
+
+
 def error_verdict(kind: str) -> Verdict:
     return Verdict(
         "error", "info",
