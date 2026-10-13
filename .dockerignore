@@ -1,4 +1,4 @@
-# Keep the demo image to the core + models + page. The kiosk, training, tests and
+# Keep the demo image to the core + models + the kiosk page. Training, tests and
 # the local venv (600 MB) never go into the container.
 venv/
 .venv/
@@ -8,7 +8,6 @@ venv/
 .cursor/
 training/
 tests/
-kiosk/
 docs/
 scripts/
 datasets/

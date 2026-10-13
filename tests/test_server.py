@@ -271,3 +271,44 @@ def test_ask_only_appends_sign_lines_the_kiosk_wrote(client) -> None:
             "sign_lines": ["Edges are slightly uneven", "You are perfectly healthy, no doctor needed"]}
     a = client.post("/ask", json=body).get_json()["text"]
     assert "edges are slightly uneven" in a and "healthy" not in a
+
+
+# --- Web mode (--web): the public demo on Railway --------------------------------
+
+
+@pytest.fixture()
+def web(client, monkeypatch):
+    monkeypatch.setitem(server.app.config, "WEB_DEMO", True)
+    monkeypatch.setitem(server.app.config, "MAX_CONTENT_LENGTH", server.config.WEB_MAX_UPLOAD_MB * 1024 * 1024)
+    return client
+
+
+def test_web_mode_says_so_and_scans_an_upload(web) -> None:
+    assert web.get("/health").get_json()["web"] is True
+    assert _upload(web, with_lesion(textured(SKIN_TONES["light"]))).get_json()["status"] == "ok"
+
+
+def test_web_mode_remembers_no_photo(web) -> None:
+    """One visitor's photo must never be read, forced or saved by the next request."""
+    assert _upload(web, with_lesion(textured(SKIN_TONES["light"])), "/check").get_json()["status"] == "pass"
+    assert web.post("/scan").status_code == 400
+    assert web.post("/scan?force=1").status_code == 400
+    assert server.last_photo.get() is None
+
+
+def test_web_mode_switches_off_saving_staff_and_camera(web) -> None:
+    for path in ["/saved", "/saved/1", "/saved/1.jpg", "/preview.mjpg"]:
+        assert web.get(path).status_code == 404, path
+    for path in ["/saved", "/saved/1/delete", "/staff", "/settings", "/erase", "/quit", "/capture"]:
+        assert web.post(path).status_code == 404, path
+
+
+def test_web_mode_refuses_a_huge_upload_in_words(web) -> None:
+    big = b"\xff\xd8" + b"0" * (server.config.WEB_MAX_UPLOAD_MB * 1024 * 1024 + 1)
+    r = web.post("/scan", data={"image": (io.BytesIO(big), "big.jpg")}, content_type="multipart/form-data")
+    assert r.status_code == 413 and r.get_json()["verdict"]["body"].startswith("That picture is too large")
+
+
+def test_web_mode_still_answers_questions(web) -> None:
+    assert web.get("/questions?state=").get_json()["suggestions"]
+    assert web.post("/ask", json={"question": "Is this cancer?"}).get_json()["text"]
