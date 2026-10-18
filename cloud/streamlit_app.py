@@ -55,7 +55,12 @@ with right:
 
 with st.expander("Details for staff"):
     if out.prediction:
-        st.write({k: f"{p:.0f}%" for k, p in out.prediction.probs_pct.items()})
-        st.write("flagged for a doctor" if out.prediction.flagged else "not flagged")
+        pr = out.prediction
+        st.write({k: f"{p:.0f}%" for k, p in pr.probs_pct.items()})
+        st.write(
+            f"Decision: cancer score {pr.cancer_score:.3f} · limit {pr.threshold:.3f} → "
+            + ("flagged for a doctor" if pr.flagged else "not flagged")
+            + " (the percentages above are for display; the decision uses the score)"
+        )
     st.write({k: round(m, 3) for k, m in out.measured.items()})
     st.write({f"{k} ms": t for k, t in out.stage_ms.items()})

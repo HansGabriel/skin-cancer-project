@@ -11,7 +11,7 @@ Scores every validation image through dermascan.classifier (the exported .tflite
     models/temperature.json  T minimising validation log-loss of softmax(log(p) / T)
 
 Fitting on the device path matters: the quantised TFLite model with TTA does not give
-the Keras model's probabilities, and the threshold is small enough (~0.1) to move.
+the Keras model's probabilities, and a threshold fitted on one path does not hold on the other.
 """
 
 from __future__ import annotations

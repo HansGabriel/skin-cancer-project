@@ -90,3 +90,10 @@ def test_real_model_answers_with_four_views(classifier) -> None:
     assert abs(sum(p.raw_probs) - 1.0) < 1e-3
     assert 0 <= p.confidence_pct <= 100
     assert p.flagged == (p.label != "benign")
+    # The drawer's decision line: the score is the raw cancer mass, the limit is the shipped
+    # threshold, and "flagged" is exactly score >= limit (never the tallest bar).
+    assert p.cancer_score == pytest.approx(p.raw_probs[1] + p.raw_probs[2], abs=1e-6)
+    assert p.threshold == pytest.approx(THRESHOLDS["screen_cancer_threshold"])
+    assert p.flagged == (p.cancer_score >= p.threshold)
+    d = p.to_dict()
+    assert d["cancer_score"] == round(p.cancer_score, 3) and d["threshold"] == round(p.threshold, 3)

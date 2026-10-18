@@ -630,9 +630,12 @@ function openStaff() {
     h("div", "eyebrow-row", eyebrow("CLINICAL READOUT · STAFF ONLY"), btn("Close ×", closeOverlays, "close")),
     signs.length ? h("div", "", signs) : null,
     h("div", "label", "MODEL CONFIDENCE (CALIBRATED)"),
+    h("div", "tech", "bars are for display; the decision is the score below"),
     ...probs,
     h("div", "tech",
-      `${o.model || "model"} · ${S.health && S.health.model && S.health.model.tta ? "TTA on" : "TTA off"} · ${p.flagged ? "flagged for a doctor" : "not flagged"} · top ${p.confidence_pct.toFixed(0)}%${o.forced ? " · photo check overridden" : ""}`,
+      // Scans saved before October 2026 have no score; show a dash rather than crash the drawer.
+      `DECISION: cancer score ${p.cancer_score == null ? "—" : p.cancer_score.toFixed(3)} · limit ${p.threshold == null ? "—" : p.threshold.toFixed(3)} → ${p.flagged ? "flagged for a doctor" : "not flagged"}`,
+      h("br"), `${o.model || "model"} · ${S.health && S.health.model && S.health.model.tta ? "TTA on" : "TTA off"} · top ${p.confidence_pct.toFixed(0)}%${o.forced ? " · photo check overridden" : ""}`,
       h("br"), `scan ${o.total_ms} ms (${stages})`,
       gate ? [h("br"), `gate: ${gate}`] : null),
   );

@@ -1,8 +1,9 @@
 {
-  "screen_cancer_threshold": 0.10999999999999999,
+  "screen_cancer_threshold": 0.47,
+  "val_sensitivity": 0.9000797236247675,
+  "val_specificity": 0.610940552609545,
   "target_sensitivity": 0.9,
-  "val_sensitivity": 0.9010238907849829,
-  "val_specificity": 0.7725392886683209,
+  "fit_on": "val, exported tflite, 4-view TTA (training/calibrate.py)",
   "labels": [
     "benign",
     "pre_cancerous",

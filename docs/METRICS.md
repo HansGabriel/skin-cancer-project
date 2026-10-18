@@ -2,13 +2,107 @@
 
 ## The deployed model
 
-`models/skin_classifier.tflite` is the **first model (June 2026, commit `fec7993`)**,
-EfficientNetB0, 3 classes, float32 in/out with int8 weights and activations inside
-(the export quantised it; the kiosk never sees that), decision at `p(pre)+p(mal) >= 0.11`
-(`models/thresholds.json`), temperature 1.54 for the displayed numbers. It was
-**restored on 3 October 2026** after the 1 October retrain read real lesions worse.
+`models/skin_classifier.tflite` is the **October 2026 multi-source model** (branch
+`feat/external-bench-retrain`, 18 October 2026): EfficientNetB0 at 224 px, 3 classes,
+float32 in/out with int8 inside, trained on 48,481 photos from HAM10000, BCN20000,
+MSK-1..5, MILK10k and PAD-UFES-20 (`training/dataset_index.csv`, lesion-grouped split
+70/15/15, `training/splits.csv`). Decision at `p(pre)+p(mal) >= 0.47` and T = 1.84, both
+fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 90 %
+validation sensitivity. It replaced the June 2026 model (`fec7993`, threshold 0.11), which
+is kept at `git show fec7993:models/skin_classifier.tflite` for comparisons.
 
-**Why it was restored: a head-to-head on photos neither model ever saw.** 80 HAM10000
+**Why: the June model could not see cancer in close-up photos.** On the frozen external
+benchmark (next section) it flagged 0 of 20 MILK10k melanomas photographed as ordinary
+close-ups — the kind of photo the Pi camera takes — and half of Barcelona's dermoscopy.
+
+### October model vs June model, external benchmark (602 photos, kiosk path)
+
+| | June (threshold 0.11) | **October (threshold 0.47)** |
+|---|---|---|
+| ROC-AUC, cancer vs benign | 0.712 | **0.754** |
+| Cancer sensitivity (pre + mal flagged) | 0.60 (90/149) | **0.81 (121/149)** |
+| Malignant recall | 0.76 | 0.78 |
+| Benign specificity | **0.71** | 0.59 |
+| Students' 96 malignant photos flagged | 72 | 75 |
+| MILK10k clinical close-ups: cancers flagged | 7/31 (melanoma 0/20) | **28/31 (melanoma 20/20)** |
+| BCN20000 dermoscopy: cancers flagged | 18/38 | **33/38** |
+| UDA (2016) dermoscopy: cancers flagged | 46/55 | 40/55 |
+
+Per-source AUC: BCN 0.65 → 0.78, MILK close-ups 0.58 → 0.77, UDA 0.81 → 0.78,
+MSK 0.94 → 0.88 (all printed by `external_eval.py`, which also prints the threshold sweep). So: a clearly better model where the June model was blind, slightly
+worse on the two sources closest to HAM10000, and a threshold that trades benign
+specificity for sensitivity. A threshold of 0.60 would match June's specificity (0.71)
+with sensitivity 0.70 on the benchmark, but drops HAM10000-type validation sensitivity to
+0.62 — rejected. The 0.47 operating point is the 90 % validation-sensitivity rule the
+figures promise; it sends roughly 4 benign spots in 10 to "better to get checked" on
+these sources, against 3 in 10 for June. **Rule 5 in AGENTS.md ("at least as specific")
+was not met; the mentor accepted the trade on 18 October 2026 because the device's job
+is to catch cancers in camera photos.**
+
+### October model, its own test split (n = 7,288, lesion-grouped, 9 sources)
+
+| | value |
+|---|---|
+| Cancer sensitivity (at threshold 0.47) | 0.907 |
+| Benign specificity (at threshold 0.47) | 0.633 |
+| 3-class accuracy (at threshold) | 0.684 |
+| Argmax accuracy | 0.700 |
+| benign / pre_cancerous / malignant recall (argmax) | 0.690 / 0.569 / 0.731 |
+| Screening ROC-AUC (Keras, single view) | 0.894 |
+
+Validation, per source, at 0.47: HAM10000 sens 0.80 / spec 0.80; BCN20000 0.89 / 0.48;
+MILK10k 0.95 / 0.44; PAD-UFES-20 0.99 / 0.58. The test split is far harder than HAM10000
+alone (BCN20000 "in the wild" includes nails, mucosa and lesions larger than the scope),
+so do not compare these to the June model's HAM-only figures.
+
+Training: Oct recipe (balanced resampling, focal loss, camera-style augmentation),
+phase 1 frozen 20 epochs, phase 2 full fine-tune with early stopping on validation
+macro-F1 (best 0.705; validation malignant recall 0.79 at argmax). ~1 h 40 min on the
+RTX 4060. The 512 px cache (`datasets/cache512/`) makes the epochs fast.
+
+## The students' external test (October 2026) and how to read the drawer
+
+The students scored 100 photos from the ISIC archive through the web demo and read the
+staff drawer's three bars: 43/100 "correct" by the tallest bar. Those bars are the
+**temperature-scaled** percentages (T = 1.54), shown for display. The device never decides
+by them: it flags a spot when the **raw** cancer score `p(pre)+p(mal)` is at or above the
+threshold (0.11 for the June model; on the drawer's scale that line sits near 20 %).
+Re-scored under the device's own rule, the same table gives **74/100 flagged**. Since
+18 October the drawer prints that decision line itself (`cancer score · limit → flagged`).
+
+The archive's diagnosis, not the students' list, is the ground truth: two of the 100 were
+not malignant (`ISIC_0056469` actinic keratosis — flagged; `ISIC_0000027` nevus — the
+model's "benign" was right), and one id was a duplicate, so 99 photos remain. None are in
+HAM10000. They come from Barcelona (BCN20000), the 2016 UDA set, MILK study close-ups,
+Vienna, MSKCC and Buenos Aires; every miss is from a source the June model never saw.
+
+Those 99, plus benign and pre-cancerous controls from the same kinds of source, are now
+**`training/external_bench.csv`** (602 photos, `training/build_external_bench.py`), scored
+by **`training/external_eval.py`** through the kiosk path. Every lesion in it is excluded
+from training (`training/prepare_datasets.py`), so it stays external for every model.
+**June model on the external benchmark (18 October 2026, kiosk path, threshold 0.11)** — the
+October model's per-source numbers are in the table at the top:
+
+| source | n | not scored | cancers | flagged | sensitivity | malignant recall | benign | specificity |
+|---|---|---|---|---|---|---|---|---|
+| BCN20000 · dermoscopy | 165 | 28 | 38 | 18 | 0.47 | 0.50 | 99 | 0.74 |
+| MSK / ISIC 2017-18 · dermoscopy | 111 | 3 | 11 | 11 | 1.00 | 1.00 | 97 | 0.67 |
+| UDA (ISIC 2016) · dermoscopy | 161 | 7 | 55 | 46 | 0.84 | 0.84 | 99 | 0.62 |
+| MILK10k · clinical close-up | 151 | 2 | 31 | 7 | 0.23 | **0.00** | 118 | 0.81 |
+| Vienna, HIBA, MSKCC, TBP tiles (13 photos) | 13 | 0 | 13 | 8 | 0.62 | 0.62 | 0 | – |
+| **students' list (99)** | 99 | 2 | 96 | 72 | **0.75** | 0.76 | 1 | 1.00 |
+| **all** | 602 | 40 | 149 | 90 | **0.60** | 0.76 | 413 | **0.71** |
+
+Read it as: fine on the kinds of dermoscopy it was trained on, half-blind on Barcelona's,
+and **blind to melanoma in ordinary close-up photos** (0 of 20 MILK melanomas flagged; the
+7 flags there are actinic keratoses) — the kind of photo the Pi camera takes. "Not scored"
+are hard refusals by the photo check (`no_skin`, mostly dark-vignetted dermoscopy); they
+are listed by the script, not counted either way.
+
+
+## The June model, for the record
+
+**Why it was restored in October (over the 1 Oct retrain): a head-to-head on photos neither model ever saw.** 80 HAM10000
 images whose lesions are wholly inside BOTH models' test splits (the old image-level one
 and the new lesion-grouped one), fetched from the ISIC archive, run through the kiosk's
 own path (JPEG decode, 1024 px, 4-view TTA, each model with its own threshold):
@@ -47,41 +141,45 @@ mitigation, not a measurement.
 To refresh this table after a retrain: run `python training/calibrate.py`, then
 `python training/eval.py`, and paste what it prints. Do not mix numbers from two models.
 
-## Open items on the model (final check, 11 October 2026)
+## Figure facts (keep the design figures in step with the model)
 
-Found while auditing the inference path before the demo. None changes what the kiosk
-does today; each is a decision for after 13 October, with the measurement that settles it.
+The paper/slide figures (`EPIVUE Diagrams` in Claude Design, figure B "Screening flow")
+print these values. Whoever edits the figures copies them from here, not from memory.
 
-1. **The threshold was not fitted the way AGENTS.md says.** 0.11 and T = 1.54 come from the
-   June model's Keras validation probabilities, single view. The rule is "fit on the exported
-   TFLite with 4-view TTA" (`training/calibrate.py`). To settle it: run `calibrate.py` against
-   the June `.tflite` on a lesion-grouped validation split, then score **both** thresholds on
-   the 80 never-seen photos above. Keep 0.11 unless the refit flags as many melanomas (17/17)
-   with better specificity. Do not change `thresholds.json` before the demo.
-2. **The deployed model is int8 inside too** (348 int8 tensors, QUANTIZE/DEQUANTIZE at the
-   edges, 5,083,480 bytes, identical to the retrain's size). The paragraph above used to
-   blame the retrain's loss on the int8 export; the June model contradicts that. A float16
-   export of the 1 Oct Keras model, scored with `eval.py`, is the one-hour experiment.
-3. **Train/serve preprocessing differ.** Training squashed each 600×450 photo to 224×224
-   (bilinear, no antialias). The kiosk centre-crops a square from the camera and resizes with
-   INTER_AREA, so lesions arrive at a different aspect ratio and sharpness than in training.
-   For the next retrain: train on centre-cropped squares with area interpolation, or add the
-   kiosk's exact resize to the augmentation. Not a change to make on the kiosk side.
-4. **The notebook in HEAD is the 1 Oct recipe,** not the one that made the deployed model.
-   The June recipe is at commit `fec7993`. Re-running `calibrate.py` from HEAD would overwrite
-   the June threshold and temperature; do it on a copy.
-5. **The retrain on the WSL PC has not been evaluated.** It is not in the repo on any branch.
-   Procedure, in this order, none of it on the kiosk: copy its four files (`.tflite`,
-   `labels.txt`, `thresholds.json`, `temperature.json`) into a scratch folder; point
-   `calibrate.py` at it to fit the threshold on the exported TFLite with TTA; `eval.py` on the
-   lesion-grouped test split; then the 80-photo head-to-head through the kiosk path exactly as
-   above. Ship it only if it flags at least as many melanomas as the June model, and move all
-   four files together (AGENTS.md rule 5).
-6. **4-view TTA is four sequential invokes.** The views could be batched as one
-   `[4,224,224,3]` tensor, but the squeeze-excitation blocks carry dynamic shapes that already
-   split XNNPACK into 18 partitions, so the gain is not predictable. Measure with
-   `scripts/bench_scan.py` on the Pi before and after if anyone tries it. The "~0.5 s extra on
-   the Pi" in `config.py` has never been measured; the Pi's real numbers belong below.
+| fact | value today (October model) | where it comes from |
+|---|---|---|
+| backbone, input size | EfficientNetB0, 224 × 224 | notebook Cell 6 `BACKBONE` / `IMG_SIZE` |
+| views averaged | 4 (as-is, mirrored, upside down, rotated 180°) | `dermascan/classifier.py` |
+| decision | flag if `p(pre)+p(mal) >= 0.47` | `models/thresholds.json` |
+| threshold fitted for | 90 % cancer sensitivity on validation | `training/calibrate.py` |
+| low-confidence wording below | 45 % | `dermascan/config.py` |
+| power supply | official Raspberry Pi USB-C, **5.1 V** 3 A (figures currently say 5 V) | supply label |
+
+Pending edits for the design owner (18 October 2026): "5 V · 3 A" → "5.1 V · 3 A" on figures
+A, C, D and the paper's Figure 3; figure B's decision box must now say **0.47** (it says 0.11) and takes the threshold and
+backbone from this table whenever `models/` changes.
+
+## Open items on the model
+
+Items 1–4 from the 11 October audit are closed by the 18 October retrain: the threshold
+and temperature are now fitted by `calibrate.py` on the exported TFLite with 4-view TTA
+(1), the int8 export is the recipe for both models and was not the cause of the 1 Oct
+loss (2, measured by the external benchmark: the October model, same export, beats June),
+train and serve both squash to 224 px (3), and the notebook in HEAD is the recipe that
+produced `models/` (4). The further WSL retrain mentioned in item 5 was never evaluated
+and is superseded.
+
+Still open:
+
+1. **TTA is four sequential invokes** (`dermascan/classifier.py`). Batching the four views
+   in one `invoke()` would cut model time on the Pi; measure with `scripts/bench_scan.py`.
+2. **Benign specificity is 0.59 on the external benchmark** at the 90 % sensitivity
+   operating point. More benign close-up photos in training (MILK10k and PAD-UFES-20 are
+   cancer-heavy) is the likely fix; the threshold sweep printed by `external_eval.py`
+   shows what any other operating point would cost.
+3. **The photo check refuses dark-vignetted dermoscopy** (40 of 602 benchmark photos,
+   `no_skin`). Irrelevant for the Pi camera, but it shrinks the dermoscopy rows of the
+   benchmark; the table's `n` counts them, the rates do not.
 
 ## Speed on the device
 

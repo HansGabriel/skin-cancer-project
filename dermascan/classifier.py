@@ -48,14 +48,20 @@ class Prediction:
     raw_probs: tuple[float, ...]  # what the model actually said, 0-1
     inference_ms: int
     flagged: bool  # True when the screening rule flagged the spot
+    cancer_score: float = 0.0  # raw p(pre_cancerous) + p(malignant): the number the rule looks at
+    threshold: float | None = None  # the rule's limit (models/thresholds.json); None = no file, argmax rule
 
     def to_dict(self) -> dict:
+        # The staff drawer shows the calibrated bars AND the score/limit pair, so nobody
+        # reads the tallest bar as the decision again (the bars are display-only).
         return {
             "label": self.label,
             "confidence_pct": round(self.confidence_pct, 1),
             "probs_pct": {k: round(v, 1) for k, v in self.probs_pct.items()},
             "inference_ms": self.inference_ms,
             "flagged": self.flagged,
+            "cancer_score": round(self.cancer_score, 3),
+            "threshold": None if self.threshold is None else round(self.threshold, 3),
         }
 
 
@@ -183,6 +189,7 @@ class Classifier:
         self._lock = threading.Lock()
         self._in = self._interpreter.get_input_details()[0]
         self._out = self._interpreter.get_output_details()[0]
+        self._flagged_idx = [self.labels.index(l) for l in FLAGGED_LABELS if l in self.labels]
         if len(self.labels) != int(self._out["shape"][-1]):
             raise ValueError(
                 f"{labels_path} has {len(self.labels)} labels but the model outputs {self._out['shape'][-1]}"
@@ -206,6 +213,7 @@ class Classifier:
         idx = decide_index(raw, self.thresholds)
         calibrated = apply_temperature(raw, self.temperature)
         label = self.labels[idx]
+        thr = self.thresholds.get("screen_cancer_threshold")
         return Prediction(
             label=label,
             confidence_pct=float(calibrated[idx]) * 100.0,
@@ -213,6 +221,8 @@ class Classifier:
             raw_probs=tuple(float(p) for p in raw),
             inference_ms=inference_ms,
             flagged=label in FLAGGED_LABELS,
+            cancer_score=float(raw[self._flagged_idx].sum()),
+            threshold=None if thr is None else float(thr),
         )
 
 
