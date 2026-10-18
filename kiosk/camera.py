@@ -11,6 +11,11 @@ Two things come out of it:
     preview_frames()   a generator of small JPEGs for the live view
     capture_jpeg()     one full-size centre-cropped still for the scan
 
+Only the newest live view streams. Opening a new one, or taking a still, ends the
+old stream from the server's side. (A browser can leave a stream open after the page
+moves on; a handful of those use up every connection it allows to one site, and then
+every tap waits forever. That is the freeze seen on the Pi on 2026-10-19.)
+
 The still is NOT enhanced. No CLAHE, no sharpening: the model was trained on
 plain photographs, and anything done to the pixels here is something the
 model never saw.
@@ -48,6 +53,7 @@ class Camera:
     def __init__(self) -> None:
         self._cam = None
         self._lock = threading.Lock()  # one capture at a time: preview frames and stills share the sensor
+        self._live_view = 0  # the number of the one live view allowed to stream
 
     def start(self) -> None:
         if self._cam is not None or not AVAILABLE:
@@ -83,10 +89,17 @@ class Camera:
         with self._lock:
             return None if self._cam is None else self._cam.capture_array(stream)
 
+    def _retire_live_views(self) -> int:
+        """Stop every live view that is streaming; returns the number the next one runs under."""
+        with self._lock:
+            self._live_view += 1
+            return self._live_view
+
     def preview_frames(self) -> Iterator[bytes]:
-        """JPEG after JPEG, for as long as the browser keeps the connection open."""
+        """JPEG after JPEG, until the browser leaves, a newer live view opens, or a still is taken."""
         period = 1.0 / config.CAMERA_PREVIEW_FPS
-        while self.running:
+        me = self._retire_live_views()  # older views stop; this one runs under the new number
+        while self.running and self._live_view == me:
             t = time.perf_counter()
             try:
                 yuv = self._grab("lores")  # YUV420 comes back as one (h*3/2, w) plane: I420
@@ -107,6 +120,7 @@ class Camera:
         frame = self._grab("main")  # BGR, see module docstring
         if frame is None:
             raise RuntimeError("camera is not running")
+        self._retire_live_views()  # the page shows this photo now; end the live view behind it
         square = _centre_square(frame, config.MAX_WORK_PX)
         ok, buf = cv2.imencode(".jpg", square, [cv2.IMWRITE_JPEG_QUALITY, config.CAPTURE_JPEG_QUALITY])
         if not ok:
