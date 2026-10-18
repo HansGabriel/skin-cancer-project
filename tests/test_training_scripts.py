@@ -95,3 +95,48 @@ def test_missing_split_file_is_a_sentence_not_a_traceback(tmp_path: Path) -> Non
     out = subprocess.run([sys.executable, "training/eval.py", "--csv", str(tmp_path / "nope.csv")], cwd=ROOT, capture_output=True, text=True)
     assert out.returncode != 0
     assert "Run the training notebook first" in out.stderr and "Traceback" not in out.stderr
+
+
+@pytest.fixture()
+def fake_bench(tmp_path: Path) -> tuple[Path, Path]:
+    """Six photos as build_external_bench.py would list them: lesions and one bare-skin frame."""
+    images = tmp_path / "bench"
+    images.mkdir()
+    rows = []
+    for i in range(6):
+        img = textured(SKIN_TONES["medium"], size=300, seed=i) if i == 5 else with_lesion(textured(SKIN_TONES["light"], size=300, seed=i))
+        (images / f"ISIC_{i:07d}.jpg").write_bytes(jpeg(img))
+        label = ["benign", "malignant", "pre_cancerous"][i % 3]
+        rows.append({"isic_id": f"ISIC_{i:07d}", "source": "fake A" if i < 3 else "fake B", "group": "students" if i < 2 else "control", "label_3": label, "label_idx": ["benign", "pre_cancerous", "malignant"].index(label)})
+    csv_path = tmp_path / "bench.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    return csv_path, images
+
+
+def test_external_eval_scores_through_the_kiosk_path(fake_bench: tuple[Path, Path], tmp_path: Path) -> None:
+    csv_path, images = fake_bench
+    out = subprocess.run(
+        [sys.executable, "training/external_eval.py", "--csv", str(csv_path), "--images-dir", str(images), "--json", str(tmp_path / "r.json")],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "Scoring 6 photos" in out.stdout and "| External sensitivity (pre+mal, at threshold) |" in out.stdout
+    res = json.loads((tmp_path / "r.json").read_text())
+    assert len(res["results"]) == 6 and res["summary"]["ALL"]["n"] == 6
+    # Every photo is either scored with a flag decision or listed as not scored - never lost,
+    # and "flagged" is the kiosk's rule on the raw cancer score, not the tallest bar.
+    thr = json.loads((ROOT / "models" / "thresholds.json").read_text())["screen_cancer_threshold"]
+    for r in res["results"].values():
+        assert (r["status"] == "ok") == (r["flagged"] is not None)
+        if r["status"] == "ok":
+            assert r["flagged"] == (r["cancer_score"] >= thr - 1e-4)
+    assert res["summary"]["fake A"]["n"] == 3 and res["summary"]["students' list"]["n"] == 2  # external_eval.STUDENTS
+
+
+def test_external_eval_missing_images_is_a_sentence(tmp_path: Path, fake_bench: tuple[Path, Path]) -> None:
+    csv_path, _ = fake_bench
+    out = subprocess.run([sys.executable, "training/external_eval.py", "--csv", str(csv_path), "--images-dir", str(tmp_path / "empty")], cwd=ROOT, capture_output=True, text=True)
+    assert out.returncode != 0 and "images missing" in out.stderr and "Traceback" not in out.stderr

@@ -24,10 +24,10 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 
 | Area | Choice | Why |
 |------|--------|-----|
-| Dataset | HAM10000, 7 dx → 3 labels (`benign`, `pre_cancerous`, `malignant`) | standard, fits the 4060 |
+| Dataset | HAM10000 **+ ISIC archive collections BCN20000, MSK-1..5, MILK10k, PAD-UFES-20** (`training/prepare_datasets.py`, labels from the archive's `diagnosis_*` tree → `benign`, `pre_cancerous`, `malignant`; UDA-1/2 are test-only) — *mentor's call 2026-10-18 after the June model missed a quarter of the cancers from other hospitals* | HAM10000 alone is one hospital's dermoscopy; the Pi sees close-up photos |
 | Split | **by `lesion_id`** (GroupShuffleSplit), never by image | image-level split leaked 40% of test lesions |
-| Model | EfficientNetB0, 3-class softmax head, TFLite, float32 in/out, raw `[0,255]` input. **Deployed: the June 2026 model (`fec7993`), restored 2026-10-03** — the 1 Oct retrain (`e1579a0`) missed 3/17 melanomas the June model caught on photos neither had seen (`docs/METRICS.md`) | fast on the Pi CPU; EfficientNet rescales internally — never add `/255` |
-| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.11 for the June model). A new model's threshold is fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity | the guarantee describes the device, not the Keras model |
+| Model | EfficientNetB0, 3-class softmax head, TFLite, float32 in/out, raw `[0,255]` input. **Deployed: the October 2026 multi-source model** (threshold 0.47) — it flags 121/149 external cancers vs 90/149 for the June model (`fec7993`, restored 2026-10-03, now history in `docs/METRICS.md`); the trade is lower benign specificity (0.59 vs 0.71), accepted by the mentor 2026-10-18 | fast on the Pi CPU; EfficientNet rescales internally — never add `/255` |
+| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.47 for the October model; 0.11 was the June model's). The threshold is fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity | the guarantee describes the device, not the Keras model |
 | Confidence | temperature-scaled for display only; decision on raw probs | honest numbers, same labels |
 | Kiosk UI | **Flask + one static HTML page** (`kiosk/`) — *changed from Streamlit on 2026-10-01 with the mentor's approval* | Streamlit re-ran everything per tap and took 40 s to boot on the Pi |
 | Kiosk look | the **EPIVUE Interface** design from Claude Design (project `36f54779…`, file `EPIVUE Interface.dc.html`): navy instrument band + white page, sizes in `clamp(…cqh…)`, stacked under 720 px | restored 2026-10-01; match the design file, not memory |
@@ -66,7 +66,8 @@ dermascan/      config.py scan.py gate.py classifier.py verdict.py signs.py answ
 kiosk/          server.py camera.py saved.py static/{index.html,kiosk.css,kiosk.js,fonts/}
 cloud/          streamlit_app.py requirements.txt
 models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
-training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py requirements.txt splits.csv (*.keras: gitignored)
+training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py isic_fetch.py prepare_datasets.py
+                build_external_bench.py external_eval.py external_bench.csv dataset_index.csv splits.csv requirements.txt (*.keras: gitignored)
 scripts/        launch_kiosk.sh run_dev.sh bench_scan.py
 tests/          pytest, < 1 min, no dataset
 docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
@@ -91,9 +92,12 @@ Pi install path: `~/Documents/skin-cancer-project` (`EPIVUE.desktop` assumes it)
 4. **Measure speed from the log line** (`scan status=... ms decode= gate= model= signs=`),
    target < 5 s on the Pi.
 5. **Reproducibility.** Seeds, lesion-grouped split, versioned deps, `training/eval.py`
-   numbers only in `docs/METRICS.md`. Before replacing the deployed model, compare old vs
-   new on photos neither model trained on, through the kiosk path; ship the new one only
-   if it flags at least as many cancers.
+   numbers only in `docs/METRICS.md`. Before replacing the deployed model, run
+   `training/external_eval.py` (the frozen `training/external_bench.csv`, through the kiosk
+   path) for old and new; ship the new one only if it flags at least as many cancers **and**
+   is at least as specific on benign spots — or the mentor accepts the trade in writing in
+   `docs/METRICS.md` (done once, 2026-10-18, for the October model). Never judge a model by the drawer's bars: the
+   decision is `cancer score >= limit`, and the drawer now prints that line.
 6. **Secrets.** None needed; keep it that way.
 7. **Pi work:** give copy-paste commands rather than running installs unprompted; confirm
    the branch before pulling on the Pi.

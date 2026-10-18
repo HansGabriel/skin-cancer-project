@@ -1,6 +1,6 @@
 {
-  "T": 1.5369100196927983,
-  "fit_on": "val",
-  "val_nll_before": 0.3163265287876129,
-  "val_nll_after": 0.2953679859638214
+  "T": 1.84,
+  "val_nll_before": 0.7895387186074377,
+  "val_nll_after": 0.7323125650104524,
+  "fit_on": "val, exported tflite, 4-view TTA (training/calibrate.py)"
 }
