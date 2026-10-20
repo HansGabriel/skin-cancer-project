@@ -9,9 +9,10 @@ What it does, in order:
 3. Decide the label with the screening rule in models/thresholds.json:
    if p(pre_cancerous) + p(malignant) >= threshold, the spot is FLAGGED and the
    label is whichever of those two is larger; otherwise it is "benign". The
-   threshold (about 0.1) is chosen by training/calibrate.py so that 90% of
-   cancers in the validation set are flagged. It is deliberately low: missing
-   a cancer costs more than a false alarm.
+   threshold (0.47 for the October 2026 model, read from models/thresholds.json)
+   is chosen by training/calibrate.py so that 90% of cancers in the validation
+   set are flagged. It is set for sensitivity: missing a cancer costs more than
+   a false alarm.
 4. Report confidence from TEMPERATURE-SCALED probabilities. The raw softmax is
    over-confident; dividing its log by T (models/temperature.json, fitted on
    validation data) makes the displayed number honest. The decision in step 3

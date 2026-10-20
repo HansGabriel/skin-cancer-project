@@ -12,8 +12,11 @@ validation sensitivity. It replaced the June 2026 model (`fec7993`, threshold 0.
 is kept at `git show fec7993:models/skin_classifier.tflite` for comparisons.
 
 **Why: the June model could not see cancer in close-up photos.** On the frozen external
-benchmark (next section) it flagged 0 of 20 MILK10k melanomas photographed as ordinary
+benchmark (next section) it flagged 7 of 31 MILK10k cancers photographed as ordinary
 close-ups — the kind of photo the Pi camera takes — and half of Barcelona's dermoscopy.
+(Earlier versions of this file said "0 of 20 MILK melanomas"; `training/external_bench.csv`
+holds **one** MILK melanoma. The 31 MILK cancers are 30 actinic keratoses and that one
+melanoma, which June missed and October flags.)
 
 ### October model vs June model, external benchmark (602 photos, kiosk path)
 
@@ -24,7 +27,8 @@ close-ups — the kind of photo the Pi camera takes — and half of Barcelona's 
 | Malignant recall | 0.76 | 0.78 |
 | Benign specificity | **0.71** | 0.59 |
 | Students' 96 malignant photos flagged | 72 | 75 |
-| MILK10k clinical close-ups: cancers flagged | 7/31 (melanoma 0/20) | **28/31 (melanoma 20/20)** |
+| MILK10k clinical close-ups: cancers flagged | 7/31 (the one melanoma missed) | **28/31 (the one melanoma flagged)** |
+| MILK10k clinical close-ups: benign specificity (118 scored) | 0.81 | **0.37** |
 | BCN20000 dermoscopy: cancers flagged | 18/38 | **33/38** |
 | UDA (2016) dermoscopy: cancers flagged | 46/55 | 40/55 |
 
@@ -94,8 +98,8 @@ October model's per-source numbers are in the table at the top:
 | **all** | 602 | 40 | 149 | 90 | **0.60** | 0.76 | 413 | **0.71** |
 
 Read it as: fine on the kinds of dermoscopy it was trained on, half-blind on Barcelona's,
-and **blind to melanoma in ordinary close-up photos** (0 of 20 MILK melanomas flagged; the
-7 flags there are actinic keratoses) — the kind of photo the Pi camera takes. "Not scored"
+and **nearly blind to cancer in ordinary close-up photos** (7 of 31 MILK cancers flagged,
+its one melanoma missed) — the kind of photo the Pi camera takes. "Not scored"
 are hard refusals by the photo check (`no_skin`, mostly dark-vignetted dermoscopy); they
 are listed by the script, not counted either way.
 
@@ -133,10 +137,26 @@ at 0.11 and specificity 0.736 on that test set, 0.903 / 0.855 on its leakage-fre
 Quote the head-to-head above, not those. Its threshold was fitted on validation
 probabilities from training, not on the exported model with TTA as `calibrate.py` does.
 
-**What is not measured at all.** Every number above is on dermoscopy images. The kiosk
-is a bare camera module, and the students demo by photographing images on a phone
-screen. No accuracy figure exists for that input. The camera-style augmentation is a
-mitigation, not a measurement.
+**What is measured on camera-style photos.** The benchmark's 151 MILK10k clinical
+close-ups are the closest thing to the Pi camera. There the October model flags 28 of 31
+cancers but its benign specificity is **0.37** (118 scored): six harmless close-ups in ten
+are sent to "get checked", against two to three in ten on the dermoscopy sources (0.72-0.78).
+The cause is in the training recipe: close-ups (MILK10k, PAD-UFES-20) are 75 % cancer in
+the train split, and the equal-per-class sampler makes 87 % of the close-ups the model
+saw during training cancer, so a well-lit camera photo reads as "cancer" by default.
+The students demo by photographing images on a phone screen; no accuracy figure exists
+for that input. The camera-style augmentation is a mitigation, not a measurement.
+
+**Known limitation: nothing in the model says "this is not a lesion".** There is no
+non-lesion photo anywhere in training, validation or the benchmark, and no "not a lesion"
+label; the probabilities always sum to 1 across benign / pre-cancerous / malignant. The
+photo gate is the only defence. On 20 October 2026 the web demo (same code and model as
+the Pi) passed a webcam photo of a face (one nostril as the "spot", 99 % malignant) and
+of a palm (its shadowed half, cancer score 0.75) and flagged both. The gate now also
+refuses a spot that is not in the ring or shares the frame with several dark marks (see
+"The photo gate" below); the model-side fix is a retrain with image-type-stratified
+sampling and a `no_lesion` class from the team's own photos of normal skin (parked;
+open item 4).
 
 To refresh this table after a retrain: run `python training/calibrate.py`, then
 `python training/eval.py`, and paste what it prints. Do not mix numbers from two models.
@@ -180,6 +200,18 @@ Still open:
 3. **The photo check refuses dark-vignetted dermoscopy** (40 of 602 benchmark photos,
    `no_skin`). Irrelevant for the Pi camera, but it shrinks the dermoscopy rows of the
    benchmark; the table's `n` counts them, the rates do not.
+4. **No "not a lesion" answer, and close-up specificity 0.37** (see "Known limitation"
+   above). Planned retrain, not started: stratify the sampler by image type x class so
+   benign close-ups (2,726 MILK10k + 479 PAD-UFES-20 already on disk) are shown at the
+   dermoscopy cancer rate, and add a `no_lesion` class from team phone / Pi photos of
+   normal skin. Ship it only if MILK benign close-up specificity rises from 0.37 toward
+   0.7 **and** MILK cancers flagged stay >= 28/31 **and** total cancers flagged stay
+   >= 121/149, all measured by `external_eval.py` per source.
+5. **The new gate limits are guesses** (`SPOT_MAX_FRACTION` 0.40, `SPOT_MAX_OFFSET` 0.25,
+   the other-marks pair). Owed: `python training/external_eval.py --no-force` on the PC
+   before and after, so the rise in soft refusals on real lesions is known (budget
+   ~5 % of the 562 scored); and one Pi session with `SAVE_CAPTURES_DIR` on, run through
+   `scripts/gate_report.py --full`, to set them from the cone.
 
 ## Speed on the device
 
@@ -204,10 +236,22 @@ Four checks, every one on a small copy, every threshold in `dermascan/config.py`
 |---|---|---|---|
 | skin fraction | walls, desks, screens showing non-skin | YCrCb + HSV colour box, exposure-normalised | ≥ 0.08 |
 | focus / brightness | blur, black frames, glare | Laplacian variance at 512 px after a 1–99 percentile stretch; mean V | ≥ 13; 12–246 |
-| one spot | plain skin, speckle, whole-frame dark | Otsu outline (hairs filled in, dark frame edges set aside): area 0.4–75%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
+| one spot | plain skin, speckle, whole-frame dark | Otsu outline (hairs filled in, dark frame edges set aside): area 0.4–40%, solidity ≥ 0.6, Lab contrast ≥ 5 | |
+| in the ring | a mark running off the frame, a hand's shadow, an off-centre upload | spot touches the frame edge, or its centre is > 0.25 of the short side from the middle | overridable |
+| several marks | faces, hands with creases, scenes | more than 1 other dark mark clear of the edge and the spot holds < 0.65 of the dark area (old app's `dark_structure`, 246c072) | overridable |
 | real edge | shadows, lighting gradients | lightness drop ÷ edge steepness, % of diagonal | ≤ 5.5 (overridable) |
 
-**On 267 real HAM10000 lesions through JPEG (3 Oct 2026): 91% pass** (was 69%). The
+**20 October 2026: "in the ring" and "several marks" added** after a webcam face and a
+palm passed the four checks (numbers in "Known limitation" above). The spot area ceiling
+went from 75 % to 40 % (the palm's shadow was 46 %). All three limits are guesses until
+real captures are measured; `scripts/gate_report.py FOLDER --full` prints every number
+per photo for that. `tests/fixtures/gate/{refuse,pass}` holds small real photos the gate
+must get right (no faces in the repo; those live in the gitignored `captures/`), and
+`tests/test_gate_real.py` runs them through the real decode path.
+
+**On 267 real HAM10000 lesions through JPEG (3 Oct 2026): 91% pass** (was 69%) - measured
+on the four checks as they stood then, before the 20 October additions below; the re-run
+is owed (open item 5). The
 refusals fixed: hairs across a mole outlined instead of the mole, a dark vignette at the
 frame edge outlined instead of a pale mole, and real edges (median 3.1, max 4.9) refused
 as shadows by the old 4.0 limit. Bare skin, walls, desks and shadows (6–13) are still
@@ -226,8 +270,9 @@ blurred by 14 px). It is the least proven of the four, so it is overridable and 
 is in every log line.
 
 What was dropped from the earlier gate, and why: moiré/screen detection (the demo input
-*is* a screen), dark-blob dominance, contrast-variation z-score, on-skin geometry, scale
-check, feature-distance OOD (its statistics file was never built), GrabCut (20 s on a Pi).
+*is* a screen), contrast-variation z-score, on-skin geometry, scale check,
+feature-distance OOD (its statistics file was never built), GrabCut (20 s on a Pi).
+Dark-blob dominance was dropped with them and came back on 20 October as "several marks".
 
 ## Focus limit (3 Oct 2026)
 

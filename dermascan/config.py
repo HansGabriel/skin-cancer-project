@@ -66,8 +66,13 @@ BRIGHTNESS_MAX = 246.0
 
 # --- Gate 3: is there one spot on the skin? -----------------------------------
 # The region the gate outlines must be this share of the frame...
+# TO BE MEASURED on Pi cone captures: a webcam face passed at 0.0045 (one nostril).
+# 0.01 is the candidate floor once real moles under the cone measure 0.02 or more.
 SPOT_MIN_FRACTION = 0.004  # smaller is noise; "move closer"
-SPOT_MAX_FRACTION = 0.75  # larger is the whole frame; "move back"
+# GUESSED (2026-10-20): a palm's shadowed half passed at 0.46 under the old 0.75.
+# Dermoscopy uploads run 0.3-0.6, so 0.40 keeps them; 0.30 is the target for the
+# cone once Pi captures show what a real spot covers.
+SPOT_MAX_FRACTION = 0.40  # larger is the whole frame; "move back"
 # ...be one compact blob rather than a scatter. Solidity = blob area / area of
 # its convex hull: a mole scores 0.85+, speckle on plain skin scores under 0.4.
 SPOT_MIN_SOLIDITY = 0.6
@@ -84,6 +89,29 @@ HAIR_KERNEL_FRACTION = 0.03
 VIGNETTE_MAX_FRACTION = 0.9
 # The ring of skin a spot is compared against: this share of the frame's width.
 SPOT_RING_FRACTION = 0.06
+
+# --- Gate 3b: is it ONE spot, in the ring? ----------------------------------
+# Added 2026-10-20 after a webcam face (one nostril as the "spot", 99% malignant)
+# and a palm (its shadowed half, cancer score 0.75) passed every check above.
+# Rejected on the way: "spot pixels must be skin-coloured" (a black melanoma fails
+# it exactly like a pupil), a higher skin floor (face 0.53, palm 0.98) and a
+# higher focus floor (a sharp palm passes anyway).
+# How far the spot's centre may sit from the frame's centre, as a share of the
+# short side. The ring the visitor sees has a radius of about 0.40 of the side.
+SPOT_MAX_OFFSET = 0.25  # GUESSED: measure on Pi captures and the fixtures folder
+# A spot that touches the frame edge is refused with the same words: the gate
+# cannot see where it ends, and a hand's shadow always runs off the frame.
+# Other dark marks in the frame, besides the spot. Carried over from the old
+# app's dark_structure check (commit 246c072, measured on a real portrait: 10
+# marks, dominance 0.50; tight face crop 5 / 0.57; a lesion with one satellite
+# 1 / 0.92). Refuse when there are MORE than this many others AND the spot holds
+# less than this share of all the dark-mark area (one satellite is fine).
+SPOT_MAX_OTHER_MARKS = 1  # transferred, not yet measured on this gate's outline
+SPOT_MIN_DOMINANCE = 0.65  # transferred: spot area / (spot + other marks)
+# `ring_skin` (how much of the skin ring around the spot looks like skin) is
+# measured and logged but has NO limit: deep skin tones sit at the edge of the
+# skin colour box, and refusing on it unmeasured would hurt the people the
+# kiosk is for. Set a limit only from real captures.
 
 # --- Gate 4: does the spot have a real edge? ----------------------------------
 # Edge width = (lightness drop across the outline) / (steepness at the outline),
