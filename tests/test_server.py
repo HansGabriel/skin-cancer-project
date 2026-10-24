@@ -321,7 +321,7 @@ def test_web_mode_remembers_no_photo(web) -> None:
 def test_web_mode_switches_off_saving_staff_and_camera(web) -> None:
     for path in ["/saved", "/saved/1", "/saved/1.jpg", "/preview.mjpg"]:
         assert web.get(path).status_code == 404, path
-    for path in ["/saved", "/saved/1/delete", "/staff", "/settings", "/erase", "/quit", "/capture"]:
+    for path in ["/saved", "/saved/1/delete", "/staff", "/settings", "/erase", "/quit", "/update", "/capture"]:
         assert web.post(path).status_code == 404, path
 
 

@@ -9,8 +9,9 @@
 #   3. fetch from GitHub (needs wifi)           -> "failed: GitHub not reachable"
 #   4. nothing new?                             -> "already up to date"
 #   5. fast-forward only, never a merge commit  -> "failed: history diverged"
-#   6. pip install only if requirements.txt changed; a failure rolls back
-#   7. pytest -q -x; a failure rolls back to the old commit
+#   6. pip install only if requirements.txt changed; a failure puts the old code back
+#      (packages already upgraded stay upgraded; the log says which)
+#   7. pytest -q -x; a failure puts the old code back
 #   8. "updated OLD -> NEW"
 #
 # The outcome is one line in ~/.dermascan/last_update.txt, which the Settings
@@ -38,7 +39,7 @@ finish() {  # finish "<message>": record it, print it, leave
 BRANCH="$(git branch --show-current 2>/dev/null)"
 [ "$BRANCH" = "main" ] || finish "refused: the Pi is on branch '${BRANCH:-?}', not main — ask Hans"
 
-DIRTY="$(git status --porcelain --untracked-files=no | awk '{print $2}' | head -3 | paste -sd' ')"
+DIRTY="$(git diff --name-only HEAD | head -3 | paste -sd' ')"
 [ -z "$DIRTY" ] || finish "refused: local edits in $DIRTY — ask Hans"
 
 git fetch origin main >>"$LOG" 2>&1 || finish "failed: GitHub not reachable — is the Pi on wifi?"

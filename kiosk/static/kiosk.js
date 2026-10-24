@@ -223,7 +223,7 @@ const RENDER = {
     const pass = c.status === "pass";
     const canForce = c.refusal && c.refusal.can_override;
     setScreen(
-      eyebrow("STEP 2 OF 3 · " + (c.eyebrow || (pass ? "CHECK THE PHOTO" : "THIS PHOTO CANNOT BE READ"))),
+      eyebrow("STEP 2 OF 3 · " + c.eyebrow),
       h1(c.headline, pass ? "" : "verdict"),
       lede(pass && S.source === "import" ? "Read from the picture you chose — " + c.lede.charAt(0).toLowerCase() + c.lede.slice(1) : c.lede),
       !pass && c.verdict ? h("p", "advice", c.verdict.advice) : null,
@@ -717,7 +717,7 @@ async function updateKiosk(e) {
     return;
   }
   const r = await post("/update", staffForm());
-  b.textContent = r.ok ? "Updating… the kiosk restarts by itself in about two minutes" : "Could not start the update";
+  b.textContent = r.ok ? "Updating… the kiosk restarts by itself in about two minutes. The Pi must be on wifi." : "Could not start the update";
 }
 
 // ---------- boot ----------

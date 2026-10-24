@@ -196,7 +196,15 @@ _PHOTO_PROBLEM_CODES = frozenset({"too_blurry", "too_dark", "too_bright"})
 
 
 def refusal_eyebrow(code: str) -> str:
+    """The line above a refusal headline: the photo is the problem, or it is not a spot."""
     return PHOTO_PROBLEM_EYEBROW if code in _PHOTO_PROBLEM_CODES else NOT_A_SPOT_EYEBROW
+
+
+def check_eyebrow(status: str, refusal_code: str | None) -> str:
+    """The line above the "check the photo" headline for a pass, a refusal, or an error."""
+    if status == "pass":
+        return PHOTO_CHECK_EYEBROW
+    return refusal_eyebrow(refusal_code) if refusal_code else PHOTO_PROBLEM_EYEBROW
 
 
 def for_refusal(r: Refusal) -> Verdict:

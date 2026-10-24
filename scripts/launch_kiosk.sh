@@ -57,6 +57,8 @@ while :; do
   done
   if ! curl -sf "$URL/health" >/dev/null; then
     echo "The kiosk server did not start; the reason is at the end of $LOG" >&2
+    # After an update this is the line staff will see at the next start.
+    [ -n "${JUST_UPDATED:-}" ] && echo "$(date '+%Y-%m-%d %H:%M') · failed: the kiosk did not start after the update — ask Hans, send /tmp/dermascan_kiosk.log" >"$HOME/.dermascan/last_update.txt"
     kill "$SERVER_PID" 2>/dev/null; rm -f "$PIDFILE"; exit 1
   fi
 
@@ -83,4 +85,6 @@ while :; do
   [ -f "$UPDATE_FLAG" ] || break
   rm -f "$UPDATE_FLAG"
   bash "$PROJECT_DIR/scripts/update.sh" "$PROJECT_DIR"   # the outcome goes to ~/.dermascan/last_update.txt
+  JUST_UPDATED=1
+  # This launcher itself stays the old copy until the next double-click; the server and page are new.
 done

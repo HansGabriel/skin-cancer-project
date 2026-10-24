@@ -100,10 +100,13 @@ def test_photo_readings_cover_every_refusal() -> None:
 
 
 def test_refusal_eyebrow_says_not_a_spot_unless_the_photo_itself_is_the_problem() -> None:
-    for code in ("no_skin", "no_spot", "plain_skin", "fills_frame", "soft_edge", "not_in_ring", "several_marks", "something_new"):
-        assert verdict.refusal_eyebrow(code) == verdict.NOT_A_SPOT_EYEBROW, code
-    for code in ("too_blurry", "too_dark", "too_bright"):
-        assert verdict.refusal_eyebrow(code) == verdict.PHOTO_PROBLEM_EYEBROW, code
+    photo_problem = {"too_blurry", "too_dark", "too_bright"}
+    for code in list(verdict._REFUSAL_COPY) + ["something_new"]:
+        want = verdict.PHOTO_PROBLEM_EYEBROW if code in photo_problem else verdict.NOT_A_SPOT_EYEBROW
+        assert verdict.refusal_eyebrow(code) == want, code
+    assert verdict.check_eyebrow("pass", None) == verdict.PHOTO_CHECK_EYEBROW
+    assert verdict.check_eyebrow("error", None) == verdict.PHOTO_PROBLEM_EYEBROW
+    assert verdict.check_eyebrow("refused", "no_skin") == verdict.NOT_A_SPOT_EYEBROW
     for text in (verdict.NOT_A_SPOT_EYEBROW, verdict.PHOTO_PROBLEM_EYEBROW, verdict.PHOTO_CHECK_EYEBROW):
         _plain(text)
         assert text.isupper()

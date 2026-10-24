@@ -63,6 +63,7 @@ opens again in about two minutes. Settings then shows **Software** (commit and d
 | `failed: tests — rolled back to …` / `failed: pip install — rolled back …` | the new code broke on the Pi; the old version is running | tell Hans, send `~/.dermascan/update.log` |
 
 The update only ever fast-forwards `main`; it never merges, never deletes saved scans.
+If `scripts/launch_kiosk.sh` itself changed, the new launcher runs from the next double-click.
 By hand (SSH or a terminal): `bash ~/Documents/skin-cancer-project/scripts/update.sh`.
 The old way still works: `git branch --show-current` (must say `main`), then `git pull`.
 

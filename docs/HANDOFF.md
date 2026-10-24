@@ -61,10 +61,4 @@ go into git; `captures/` is ignored.
 the four TTA views on the Pi; the `spot_at_edge` rule for centred spots that touch the
 border (`docs/METRICS.md` item 5).
 
-## Rules that bite
-
-- Visitor-facing words live only in `dermascan/verdict.py` and `dermascan/answers.json`.
-- Never add `/255`; thresholds are measured through a real JPEG encode.
-- `pytest -q` (< 1 min, no dataset) must be green before any push.
-- A local edit on the Pi (for example `SAVE_CAPTURES_DIR`) blocks the Update button until
-  it is reverted — that is on purpose.
+The rules that bite are in `AGENTS.md`; `pytest -q` must be green before any push.
