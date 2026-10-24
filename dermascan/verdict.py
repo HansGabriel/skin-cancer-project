@@ -186,6 +186,18 @@ _REFUSAL_DEFAULT = (
     "Point the camera at a mole or mark on skin, fill the ring with it, and take a new photo.",
 )
 
+# The line above the refusal headline on the "check the photo" screen. A face, a palm or a
+# desk gets told plainly that it is not a spot on skin; a blurred or badly lit lesion gets
+# told the photo is the problem. Any code this file does not know counts as "not a spot".
+NOT_A_SPOT_EYEBROW = "THIS DOES NOT LOOK LIKE ONE SPOT ON SKIN"
+PHOTO_PROBLEM_EYEBROW = "THIS PHOTO CANNOT BE READ"
+PHOTO_CHECK_EYEBROW = "CHECK THE PHOTO"
+_PHOTO_PROBLEM_CODES = frozenset({"too_blurry", "too_dark", "too_bright"})
+
+
+def refusal_eyebrow(code: str) -> str:
+    return PHOTO_PROBLEM_EYEBROW if code in _PHOTO_PROBLEM_CODES else NOT_A_SPOT_EYEBROW
+
 
 def for_refusal(r: Refusal) -> Verdict:
     headline, body, advice = _REFUSAL_COPY.get(r.code, _REFUSAL_DEFAULT)

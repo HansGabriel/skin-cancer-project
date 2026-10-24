@@ -223,7 +223,7 @@ const RENDER = {
     const pass = c.status === "pass";
     const canForce = c.refusal && c.refusal.can_override;
     setScreen(
-      eyebrow(pass ? "STEP 2 OF 3 · CHECK THE PHOTO" : "STEP 2 OF 3 · THIS PHOTO CANNOT BE READ"),
+      eyebrow("STEP 2 OF 3 · " + (c.eyebrow || (pass ? "CHECK THE PHOTO" : "THIS PHOTO CANNOT BE READ"))),
       h1(c.headline, pass ? "" : "verdict"),
       lede(pass && S.source === "import" ? "Read from the picture you chose — " + c.lede.charAt(0).toLowerCase() + c.lede.slice(1) : c.lede),
       !pass && c.verdict ? h("p", "advice", c.verdict.advice) : null,
@@ -373,6 +373,9 @@ const RENDER = {
         t("show_staff_details", "Details for staff under each result", "Numbers and timings behind one button. Visitors see them only if they tap it."),
         h("div", "fact", h("span", "", "Saved scans, on this kiosk"), h("b", "", `${S.stats.count} scan${S.stats.count === 1 ? "" : "s"} · ${size(S.stats.bytes)}`)),
         h("div", "fact", h("span", "", "Scanner"), h("b", "", m ? `${m.file} · ${m.tta ? "4 views" : "1 view"}` : "not loaded")),
+        h("div", "fact", h("span", "", "Software"), h("b", "", (S.health && S.health.update && S.health.update.version) || "unknown")),
+        h("div", "fact", h("span", "", "Last update"), h("b", "", (S.health && S.health.update && S.health.update.last) || "never")),
+        h("div", "fact", h("span", "", "Get the newest version · needs wifi"), btn("Update from GitHub", updateKiosk, "linkbtn")),
         h("div", "fact", h("span", "", "Close the kiosk app"), btn("Exit kiosk", quitKiosk, "linkbtn")),
       ),
       actions("even", btn("Lock the staff area", () => { S.staffCode = null; go("home"); }, "btn compact"), erase),
@@ -704,6 +707,17 @@ async function quitKiosk(e) {
   }
   const r = await post("/quit", staffForm());
   b.textContent = r.ok ? "Exiting…" : "Could not exit";
+}
+
+async function updateKiosk(e) {
+  const b = e.currentTarget;
+  if (b.dataset.armed !== "1") {
+    b.dataset.armed = "1"; b.textContent = "Tap again to update";
+    setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = "Update from GitHub"; } }, 3000);
+    return;
+  }
+  const r = await post("/update", staffForm());
+  b.textContent = r.ok ? "Updating… the kiosk restarts by itself in about two minutes" : "Could not start the update";
 }
 
 // ---------- boot ----------

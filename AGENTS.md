@@ -68,9 +68,9 @@ cloud/          streamlit_app.py requirements.txt
 models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
 training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py isic_fetch.py prepare_datasets.py
                 build_external_bench.py external_eval.py external_bench.csv dataset_index.csv splits.csv requirements.txt (*.keras: gitignored)
-scripts/        launch_kiosk.sh run_dev.sh bench_scan.py gate_report.py
+scripts/        launch_kiosk.sh update.sh run_dev.sh bench_scan.py gate_report.py
 tests/          pytest, < 1 min, no dataset; tests/fixtures/gate/{refuse,pass}: a few dozen <= 512 px real photos (no faces)
-docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
+docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY HANDOFF
 ```
 
 Pi install path: `~/Documents/skin-cancer-project` (`EPIVUE.desktop` assumes it).

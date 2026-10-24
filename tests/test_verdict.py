@@ -97,3 +97,13 @@ def test_photo_readings_cover_every_refusal() -> None:
     for text in (verdict.PHOTO_OK_HEADLINE, verdict.PHOTO_OK_LEDE, verdict.PHOTO_SOFT_LEDE, *verdict.CHIP.values()):
         _plain(text)
     assert "SAFE" not in " ".join(verdict.CHIP.values())
+
+
+def test_refusal_eyebrow_says_not_a_spot_unless_the_photo_itself_is_the_problem() -> None:
+    for code in ("no_skin", "no_spot", "plain_skin", "fills_frame", "soft_edge", "not_in_ring", "several_marks", "something_new"):
+        assert verdict.refusal_eyebrow(code) == verdict.NOT_A_SPOT_EYEBROW, code
+    for code in ("too_blurry", "too_dark", "too_bright"):
+        assert verdict.refusal_eyebrow(code) == verdict.PHOTO_PROBLEM_EYEBROW, code
+    for text in (verdict.NOT_A_SPOT_EYEBROW, verdict.PHOTO_PROBLEM_EYEBROW, verdict.PHOTO_CHECK_EYEBROW):
+        _plain(text)
+        assert text.isupper()

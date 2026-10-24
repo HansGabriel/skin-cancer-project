@@ -17,3 +17,4 @@ training/*.keras
 
 # raw captures, if SAVE_CAPTURES_DIR is ever switched on
 captures/
+training/runs/
