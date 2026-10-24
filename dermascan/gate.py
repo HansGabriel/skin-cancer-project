@@ -8,6 +8,7 @@ BEFORE the model is asked, and that is this file.
     1. skin      Is there skin in the frame at all?      (colour)
     2. readable  Is the photo sharp and lit?             (focus, brightness)
     3. spot      Is there one distinct mark on it?       (outline, compactness, contrast)
+                 ...and is it in the ring, on its own?   (position, other dark marks)
     4. edge      Does the mark have a real edge?         (a mole stops; a shadow fades)
 
 Every check runs on a small copy of the photo. Every threshold lives in
@@ -15,6 +16,14 @@ config.py. A refusal carries a `code` that verdict.py turns into plain words,
 and `can_override`: checks 3 and 4 can be wrong about a faint or unusual mark,
 so the visitor may ask for it to be read anyway; checks 1 and 2 cannot be
 argued with (no skin, or a photo nobody could read).
+
+Check 3 asks about position and company since 2026-10-20, when a webcam face
+(one nostril as the "spot") and a palm (its shadowed half) passed everything
+above and the model called both cancer. A spot that runs off the frame edge or
+sits away from the middle is "not in the ring"; a frame with several dark marks
+sharing the dark area is "several marks". Both can be overridden: they are new,
+their limits are guesses until real captures are measured (scripts/gate_report.py),
+and a real spot refused with no way through is the failure this kiosk cannot afford.
 
 What was deliberately left out, after an earlier version grew to 1,100 lines:
 screen/moire detection (the students demo with photos shown on a phone, which
@@ -32,7 +41,10 @@ import numpy as np
 
 from dermascan import config
 
-RefusalCode = Literal["no_skin", "too_blurry", "too_dark", "too_bright", "no_spot", "fills_frame", "plain_skin", "soft_edge"]
+RefusalCode = Literal[
+    "no_skin", "too_blurry", "too_dark", "too_bright",
+    "no_spot", "fills_frame", "plain_skin", "not_in_ring", "several_marks", "soft_edge",
+]
 
 
 @dataclass(frozen=True)
@@ -143,17 +155,29 @@ def _otsu_blob(gray: np.ndarray) -> np.ndarray:
     return _largest_component(_clean_threshold(gray))
 
 
-def _central_component(binary: np.ndarray) -> np.ndarray | None:
-    """The largest blob that keeps clear of the frame edge, or None if there is none big enough."""
+def _components_clear_of_edge(binary: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int]]]:
+    """(label image, [(label, area)] for every blob that keeps clear of the frame edge
+    and is at least SPOT_MIN_FRACTION of it). Edge-touching blobs are a vignette, hair
+    or the background, never the spot; smaller ones are specks."""
     m = (binary > 0).astype(np.uint8)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     h, w = m.shape
-    best, best_area = None, config.SPOT_MIN_FRACTION * h * w
-    for i in range(1, n):
-        x, y, bw, bh, area = stats[i]
-        if x > 0 and y > 0 and x + bw < w and y + bh < h and area >= best_area:
-            best, best_area = i, area
-    return None if best is None else labels == best
+    floor = config.SPOT_MIN_FRACTION * h * w
+    kept = [
+        (i, int(area))
+        for i, (x, y, bw, bh, area) in enumerate(stats[1:], start=1)
+        if area >= floor and x > 0 and y > 0 and x + bw < w and y + bh < h
+    ]
+    return labels, kept
+
+
+def _central_component(binary: np.ndarray) -> np.ndarray | None:
+    """The largest blob that keeps clear of the frame edge, or None if there is none big enough."""
+    labels, kept = _components_clear_of_edge(binary)
+    if not kept:
+        return None
+    best, _ = max(kept, key=lambda pair: pair[1])
+    return labels == best
 
 
 def _without_hair(l_ch: np.ndarray) -> np.ndarray:
@@ -167,8 +191,9 @@ def _without_hair(l_ch: np.ndarray) -> np.ndarray:
     return cv2.morphologyEx(l_ch, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
 
 
-def _dark_spot(l_ch: np.ndarray) -> np.ndarray:
-    """The dark region, preferring a spot in the field over dark corners at the frame edge.
+def _dark_spot(l_ch: np.ndarray, dark_all: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(the dark region, the dark binary it was cut from), preferring a spot in the
+    field over dark corners at the frame edge.
 
     Dermoscopy photos - and the Pi's imaging cone - have a dark vignette around
     the field. Otsu's threshold then splits "vignette" from "everything else" and
@@ -176,22 +201,24 @@ def _dark_spot(l_ch: np.ndarray) -> np.ndarray:
     edge, threshold again with those edge-touching dark pixels left out, and take
     a blob that keeps clear of the edge. Only if there is none is the edge blob
     kept - a spot that really is bigger than the frame (the caller refuses it).
+    The binary comes back too, so other_marks counts on the same one the outline
+    was cut from (the retry thresholds afresh with the vignette left out).
     """
-    dark_all = _clean_threshold(255 - l_ch) > 0
     first = _largest_component(dark_all)
     if not _touches_border(first):
-        return first
+        return first, dark_all
     central = _central_component(dark_all)
     if central is not None and _looks_like_a_spot(central):
-        return central
+        return central, dark_all
     n, labels = cv2.connectedComponents(dark_all.astype(np.uint8), connectivity=8)
     edge_ids = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
     vignette = np.isin(labels, edge_ids[edge_ids > 0])
     if vignette.mean() < config.VIGNETTE_MAX_FRACTION:
-        retry = _central_component(_clean_threshold(255 - l_ch, valid=~vignette) > 0)
+        redone = _clean_threshold(255 - l_ch, valid=~vignette) > 0
+        retry = _central_component(redone)
         if retry is not None and _looks_like_a_spot(retry):
-            return retry
-    return first
+            return retry, redone
+    return first, dark_all
 
 
 def solidity(mask: np.ndarray) -> float:
@@ -212,6 +239,53 @@ def _touches_border(mask: np.ndarray) -> bool:
     return bool(mask[0].any() or mask[-1].any() or mask[:, 0].any() or mask[:, -1].any())
 
 
+def spot_offset(mask: np.ndarray) -> float:
+    """How far the spot's centre sits from the frame's centre, as a share of the short side.
+
+    0 is dead centre; 0.5 is the middle of a short-side edge (a little more on
+    the long side of a 4:3 frame). A hand's shadow or a mark the visitor did not
+    put in the ring scores high.
+    """
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return 0.0
+    h, w = mask.shape
+    return float(np.hypot(xs.mean() - (w - 1) / 2.0, ys.mean() - (h - 1) / 2.0) / min(h, w))
+
+
+def other_marks(dark_all: np.ndarray | None, mask: np.ndarray) -> tuple[int, float]:
+    """(how many other dark marks the frame holds, the spot's share of all dark-mark area).
+
+    One mole on skin: 0 others, dominance 1.0. A mole with a satellite: 1, ~0.9.
+    A face: eyes, nostrils and mouth share the dark area, so several others and
+    a dominance near 0.5. Marks touching the frame edge (vignette, hair, the
+    background) are not counted, nor are specks under SPOT_MIN_FRACTION.
+    Counted on the hair-filled binary the outline came from, so hairs crossing a
+    mole are not "other marks". None (the outline came from the light-spot path,
+    where the dark region is just the skin) counts as nothing.
+    """
+    if dark_all is None:
+        return 0, 1.0
+    _, kept = _components_clear_of_edge(dark_all & ~mask)
+    areas = [area for _, area in kept]
+    spot_area = float(np.count_nonzero(mask))
+    if not areas or spot_area == 0:
+        return 0, 1.0
+    return len(areas), spot_area / (spot_area + sum(areas))
+
+
+def _outline(rgb_small: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+    """(the spot's outline, the dark binary it was cut from - or None on the light-spot path)."""
+    l_ch = _without_hair(cv2.cvtColor(rgb_small, cv2.COLOR_RGB2LAB)[:, :, 0])
+    dark, dark_all = _dark_spot(l_ch, _clean_threshold(255 - l_ch) > 0)
+    if _looks_like_a_spot(dark):
+        return dark, dark_all
+    light = _otsu_blob(l_ch)
+    if _looks_like_a_spot(light) and not _touches_border(light):
+        return light, None
+    return dark, dark_all
+
+
 def outline_spot(rgb_small: np.ndarray) -> np.ndarray:
     """A boolean outline of the spot in a small frame.
 
@@ -222,14 +296,7 @@ def outline_spot(rgb_small: np.ndarray) -> np.ndarray:
     the frame edge, or it is just the skin around a dark region. Otherwise the
     dark region is returned so the caller can say why it was not a spot.
     """
-    l_ch = _without_hair(cv2.cvtColor(rgb_small, cv2.COLOR_RGB2LAB)[:, :, 0])
-    dark = _dark_spot(l_ch)
-    if _looks_like_a_spot(dark):
-        return dark
-    light = _otsu_blob(l_ch)
-    if _looks_like_a_spot(light) and not _touches_border(light):
-        return light
-    return dark
+    return _outline(rgb_small)[0]
 
 
 def ring_around(mask: np.ndarray) -> np.ndarray:
@@ -297,7 +364,8 @@ def check(rgb: np.ndarray) -> GateReport:
         return GateReport(Refusal(code, can_override), measured, outline, small)
 
     # 1. Is there skin?
-    measured["skin_fraction"] = skin_fraction(small)
+    skin = skin_mask(small)
+    measured["skin_fraction"] = float(skin.mean())
     if measured["skin_fraction"] < config.SKIN_MIN_FRACTION:
         return refuse("no_skin", False)
 
@@ -312,7 +380,8 @@ def check(rgb: np.ndarray) -> GateReport:
         return refuse("too_bright", False)
 
     # 3. Is there one spot on it?
-    mask = outline = outline_spot(small)
+    mask, dark_all = _outline(small)
+    outline = mask
     measured["spot_fraction"] = float(mask.mean())
     measured["spot_solidity"] = solidity(mask)
     measured["spot_contrast"] = spot_contrast(small, mask)
@@ -323,8 +392,47 @@ def check(rgb: np.ndarray) -> GateReport:
     if measured["spot_solidity"] < config.SPOT_MIN_SOLIDITY or measured["spot_contrast"] < config.SPOT_MIN_CONTRAST:
         return refuse("plain_skin", True)
 
+    # 3b. ...in the ring, and on its own?
+    _measure_company(measured, skin, mask, dark_all)
+    if measured["spot_at_edge"] or measured["spot_offset"] > config.SPOT_MAX_OFFSET:
+        return refuse("not_in_ring", True)
+    if measured["other_marks"] > config.SPOT_MAX_OTHER_MARKS and measured["spot_dominance"] < config.SPOT_MIN_DOMINANCE:
+        return refuse("several_marks", True)
+
     # 4. Does it have a real edge?
     measured["edge_width"] = edge_width(small, mask)
     if measured["edge_width"] > config.SPOT_MAX_EDGE_WIDTH_PCT:
         return refuse("soft_edge", True)
     return GateReport(None, measured, outline, small)
+
+
+def _measure_company(measured: dict[str, float], skin: np.ndarray, mask: np.ndarray, dark_all: np.ndarray | None) -> None:
+    """Where the spot sits and what else is in the frame. All floats, so the staff
+    drawer, the log line and a saved capture's .txt print them without special cases."""
+    measured["spot_offset"] = spot_offset(mask)
+    measured["spot_at_edge"] = 1.0 if _touches_border(mask) else 0.0
+    count, dominance = other_marks(dark_all, mask)
+    measured["other_marks"] = float(count)
+    measured["spot_dominance"] = dominance
+    ring = ring_around(mask)
+    measured["ring_skin"] = float(skin[ring].mean()) if ring.any() else 0.0
+
+
+def measure_everything(rgb: np.ndarray) -> dict[str, float]:
+    """Every number the gate can measure, without stopping at the first failed check.
+
+    For scripts/gate_report.py: a photo refused at "no spot" still shows its edge
+    width, so limits can be set from a folder of real photos rather than guessed.
+    """
+    small = shrink(rgb)
+    skin = skin_mask(small)
+    measured: dict[str, float] = {"skin_fraction": float(skin.mean())}
+    measured["focus"] = focus_score(rgb)
+    measured["brightness"] = brightness(small)
+    mask, dark_all = _outline(small)
+    measured["spot_fraction"] = float(mask.mean())
+    measured["spot_solidity"] = solidity(mask)
+    measured["spot_contrast"] = spot_contrast(small, mask)
+    _measure_company(measured, skin, mask, dark_all)
+    measured["edge_width"] = edge_width(small, mask)
+    return measured

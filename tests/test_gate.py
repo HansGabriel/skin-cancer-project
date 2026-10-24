@@ -167,3 +167,90 @@ def test_one_glare_dot_does_not_make_a_sharp_photo_blurry() -> None:
 def test_heavy_blur_is_still_refused() -> None:
     img = cv2.GaussianBlur(with_lesion(textured(SKIN_TONES["light"], size=600)), (0, 0), 8)
     assert gate.check(through_jpeg(img)).refusal.code == "too_blurry"
+
+
+# --- One spot, in the ring (2026-10-20): a webcam face and a palm passed every check
+# above and the model called both cancer. Rebuilt synthetically, as the old app's
+# tests/test_not_a_lesion.py (commit 246c072) did: no faces of real people in the repo.
+
+
+def _skin_field(size: int = 600) -> np.ndarray:
+    return textured(SKIN_TONES["light"], size=size)
+
+
+def test_a_spot_running_off_the_frame_edge_is_not_in_the_ring() -> None:
+    img = _skin_field()
+    cv2.circle(img, (552, 300), 90, (78, 62, 74), -1)
+    report = gate.check(through_jpeg(img))
+    assert report.refusal is not None and report.refusal.code == "not_in_ring", report.measured
+    assert report.refusal.can_override
+    assert report.measured["spot_at_edge"] == 1.0
+
+
+def test_a_spot_in_the_corner_is_not_in_the_ring() -> None:
+    img = _skin_field()
+    cv2.circle(img, (90, 90), 48, (78, 62, 74), -1)
+    report = gate.check(through_jpeg(img))
+    assert report.refusal is not None and report.refusal.code == "not_in_ring", report.measured
+    assert report.measured["spot_offset"] > gate.config.SPOT_MAX_OFFSET
+
+
+def test_a_spot_a_little_off_centre_still_passes() -> None:
+    """The ring the visitor sees has a radius of ~0.40 of the side; 0.20 is well inside it."""
+    img = _skin_field()
+    cv2.circle(img, (300 + int(0.2 * 600), 300), 60, (78, 62, 74), -1)
+    report = gate.check(through_jpeg(img))
+    assert report.passed, (report.refusal, report.measured)
+
+
+def _face_like(size: int = 600) -> np.ndarray:
+    """Skin with two eyes, two nostrils and a mouth: several dark marks sharing the dark area."""
+    img = textured((196, 158, 132), size=size)
+    cv2.ellipse(img, (200, 220), (45, 18), 0, 0, 360, (60, 45, 50), -1)
+    cv2.ellipse(img, (400, 220), (45, 18), 0, 0, 360, (60, 45, 50), -1)
+    cv2.circle(img, (275, 330), 16, (80, 60, 60), -1)
+    cv2.circle(img, (325, 330), 16, (80, 60, 60), -1)
+    cv2.ellipse(img, (300, 430), (70, 12), 0, 0, 360, (120, 70, 70), -1)
+    return img
+
+
+def test_a_face_is_several_marks_not_a_spot() -> None:
+    report = gate.check(through_jpeg(_face_like()))
+    assert report.refusal is not None and report.refusal.code == "several_marks", report.measured
+    assert report.refusal.can_override
+    assert report.measured["spot_dominance"] < gate.config.SPOT_MIN_DOMINANCE
+
+
+def test_a_mole_with_one_satellite_is_still_one_spot() -> None:
+    """Dominance, not a raw count: one mole holding most of the dark area passes."""
+    img = with_lesion(_skin_field())
+    cv2.circle(img, (430, 200), 28, (78, 62, 74), -1)
+    report = gate.check(through_jpeg(img))
+    assert report.passed, (report.refusal, report.measured)
+    assert report.measured["other_marks"] == 1.0 and report.measured["spot_dominance"] > 0.9
+
+
+def test_a_half_shadowed_hand_is_refused() -> None:
+    """The palm: its shadowed half was the "spot", 0.46 of the frame, under the old 0.75 limit.
+    Here the right half darkens over a soft ramp, the way a hand curls away from the light."""
+    img = _skin_field()
+    ramp = np.clip((np.arange(600) - 300) / 60.0, 0, 1)
+    img = np.clip(img.astype(np.float32) * (1 - 0.35 * ramp[None, :, None]), 0, 255).astype(np.uint8)
+    report = gate.check(through_jpeg(img))
+    assert not report.passed, report.measured
+    assert report.refusal.code in ("fills_frame", "not_in_ring", "soft_edge")
+
+
+def test_a_dermoscopy_sized_lesion_still_fits_the_frame() -> None:
+    """Dermoscopy uploads cover 0.3-0.6 of the frame; the 0.40 ceiling must keep the smaller ones."""
+    report = gate.check(through_jpeg(with_lesion(_skin_field(), radius_frac=0.33)))
+    assert report.passed, (report.refusal, report.measured)
+    assert 0.3 < report.measured["spot_fraction"] < gate.config.SPOT_MAX_FRACTION
+
+
+def test_every_passing_photo_reports_where_the_spot_sits() -> None:
+    report = gate.check(through_jpeg(with_lesion(_skin_field())))
+    assert report.passed
+    for key in ("spot_offset", "spot_at_edge", "other_marks", "spot_dominance", "ring_skin"):
+        assert isinstance(report.measured[key], float), key
+    assert set(gate.measure_everything(through_jpeg(_face_like()))) >= set(report.measured)

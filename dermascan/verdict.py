@@ -168,6 +168,17 @@ _REFUSAL_COPY: dict[str, tuple[str, str, str]] = {
         "The scanner found skin, but no clear mark on it to read.",
         "Put the ring over a mole or mark, or move closer if the spot is small.",
     ),
+    "not_in_ring": (
+        "PUT THE SPOT IN THE RING",
+        "The mark the scanner found runs to the edge of the photo or sits away from "
+        "the middle, so it cannot see where the spot ends.",
+        "Move so the spot sits in the middle of the ring with plain skin all round it, then take a new photo.",
+    ),
+    "several_marks": (
+        "MORE THAN ONE MARK",
+        "This photo has several dark marks in it, not one spot on skin.",
+        "Bring the camera close to one mole or mark so it fills the ring, and take a new photo.",
+    ),
 }
 _REFUSAL_DEFAULT = (
     "NOT A SPOT IT CAN READ",
@@ -292,6 +303,10 @@ def photo_readings(measured: dict[str, float], refusal_code: str | None) -> list
             return 1, "too close"
         if code == "soft_edge":
             return 2, "faint edge"
+        if code == "not_in_ring":
+            return 1, "not in ring"
+        if code == "several_marks":
+            return 1, "more than one"
         if "spot_fraction" not in measured:
             return None, "not checked"
         return 3, "yes"
