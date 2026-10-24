@@ -161,6 +161,12 @@ backbone from this table whenever `models/` changes.
 
 ## Open items on the model
 
+**24 October 2026: the image-type-stratified sampler is in the notebook** (branch
+`feat/stratified-sampler`, Cell 6): classes are sampled 1/3 each *within* close-ups and
+within dermoscopy, so both are shown 67 % cancer (was 87 % / 61 %). Not trained yet; the
+`no_lesion` class waits for photos the team may use (`docs/PRIVACY.md`). Judge the run
+by open item 4's ship rule.
+
 Items 1–4 from the 11 October audit are closed by the 18 October retrain: the threshold
 and temperature are now fitted by `calibrate.py` on the exported TFLite with 4-view TTA
 (1), the int8 export is the recipe for both models and was not the cause of the 1 Oct
