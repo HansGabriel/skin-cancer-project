@@ -181,11 +181,35 @@ backbone from this table whenever `models/` changes.
 
 ## Open items on the model
 
-**24 October 2026: the image-type-stratified sampler is in the notebook** (branch
-`feat/stratified-sampler`, Cell 6): classes are sampled 1/3 each *within* close-ups and
-within dermoscopy, so both are shown 67 % cancer (was 87 % / 61 %). Not trained yet; the
-`no_lesion` class waits for photos the team may use (`docs/PRIVACY.md`). Judge the run
-by open item 4's ship rule.
+**24 October 2026: the image-type-stratified sampler was trained and NOT shipped.**
+Cell 6 printed `Cancer share within each type: {'clinical: close-up': 0.67, 'dermoscopic':
+0.67}` (was 0.87 / 0.61). Same recipe otherwise (B0, 224 px, int8 export, `calibrate.py`
+at 0.90 val sensitivity → threshold **0.44**, T from the same script). Run on the PC,
+1 h 45 min; log and the four model files kept off git in
+`datasets/models_2026-10-24_stratified/`. External benchmark, kiosk path, force on:
+
+| source | n | skip | cancers | flagged | sens | benign | spec |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| BCN20000 · dermoscopic | 165 | 28 | 38 | 31 | 0.816 | 99 | 0.545 |
+| Anonymous (ISIC 2017-18) · dermoscopic | 111 | 3 | 11 | 8 | 0.727 | 97 | 0.567 |
+| MILK10k · clinical: close-up | 151 | 2 | 31 | **28** | 0.903 | 118 | **0.525** |
+| UDA (ISIC 2016) · dermoscopic | 161 | 7 | 55 | 37 | 0.673 | 99 | 0.788 |
+| students' list | 99 | 2 | 96 | 68 | 0.708 | 1 | 1.000 |
+| **ALL** | 602 | 40 | 149 | **113** | 0.758 | 413 | 0.603 |
+
+External ROC-AUC 0.740 (October model 0.78); MILK10k AUC 0.810. Own test split (n = 7,288):
+sensitivity 0.900, benign specificity 0.656, argmax accuracy 0.738.
+
+Against the ship rule in item 4: MILK benign specificity **0.37 → 0.525** (toward 0.7, yes);
+MILK cancers flagged **28/31** (yes); total cancers flagged **113/149, below 121** (no — the
+dermoscopy rows lost 8 cancers, UDA 40 → 37, Vienna 4 → 3, ISIC 2017-18 7 → 8 is the only
+gain). Mentor's rule says all three must hold, so `models/` stays the 18 October model.
+What it tells us: showing close-ups at the dermoscopy cancer rate fixes the "close-up →
+cancer" shortcut (MILK specificity +0.15 at the same 28/31) but the dermoscopy sources
+pay for it at a single global threshold. Next tries, in order: (a) a per-image-type
+threshold (`calibrate.py` fitting one limit per `image_type`, the kiosk only ever sees
+close-ups, so the Pi would run at the close-up limit); (b) the `no_lesion` class once
+photos exist. The `no_lesion` class still waits for photos the team may use (`docs/PRIVACY.md`).
 
 Items 1–4 from the 11 October audit are closed by the 18 October retrain: the threshold
 and temperature are now fitted by `calibrate.py` on the exported TFLite with 4-view TTA
@@ -207,10 +231,10 @@ Still open:
    `no_skin`). Irrelevant for the Pi camera, but it shrinks the dermoscopy rows of the
    benchmark; the table's `n` counts them, the rates do not.
 4. **No "not a lesion" answer, and close-up specificity 0.37** (see "Known limitation"
-   above). Planned retrain, not started: stratify the sampler by image type x class so
-   benign close-ups (2,726 MILK10k + 479 PAD-UFES-20 already on disk) are shown at the
-   dermoscopy cancer rate, and add a `no_lesion` class from team phone / Pi photos of
-   normal skin. Ship it only if MILK benign close-up specificity rises from 0.37 toward
+   above). The stratified sampler was tried on 24 October and not shipped (numbers at the
+   top of this section: MILK specificity 0.525 and 28/31, but 113/149 overall). Next: a
+   per-image-type threshold, then a `no_lesion` class from team phone / Pi photos of
+   normal skin. Ship a model only if MILK benign close-up specificity rises from 0.37 toward
    0.7 **and** MILK cancers flagged stay >= 28/31 **and** total cancers flagged stay
    >= 121/149, all measured by `external_eval.py` per source.
 5. **The new gate limits cost more lesion photos than budgeted, and the bench cannot
