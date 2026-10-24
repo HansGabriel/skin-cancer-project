@@ -48,8 +48,48 @@ wlr-randr --output HDMI-A-1 --mode 1024x600 --scale 1 &
 The first line matters: the panel's EDID advertises 1920×1080 and the compositor will
 pick it, which makes everything microscopic.
 
-**Updating the Pi:** `cd ~/Documents/skin-cancer-project && git branch --show-current`
-(check it first — a pull on the wrong branch has bitten before), then `git pull`.
+**Updating the Pi:** connect the Pi to wifi, open **Settings** (staff code), tap
+**Update from GitHub** twice. The kiosk closes, `scripts/update.sh` runs, and the kiosk
+opens again in about two minutes. Settings then shows **Software** (commit and date) and
+**Last update**, one of:
+
+| Last update says | meaning | what to do |
+|---|---|---|
+| `updated 092ae3c → a1b2c3d` | pulled, dependencies installed if needed, tests passed | nothing |
+| `already up to date (…)` | GitHub has nothing newer | nothing |
+| `failed: GitHub not reachable — is the Pi on wifi?` | no network | connect wifi, tap again |
+| `refused: the Pi is on branch '…', not main — ask Hans` | someone checked out a branch | Hans: `git checkout main` |
+| `refused: local edits in … — ask Hans` | a file was edited on the Pi (often `dermascan/config.py`) | Hans: commit or `git checkout -- <file>` |
+| `failed: tests — rolled back to …` / `failed: pip install — rolled back …` | the new code broke on the Pi; the old version is running | tell Hans, send `~/.dermascan/update.log` |
+
+The update only ever fast-forwards `main`; it never merges, never deletes saved scans.
+If `scripts/launch_kiosk.sh` itself changed, the new launcher runs from the next double-click.
+By hand (SSH or a terminal): `bash ~/Documents/skin-cancer-project/scripts/update.sh`.
+The old way still works: `git branch --show-current` (must say `main`), then `git pull`.
+
+**Setting the gate limits from real photos** (open item 5 in `docs/METRICS.md`; needs the
+cone and a camera, no people's faces in the repo):
+
+1. On the Pi, in `dermascan/config.py`, set `SAVE_CAPTURES_DIR = Path.home() / "captures"`
+   (a local edit — the Update button will refuse until it is reverted). Restart the kiosk.
+2. Run one session of **test images only**: printed moles, a plastic arm, a palm, a desk, a
+   wall, a face (your own, never saved to git). Each capture lands in `~/captures` with its
+   gate numbers.
+3. Sort them: `captures/pass/` (a spot the kiosk should read) and `captures/refuse/`
+   (everything else). Then, in the venv:
+   ```bash
+   python scripts/gate_report.py captures/refuse --expect refuse --full
+   python scripts/gate_report.py captures/pass   --expect pass   --full
+   pytest -q tests/test_gate_real.py
+   ```
+4. Read the columns: `spot` → `SPOT_MIN_FRACTION` (floor just under the smallest real
+   mole; 0.01 is the candidate) and `SPOT_MAX_FRACTION` (0.30 is the cone target, just
+   above the largest real mole); `offset` → `SPOT_MAX_OFFSET` (just above the furthest
+   real mole from centre); `others` / `domin` → `SPOT_MAX_OTHER_MARKS` / `SPOT_MIN_DOMINANCE`.
+   Every refuse photo must still fail at least one rule.
+5. Put the numbers in `dermascan/config.py` with the measured values in the comment,
+   revert `SAVE_CAPTURES_DIR` to `None`, `pytest -q`, and send Hans the two printed tables.
+   ISIC lesion photos may go in `tests/fixtures/gate/pass/` with `attribution.csv`; faces never.
 
 **Pulling the camera out of a jam:** the camera is opened once when the server starts
 and never reopened. If the live view is dead, restart the kiosk; if it is dead at boot,

@@ -164,6 +164,14 @@ def _apply_read_anyway_setting(result: dict) -> dict:
     return result
 
 
+def _read_line(path) -> str | None:
+    """First line of a small text file the launcher or updater wrote, or None."""
+    try:
+        return path.read_text(encoding="utf-8").strip().splitlines()[0]
+    except (OSError, IndexError):
+        return None
+
+
 def _photo_from_request() -> bytes | None:
     upload = request.files.get("image")
     if app.config["WEB_DEMO"]:  # never remember a stranger's photo; it comes with every request
@@ -184,6 +192,7 @@ def health():
         "exit_needs_code": config.staff_passcode() is not None,
         "settings": settings,
         "saved": saved.stats(),
+        "update": {"version": _read_line(config.VERSION_FILE), "last": _read_line(config.LAST_UPDATE_FILE)},
     }
     try:
         clf = get_classifier()
@@ -362,6 +371,21 @@ def quit_kiosk():
         config.QUIT_FLAG.write_text("quit")
     except OSError:
         log.warning("could not write the quit flag", exc_info=True)
+    return jsonify({"ok": True})
+
+
+@app.post("/update")
+def update_kiosk():
+    """Update from GitHub: the launcher sees the flag, stops the kiosk, runs
+    scripts/update.sh and starts the kiosk again. Nothing runs inside this process."""
+    if not _staff_ok():
+        return jsonify({"ok": False}), 403
+    try:
+        config.UPDATE_FLAG.write_text("update")
+    except OSError:
+        log.warning("could not write the update flag", exc_info=True)
+        return jsonify({"ok": False}), 500
+    log.info("update from GitHub requested by staff")
     return jsonify({"ok": True})
 
 

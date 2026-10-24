@@ -122,6 +122,25 @@ def test_quit_writes_the_flag(client, tmp_path, monkeypatch) -> None:
     assert flag.read_text() == "quit"
 
 
+def test_update_writes_the_flag_and_health_shows_the_version(client, tmp_path, monkeypatch) -> None:
+    flag = tmp_path / "update"
+    monkeypatch.setattr(server.config, "UPDATE_FLAG", flag)
+    monkeypatch.setattr(server.config, "VERSION_FILE", tmp_path / "version.txt")
+    monkeypatch.setattr(server.config, "LAST_UPDATE_FILE", tmp_path / "missing.txt")
+    (tmp_path / "version.txt").write_text("abc1234 · 2026-10-24\n")
+    assert client.get("/health").get_json()["update"] == {"version": "abc1234 · 2026-10-24", "last": None}
+    assert client.post("/update").get_json()["ok"]
+    assert flag.read_text() == "update"
+
+
+def test_update_needs_the_staff_code_when_one_is_set(client, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server.config, "UPDATE_FLAG", tmp_path / "update")
+    monkeypatch.setattr(server.config, "staff_passcode", lambda: "4321")
+    assert client.post("/update", data={"code": "1111"}).status_code == 403
+    assert not (tmp_path / "update").exists()
+    assert client.post("/update", data={"code": "4321"}).status_code == 200
+
+
 def test_quit_keeps_saved_scans_and_erase_removes_their_files(client, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server.config, "QUIT_FLAG", tmp_path / "quit")
     _upload(client, with_lesion(textured(SKIN_TONES["light"])))
@@ -168,6 +187,7 @@ def test_check_reads_the_photo_without_the_model(client, monkeypatch) -> None:
     assert body["status"] == "pass" and [r["name"] for r in body["readings"]] == ["Light", "Focus", "Spot in frame"]
     refused = _upload(client, textured(NEUTRAL["grey desk"]), "/check").get_json()
     assert refused["status"] == "refused" and refused["verdict"]["headline"] == "NO SKIN IN THIS PHOTO"
+    assert body["eyebrow"] == "CHECK THE PHOTO" and refused["eyebrow"] == "THIS DOES NOT LOOK LIKE ONE SPOT ON SKIN"
 
 
 def test_check_then_scan_uses_the_same_photo(client) -> None:
@@ -301,7 +321,7 @@ def test_web_mode_remembers_no_photo(web) -> None:
 def test_web_mode_switches_off_saving_staff_and_camera(web) -> None:
     for path in ["/saved", "/saved/1", "/saved/1.jpg", "/preview.mjpg"]:
         assert web.get(path).status_code == 404, path
-    for path in ["/saved", "/saved/1/delete", "/staff", "/settings", "/erase", "/quit", "/capture"]:
+    for path in ["/saved", "/saved/1/delete", "/staff", "/settings", "/erase", "/quit", "/update", "/capture"]:
         assert web.post(path).status_code == 404, path
 
 

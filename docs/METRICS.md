@@ -213,11 +213,27 @@ Still open:
    normal skin. Ship it only if MILK benign close-up specificity rises from 0.37 toward
    0.7 **and** MILK cancers flagged stay >= 28/31 **and** total cancers flagged stay
    >= 121/149, all measured by `external_eval.py` per source.
-5. **The new gate limits are guesses** (`SPOT_MAX_FRACTION` 0.40, `SPOT_MAX_OFFSET` 0.25,
-   the other-marks pair). Owed: `python training/external_eval.py --no-force` on the PC
-   before and after, so the rise in soft refusals on real lesions is known (budget
-   ~5 % of the 562 scored); and one Pi session with `SAVE_CAPTURES_DIR` on, run through
-   `scripts/gate_report.py --full`, to set them from the cone.
+5. **The new gate limits cost more lesion photos than budgeted, and the bench cannot
+   set them.** Measured 24 Oct 2026, `python training/external_eval.py --no-force`,
+   old gate (`acf90fd`) vs new gate (`main`), same 602 photos:
+
+   | gate | not scored | of which soft refusals | MILK10k close-ups not scored |
+   |------|-----------:|-----------------------:|-----------------------------:|
+   | old (before PR #9) | 123 | 83 (plain_skin 57, soft_edge 22, fills_frame 2, no_spot 2) | 45 of 151 |
+   | new (`SPOT_MAX_FRACTION` 0.40, `SPOT_MAX_OFFSET` 0.25) | 272 | 232 (not_in_ring 101, fills_frame 62, plain_skin 57, several_marks 7, soft_edge 3, no_spot 2) | 97 of 151 |
+
+   The rise is +149 soft refusals, 26 % of the 562 the old gate scored, against a budget
+   of ~5 %. It is not the two limits: `scripts/gate_report.py --full` on the bench shows
+   93 lesion photos *touch the frame border* (dermoscopy fills the field by design), and
+   that rule has no knob. Loosening to 0.50 / 0.30 gives +127; the old 0.75 with no
+   offset limit still gives +86. Decision (mentor, 24 Oct): keep 0.40 / 0.25 — the bench
+   was never framed for the ring, the Pi photos will be, and loosening lets the palm back
+   in (it passed at 0.46). The hard-refusal count is unchanged at 40. Still owed: one Pi
+   session with `SAVE_CAPTURES_DIR` on, through `scripts/gate_report.py --full`, to set
+   `SPOT_MAX_OFFSET`, `SPOT_MAX_FRACTION` (0.30 target) and `SPOT_MIN_FRACTION` (0.01
+   candidate) from the cone — steps in `docs/DEPLOYMENT.md` and `docs/HANDOFF.md`. Also
+   worth a look then: a spot that touches the border but is still centred (the
+   dermoscopy case) could be measured rather than refused.
 
 ## Speed on the device
 

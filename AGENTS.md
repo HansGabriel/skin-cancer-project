@@ -33,7 +33,7 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 | Kiosk look | the **EPIVUE Interface** design from Claude Design (project `36f54779…`, file `EPIVUE Interface.dc.html`): navy instrument band + white page, sizes in `clamp(…cqh…)`, stacked under 720 px | restored 2026-10-01; match the design file, not memory |
 | Web demo | **Railway**, Docker (`Dockerfile`, `railway.json`, GitHub auto-deploy from `main`), running **the kiosk page in web mode** (`kiosk.server --web`: nothing kept, no Saved, no staff routes) — *mentor's call 2026-10-13, replacing the plain Streamlit page*; `cloud/streamlit_app.py` stays as a Streamlit Community Cloud fallback | the site looks like the Pi; same `dermascan/` core; a real container that does not sleep |
 | Camera | picamera2 opened once per process, never torn down; plain pixels to the model | reopening stalled the preview; CLAHE before the model hurt accuracy |
-| Offline | no runtime pip, no downloads, no telemetry; nothing leaves the device. Saved scans persist in `~/.dermascan/saved/` (two files per scan) until "End event" — *mentor's decision 2026-10-11, replacing RAM-only saves that vanished on every reboot* | barangay / field use |
+| Offline | no runtime pip, no downloads, no telemetry; nothing leaves the device. **One exception, staff-only and outside the server process:** "Update from GitHub" in Settings runs `scripts/update.sh` (git fast-forward of `main`, `pip install` only when `requirements.txt` changed, pytest, rollback) while the kiosk is stopped — *mentor's call 2026-10-24 so the students can take Hans's pushes without a keyboard*; the scan path stays offline. Saved scans persist in `~/.dermascan/saved/` (two files per scan) until "End event" — *mentor's decision 2026-10-11, replacing RAM-only saves that vanished on every reboot* | barangay / field use |
 
 ### What was removed on 2026-10-01 (old app at commit `246c072`, `pi/last-known-good`)
 
@@ -68,9 +68,9 @@ cloud/          streamlit_app.py requirements.txt
 models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
 training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py isic_fetch.py prepare_datasets.py
                 build_external_bench.py external_eval.py external_bench.csv dataset_index.csv splits.csv requirements.txt (*.keras: gitignored)
-scripts/        launch_kiosk.sh run_dev.sh bench_scan.py gate_report.py
+scripts/        launch_kiosk.sh update.sh run_dev.sh bench_scan.py gate_report.py
 tests/          pytest, < 1 min, no dataset; tests/fixtures/gate/{refuse,pass}: a few dozen <= 512 px real photos (no faces)
-docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY
+docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY HANDOFF
 ```
 
 Pi install path: `~/Documents/skin-cancer-project` (`EPIVUE.desktop` assumes it).

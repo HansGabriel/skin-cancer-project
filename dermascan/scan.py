@@ -198,7 +198,7 @@ def run_scan(
 def check_result(checked: CheckedPhoto) -> dict:
     """What the "check the photo" screen shows, from a CheckedPhoto.
 
-    {"status": "pass" | "refused" | "error", "headline", "lede", "readings": [...],
+    {"status": "pass" | "refused" | "error", "eyebrow", "headline", "lede", "readings": [...],
      "verdict": refusal/error words or None, "refusal": {...} or None, "measured": {...}}
     """
     if checked.report is None:
@@ -221,6 +221,7 @@ def run_check(jpeg_bytes: bytes) -> dict:
 def _check_result(status, headline, lede, readings, v, refusal, measured) -> dict:
     return {
         "status": status, "headline": headline, "lede": lede, "readings": readings,
+        "eyebrow": verdict.check_eyebrow(status, refusal.code if refusal else None),
         "verdict": v.to_dict() if v else None,
         "refusal": {"code": refusal.code, "can_override": refusal.can_override} if refusal else None,
         "measured": {k: round(x, 3) for k, x in measured.items()},

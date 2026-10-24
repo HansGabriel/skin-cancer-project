@@ -69,9 +69,12 @@ BRIGHTNESS_MAX = 246.0
 # TO BE MEASURED on Pi cone captures: a webcam face passed at 0.0045 (one nostril).
 # 0.01 is the candidate floor once real moles under the cone measure 0.02 or more.
 SPOT_MIN_FRACTION = 0.004  # smaller is noise; "move closer"
-# GUESSED (2026-10-20): a palm's shadowed half passed at 0.46 under the old 0.75.
-# Dermoscopy uploads run 0.3-0.6, so 0.40 keeps them; 0.30 is the target for the
-# cone once Pi captures show what a real spot covers.
+# Set 2026-10-20 because a palm's shadowed half passed at 0.46 under the old 0.75.
+# MEASURED 2026-10-24 on the frozen bench (training/external_eval.py --no-force):
+# 62 of 602 lesion photos are refused "fills_frame" at 0.40 (spot_fraction median
+# 0.49); 0.50 would refuse 29, 0.75 only 2. Kept at 0.40 on purpose: the bench photos
+# were not framed for the ring, and loosening it lets the palm back in. 0.30 is the
+# target for the cone once Pi captures show what a real spot covers (docs/METRICS.md 5).
 SPOT_MAX_FRACTION = 0.40  # larger is the whole frame; "move back"
 # ...be one compact blob rather than a scatter. Solidity = blob area / area of
 # its convex hull: a mole scores 0.85+, speckle on plain skin scores under 0.4.
@@ -98,7 +101,12 @@ SPOT_RING_FRACTION = 0.06
 # higher focus floor (a sharp palm passes anyway).
 # How far the spot's centre may sit from the frame's centre, as a share of the
 # short side. The ring the visitor sees has a radius of about 0.40 of the side.
-SPOT_MAX_OFFSET = 0.25  # GUESSED: measure on Pi captures and the fixtures folder
+# MEASURED 2026-10-24 on the frozen bench: 101 of 602 lesion photos are refused
+# "not_in_ring"; 48 of those touch the frame border (the rule below, which no limit
+# moves) and 53 sit off-centre (offset median 0.40, so 0.30 would still refuse 43).
+# Kept at 0.25: the bench is dermoscopy framing, not the ring. Set it from Pi cone
+# captures (docs/DEPLOYMENT.md, "Setting the gate limits from real photos").
+SPOT_MAX_OFFSET = 0.25
 # A spot that touches the frame edge is refused with the same words: the gate
 # cannot see where it ends, and a hand's shadow always runs off the frame.
 # Other dark marks in the frame, besides the spot. Carried over from the old
@@ -171,6 +179,9 @@ KIOSK_PORT = 8080  # scripts/launch_kiosk.sh uses the same number
 ALLOW_READ_ANYWAY = True  # offer "Check it anyway" when the spot check refuses a photo
 SHOW_STAFF_DETAILS = True  # show "Details for staff" (numbers, timings) under a result
 QUIT_FLAG = Path("/tmp/dermascan_quit")  # scripts/launch_kiosk.sh watches for this file
+UPDATE_FLAG = Path("/tmp/dermascan_update")  # "Update from GitHub": the launcher runs scripts/update.sh, then restarts
+VERSION_FILE = Path.home() / ".dermascan" / "version.txt"  # written by launch_kiosk.sh at each start: "hash · date"
+LAST_UPDATE_FILE = Path.home() / ".dermascan" / "last_update.txt"  # one line from scripts/update.sh, shown in Settings
 WEB_MAX_UPLOAD_MB = 8  # web demo only: a phone photo fits; a bigger upload is refused before it is read
 
 # --- Optional: keep raw captures for later calibration ------------------------
