@@ -26,29 +26,34 @@ Then take a forced scan ("Check it anyway") and open **Details for staff**: if t
 `null` appears where the A B C rows go, send Hans a photo of the screen (not reproducible
 on `main`; it may have been the old code).
 
-## 2. The overnight retrain (started 24 Oct on the PC; 3–5 h)
+## 2. The 24 October retrain — done, not shipped
 
-Log: `training/runs/2026-10-24-retrain.log`, finished notebook
-`training/runs/2026-10-24-retrain.ipynb`. The notebook wrote **straight into `models/`**
-(all four files) and `training/splits.csv`; nothing is committed. The previous model is
-the committed one (`git show main:models/skin_classifier.tflite`) and a copy sits in
-`datasets/models_oct18_backup/`.
+Result is in `docs/METRICS.md` ("24 October 2026: … NOT shipped"): MILK close-up
+specificity 0.37 → 0.525 and 28/31 MILK cancers held, but total cancers flagged fell to
+113/149 (rule: ≥ 121). `models/` is still the 18 October model. The tried model and its
+log are in `datasets/models_2026-10-24_stratified/` on the PC (not in git).
 
-Read the last `external_eval.py` table in the log (rows per source, column `flagged`).
-**Ship only if all three hold:**
+To try the next idea (a per-image-type threshold in `training/calibrate.py`), run the
+notebook again from `jupyter lab training/train_skin_classifier.ipynb` (cell 0 sets the
+GPU) or headless:
+
+```bash
+VIRTUAL_ENV=$PWD/venv PATH=$PWD/venv/bin:$PATH venv/bin/jupyter nbconvert --to notebook --execute \
+  --ExecutePreprocessor.timeout=-1 training/train_skin_classifier.ipynb \
+  --output-dir training/runs --output $(date +%F)-retrain.ipynb
+```
+
+It writes **straight into `models/`**. Read the last cell's `external_eval.py` table and
+apply the ship rule — all three must hold:
 
 1. `MILK10k · clinical: close-up` benign **spec** rose from 0.37 toward 0.7
 2. `MILK10k` **flagged ≥ 28** of 31 cancers
 3. `ALL` **flagged ≥ 121** of 149 cancers
 
-- All three hold → `git add models/ training/splits.csv`, paste the new tables into
-  `docs/METRICS.md` under a new dated heading (never mix two models' numbers), commit,
-  push, let Hans review. Railway redeploys from `main`; the Pi updates with the button.
-- Any fails → `git checkout -- models/ training/splits.csv` and paste the numbers into
-  `docs/METRICS.md` anyway, under open item 4, as "tried, not shipped".
-
-Never judge a model by the drawer's bars: the decision is `cancer score >= limit`, printed
-in the DECISION line.
+Pass → `git add models/ training/splits.csv`, paste the tables into `docs/METRICS.md`
+under a new dated heading (never mix two models' numbers), push a branch for Hans.
+Fail → `git checkout -- models/ training/splits.csv` and record the numbers anyway.
+Never judge a model by the drawer's bars: the decision is `cancer score >= limit`.
 
 ## 3. Set the gate limits from real photos (30 min with the cone)
 
