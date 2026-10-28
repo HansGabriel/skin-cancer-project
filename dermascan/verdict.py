@@ -11,6 +11,9 @@ Two kinds of verdict:
                       flagged + unsure -> better to get checked; not flagged +
                       confident -> nothing stood out (with the safety line);
                       not flagged + unsure -> not sure, try again.
+* `cannot_judge`    - the visitor pressed "read anyway" on a photo the gate found no
+                      spot in (gate.NOT_A_SPOT_CODES). The model ran for staff, but
+                      on plain skin or hair its numbers mean nothing, so no verdict.
 * `for_refusal`     - the gate stopped the scan. One headline per refusal code,
                       each saying what to point the camera at instead.
 
@@ -30,7 +33,7 @@ from dermascan.gate import Refusal
 from dermascan.signs import Sign
 
 Tone = Literal["neutral", "info", "warning", "urgent"]
-State = Literal["low_concern", "uncertain", "needs_attention", "urgent", "uncertain_caution", "refused", "error"]
+State = Literal["low_concern", "uncertain", "needs_attention", "urgent", "uncertain_caution", "cannot_judge", "refused", "error"]
 # "neutral" has no colour on purpose: a clean result must never look like an
 # all-clear. Green is banned for the same reason.
 
@@ -71,6 +74,7 @@ CHIP: dict[str, str] = {
     "needs_attention": "IMPORTANT",
     "uncertain_caution": "IMPORTANT",
     "urgent": "URGENT",
+    "cannot_judge": "NOT READ",
     "refused": "NOT READ",
     "error": "NOT READ",
 }
@@ -122,6 +126,19 @@ def for_prediction(p: Prediction, *, confidence_floor: float = config.CONFIDENCE
         "It could not rule out a problem, so please show this spot to a health worker.",
         "WHAT TO BRING",
         "Tell them when you first noticed the spot and whether it has changed.",
+    )
+
+
+def cannot_judge() -> Verdict:
+    """A forced read of a photo with no spot in it: the model's answer is withheld."""
+    return Verdict(
+        "cannot_judge", "info",
+        "WE CAN'T JUDGE THIS PHOTO",
+        "The photo check did not find one spot on skin, so the scan had nothing to read.",
+        "Put the ring over one mole or mark and take a new photo. If a spot worries you, show it to a health worker.",
+        "WHY NO ANSWER",
+        "The scanner only knows spots. On plain skin, hair or several marks its numbers "
+        "mean nothing, so it does not give one.",
     )
 
 

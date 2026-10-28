@@ -42,6 +42,7 @@ BAND_FOR_STATE = {
     "urgent": "urgent",
     "uncertain": "unsure",
     "refused": "unsure",
+    "cannot_judge": "unsure",
     "error": "unsure",
 }
 

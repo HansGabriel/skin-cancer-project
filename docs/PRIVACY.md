@@ -61,6 +61,13 @@ Railway's log keeps the same line per scan as the kiosk (label, confidence, timi
 the image or a name). The page and its Questions answer say this ("your photo is checked,
 then dropped; it is not kept"), not the kiosk's "nothing leaves this device".
 
+## Capture sessions (gate and model calibration)
+
+With `SAVE_CAPTURES_DIR` set on the Pi (a local edit, `docs/DEPLOYMENT.md`), every checked
+photo is written to the SD card with its gate numbers: no name, no account, nothing sent
+anywhere. The folder is copied to the training PC by hand and deleted from the Pi once the
+numbers are in `docs/METRICS.md`. First session: 30 October 2026.
+
 ## Before photographing students for the study
 
 Capturing students' skin as research data is human-participants research under ISEF

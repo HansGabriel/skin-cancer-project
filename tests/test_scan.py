@@ -42,6 +42,26 @@ def test_bare_skin_is_refused_but_can_be_forced(classifier) -> None:
     forced = scan.run_scan(photo, force=True, classifier=classifier)
     assert forced.status == "ok" and forced.forced is True
     assert forced.refusal is not None  # the screen can still say the checks were skipped
+    # No spot in the photo: the model's numbers are for staff, the visitor gets no verdict.
+    assert forced.verdict.state == "cannot_judge" and forced.prediction is not None
+    d = forced.to_dict()
+    assert d["judged"] is False and d["caveat"] == "" and d["prediction"]["cancer_score"] is not None
+
+
+def test_a_forced_read_of_a_badly_framed_spot_keeps_its_verdict(classifier, monkeypatch) -> None:
+    """Framing refusals have a real spot in the shot, so "read anyway" still answers, with the caveat."""
+    from dermascan import gate
+
+    real_check = gate.check
+
+    def off_centre(rgb):
+        import dataclasses
+        return dataclasses.replace(real_check(rgb), refusal=gate.Refusal("not_in_ring", True))
+
+    monkeypatch.setattr(gate, "check", off_centre)
+    out = scan.run_scan(jpeg(with_lesion(textured(SKIN_TONES["light"]))), force=True, classifier=classifier)
+    assert out.status == "ok" and out.forced and out.verdict.state != "cannot_judge"
+    assert out.to_dict()["judged"] is True and out.to_dict()["caveat"]
 
 
 def test_a_hard_refusal_cannot_be_forced(classifier) -> None:
@@ -68,7 +88,8 @@ def test_a_model_failure_reaches_the_screen_without_the_exception_text(classifie
 
 def test_a_forced_result_carries_the_caveat_and_a_normal_one_does_not(classifier) -> None:
     photo = jpeg(textured(SKIN_TONES["medium"]))
-    assert scan.run_scan(photo, force=True, classifier=classifier).to_dict()["caveat"]
+    forced = scan.run_scan(photo, force=True, classifier=classifier).to_dict()
+    assert forced["caveat"] == "" and forced["verdict"]["headline"] == "WE CAN'T JUDGE THIS PHOTO"  # the headline says it
     ok = scan.run_scan(jpeg(with_lesion(textured(SKIN_TONES["light"]))), classifier=classifier)
     assert ok.to_dict()["caveat"] == ""
 

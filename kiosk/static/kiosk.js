@@ -34,7 +34,7 @@ const S = {
 };
 
 const NO_ANSWER = {
-  status: "error", stage_ms: {}, total_ms: 0, measured: {}, refusal: null, caveat: "", signs: null, sign_lines: [],
+  status: "error", stage_ms: {}, total_ms: 0, measured: {}, refusal: null, caveat: "", judged: true, signs: null, sign_lines: [],
   verdict: { state: "error", tone: "info", chip: "NOT READ", headline: "THAT SCAN DID NOT FINISH",
              body: "The scanner did not answer.", advice: "Take another photo. If this keeps happening, ask a staff member.",
              note_label: "", note: "" },
@@ -251,13 +251,16 @@ const RENDER = {
     const o = shown();
     if (!o) return go("home");
     const v = o.verdict, ok = o.status === "ok";
+    // judged=false: a forced read of plain skin or hair - no verdict to save or compare,
+    // but staff can still open the numbers.
+    const judged = o.judged !== false;
     const lines = (o.sign_lines || []).map((l) => h("div", "sign", h("i", "", ""), h("span", "", l.text)));
     lines.forEach((n, i) => { n.firstChild.style.background = LINE[o.sign_lines[i].tier]; });
-    const saving = S.viewing || S.web ? null : saveButton(o);
+    const saving = S.viewing || S.web || !judged ? null : saveButton(o);
     const second = S.viewing ? btn("Delete this scan", deleteViewed, "btn compact danger") : saving; // none on the web
     // E: a spot saved more than once gets "Compare" - first photo beside this one.
     const hist = currentHistory();
-    const compare = hist && hist.count > 1 ? btn(`Compare · ${hist.count} scans`, openCompare, "soft history") : null;
+    const compare = judged && hist && hist.count > 1 ? btn(`Compare · ${hist.count} scans`, openCompare, "soft history") : null;
     const staff = S.settings.show_staff_details && ok ? btn(compare ? "Staff →" : "Details for staff →", openStaff, "soft outline") : null;
     setScreen(
       eyebrowWithChip(S.viewing ? `SAVED · ${(S.viewing.group || S.viewing.site).toUpperCase()} · ${timeOf(S.viewing.saved_at)}` : "RESULT · WHAT TO DO NEXT", v.chip),
@@ -268,7 +271,7 @@ const RENDER = {
       o.caveat ? h("p", "caveat", o.caveat) : null,
       lines.length ? h("div", "saw", h("div", "label", "WHAT THE SCAN SAW"), lines) : null,
       v.note ? h("div", "notebox", h("div", "label", v.note_label), h("p", "", v.note)) : null,
-      ok ? actions((second ? "even" : "one") + (lines.length ? " flush" : ""),
+      ok && judged ? actions((second ? "even" : "one") + (lines.length ? " flush" : ""),
                    S.viewing ? btn("Back to saved", () => go("saved"), "btn compact primary") : btn("Done", finish, "btn compact primary"),
                    second)
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
@@ -630,8 +633,8 @@ function openStaff() {
   const stages = Object.entries(o.stage_ms || {}).map(([k, v]) => `${k} ${v}`).join(" · ");
   const gate = Object.entries(o.measured || {}).map(([k, v]) => `${k.replace(/_/g, " ")} ${Number(v).toFixed(2)}`).join(" · ");
   $("staff").replaceChildren(
-    h("div", "eyebrow-row", eyebrow("CLINICAL READOUT · STAFF ONLY"), btn("Close ×", closeOverlays, "close")),
-    signs.length ? h("div", "", signs) : null,
+    h("div", "eyebrow-row", eyebrow(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"), btn("Close ×", closeOverlays, "close")),
+    ...[signs.length ? h("div", "", signs) : null].filter(Boolean),  // replaceChildren would print a null as "null"
     h("div", "label", "MODEL CONFIDENCE (CALIBRATED)"),
     h("div", "tech", "bars are for display; the decision is the score below"),
     ...probs,

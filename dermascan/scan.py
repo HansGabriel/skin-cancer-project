@@ -5,7 +5,8 @@
       -> gate.check          (is this a readable photo of one spot on skin?)
       -> classifier.predict  (only if the gate passed, or the visitor insisted)
       -> signs.measure       (A B C on the gate's outline; shown, never decides)
-      -> verdict             (the words on screen)
+      -> verdict             (the words on screen; none when the visitor forced a
+                              photo the gate found no spot in - staff still see numbers)
 
 check_photo is the first half alone (decode + gate, no model), for the "check the
 photo" screen: it answers in milliseconds, before the visitor commits to a scan.
@@ -49,6 +50,10 @@ class ScanOutcome:
     model_name: str = ""
     abc_signs: list[signs.Sign] | None = None
 
+    @property
+    def judged(self) -> bool:
+        return self.verdict.state != "cannot_judge"
+
     def to_dict(self) -> dict:
         """What the web page receives. No image bytes: the page already has the photo."""
         return {
@@ -64,7 +69,8 @@ class ScanOutcome:
             "stage_ms": self.stage_ms,
             "total_ms": sum(self.stage_ms.values()),
             "forced": self.forced,
-            "caveat": verdict.FORCED_CAVEAT if self.forced else "",
+            "caveat": verdict.FORCED_CAVEAT if self.forced and self.judged else "",
+            "judged": self.judged,  # False: the words are "we can't judge", prediction is for staff only
             "model": self.model_name,
             "signs": [s.to_dict() for s in self.abc_signs] if self.abc_signs else None,
             "sign_lines": verdict.sign_lines(self.abc_signs),
@@ -180,9 +186,12 @@ def run_scan(
     measured_signs = signs.measure(small, report.outline) if refusal is None else None
     lap("signs")
 
+    # A forced read of plain skin, hair or several marks: the numbers go to the staff
+    # drawer, the visitor gets "we can't judge" instead of a verdict the model cannot back.
+    unjudged = refusal is not None and refusal.code in gate.NOT_A_SPOT_CODES
     out = ScanOutcome(
         "ok",
-        verdict.for_prediction(pred),
+        verdict.cannot_judge() if unjudged else verdict.for_prediction(pred),
         prediction=pred,
         refusal=refusal,  # kept when the visitor overrode it, so the screen can say so
         measured=report.measured,
@@ -234,7 +243,7 @@ def _log(out: ScanOutcome, reused_check: bool) -> None:
         head = f"label={out.prediction.label} conf={out.prediction.confidence_pct:.0f}"
     else:
         head = f"refused={out.refusal.code if out.refusal else '?'}"
-    tail = " check=reused" if reused_check else ""
+    tail = (" unjudged=1" if not out.judged else "") + (" check=reused" if reused_check else "")
     log.info("scan status=%s %s ms %s total=%d%s", out.status, head, stages, sum(out.stage_ms.values()), tail)
 
 

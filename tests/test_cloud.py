@@ -47,7 +47,9 @@ def test_check_it_anyway_applies_to_that_photo_only(monkeypatch) -> None:
     assert at.button[0].label == "Check it anyway"
     at.button[0].click()
     at.run(timeout=30)
-    assert any("read anyway" in w.value for w in at.warning), "the forced result must carry the caveat"
+    # Bare skin has no spot: a forced read gives staff numbers but no verdict and no caveat.
+    assert at.subheader[0].value == "WE CAN'T JUDGE THIS PHOTO"
+    assert not any("read anyway" in w.value for w in at.warning)
 
     other = jpeg(textured(SKIN_TONES["light"], seed=3))  # a different photo of bare skin
     _run_with(monkeypatch, at, other)

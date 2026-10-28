@@ -338,3 +338,18 @@ darkening or a grown lobe. Limits that kept false "changed" at 15% caught 4% of 
 darkening and 1% of the lobes. So the kiosk shows the first and latest photo of a saved
 group side by side and leaves the judgement to a person. Pi captures through the cone
 (fixed distance and light) may be far steadier; measure them before automating E.
+
+## Forced reads of non-spots (24 Oct 2026 Pi session)
+
+Nine photos through the Pi camera: the one the gate passed scored 0.24 (not flagged); the
+eight it refused as "not one spot" (hair, plain skin, a pimple) were read anyway and all
+scored 0.52–1.00, "flagged for a doctor". Cause: no "not a lesion" class and 87% cancer
+among the close-ups the model trained on (above). From 29 October a forced read on
+`no_spot` / `plain_skin` / `several_marks` returns no verdict ("WE CAN'T JUDGE THIS PHOTO");
+the staff drawer keeps the numbers under a "numbers unreliable" line. Framing refusals
+(`not_in_ring`, `fills_frame`, `soft_edge`) still answer with the caveat. The drawer's
+"null" row on those scans was a page bug, fixed the same day.
+
+Still no Pi capture measured. First capture session: 30 October 2026 (`SAVE_CAPTURES_DIR`
+on for the event, plus ~50 deliberate non-lesion frames at the end), to seed a Pi bench
+and a `no_lesion` class for the next retrain.
