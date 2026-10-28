@@ -20,6 +20,7 @@ def test_every_verdict_is_plain_language() -> None:
     cases = [verdict.for_prediction(_pred(l, c)) for l in ("benign", "pre_cancerous", "malignant") for c in (20.0, 80.0)]
     cases += [verdict.for_refusal(Refusal(code, True)) for code in list(verdict._REFUSAL_COPY) + ["unknown"]]
     cases += [verdict.error_verdict(k) for k in list(verdict._ERROR_BODY) + ["unknown"]]
+    cases.append(verdict.cannot_judge())
     for v in cases:
         text = v.text().lower()
         for word in JARGON:
@@ -55,6 +56,14 @@ def test_flagged_but_unsure_keeps_the_referral_without_urgency() -> None:
         assert v.state == "uncertain_caution" and v.tone != "urgent"
         assert "health worker" in v.advice
         assert not any(w in v.text().lower() for w in URGENT)
+
+
+def test_cannot_judge_gives_no_verdict_and_no_reassurance() -> None:
+    v = verdict.cannot_judge()
+    assert v.state == "cannot_judge" and v.tone == "info" and verdict.CHIP[v.state] == "NOT READ"
+    assert "health worker" in v.advice
+    for w in ("safe", "clear", "nothing stood out"):
+        assert w not in v.text().lower()
 
 
 def test_confidence_floor_is_inclusive() -> None:

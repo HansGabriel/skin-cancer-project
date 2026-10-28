@@ -59,6 +59,8 @@ def test_refused_then_forced_uses_the_remembered_photo(client) -> None:
     second = client.post("/scan?force=1").get_json()
     assert second["status"] == "ok" and second["forced"] is True
     assert second["signs"] is None and second["sign_lines"] == []  # never measured on an outline the gate rejected
+    assert second["judged"] is False and second["verdict"]["state"] == "cannot_judge"
+    assert second["prediction"]["cancer_score"] is not None  # staff still see the numbers
 
 
 def test_no_camera_routes_say_so(client) -> None:

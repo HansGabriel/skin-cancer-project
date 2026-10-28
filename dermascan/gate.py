@@ -45,6 +45,10 @@ RefusalCode = Literal[
     "no_skin", "too_blurry", "too_dark", "too_bright",
     "no_spot", "fills_frame", "plain_skin", "not_in_ring", "several_marks", "soft_edge",
 ]
+# Content refusals: the photo holds no single spot to read, so a "read anyway" scan on one
+# gets the model's numbers for staff but no verdict for the visitor (dermascan/scan.py).
+# Framing refusals (not_in_ring, fills_frame, soft_edge) still have a real spot in the shot.
+NOT_A_SPOT_CODES = frozenset({"no_spot", "plain_skin", "several_marks"})
 
 
 @dataclass(frozen=True)

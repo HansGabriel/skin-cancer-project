@@ -27,7 +27,7 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 | Dataset | HAM10000 **+ ISIC archive collections BCN20000, MSK-1..5, MILK10k, PAD-UFES-20** (`training/prepare_datasets.py`, labels from the archive's `diagnosis_*` tree → `benign`, `pre_cancerous`, `malignant`; UDA-1/2 are test-only) — *mentor's call 2026-10-18 after the June model missed a quarter of the cancers from other hospitals* | HAM10000 alone is one hospital's dermoscopy; the Pi sees close-up photos |
 | Split | **by `lesion_id`** (GroupShuffleSplit), never by image | image-level split leaked 40% of test lesions |
 | Model | EfficientNetB0, 3-class softmax head, TFLite, float32 in/out, raw `[0,255]` input. **Deployed: the October 2026 multi-source model** (threshold 0.47) — it flags 121/149 external cancers vs 90/149 for the June model (`fec7993`, restored 2026-10-03, now history in `docs/METRICS.md`); the trade is lower benign specificity (0.59 vs 0.71), accepted by the mentor 2026-10-18 | fast on the Pi CPU; EfficientNet rescales internally — never add `/255` |
-| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.47 for the October model; 0.11 was the June model's). The threshold is fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity | the guarantee describes the device, not the Keras model |
+| Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.47 for the October model; 0.11 was the June model's). The threshold is fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity. **"Read anyway" on `no_spot` / `plain_skin` / `several_marks` (`gate.NOT_A_SPOT_CODES`) gives no verdict** (`verdict.cannot_judge`, `judged: false`); the staff drawer shows the numbers marked unreliable — *mentor's call 2026-10-29 after the 24 Oct Pi session: 8 of 9 forced reads of hair, plain skin and a pimple came out "flagged"*. Framing refusals still answer with the caveat | the guarantee describes the device, not the Keras model; the model has no "not a lesion" class, so on a non-spot its numbers mean nothing |
 | Confidence | temperature-scaled for display only; decision on raw probs | honest numbers, same labels |
 | Kiosk UI | **Flask + one static HTML page** (`kiosk/`) — *changed from Streamlit on 2026-10-01 with the mentor's approval* | Streamlit re-ran everything per tap and took 40 s to boot on the Pi |
 | Kiosk look | the **EPIVUE Interface** design from Claude Design (project `36f54779…`, file `EPIVUE Interface.dc.html`): navy instrument band + white page, sizes in `clamp(…cqh…)`, stacked under 720 px | restored 2026-10-01; match the design file, not memory |
@@ -38,7 +38,8 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 ### What was removed on 2026-10-01 (old app at commit `246c072`, `pi/last-known-good`)
 
 GrabCut segmentation, E-evolving, saved cases on disk, the offline LLM assistant
-(Ollama), Grad-CAM/Eigen-CAM, the feature-distance OOD gate, pixels-per-mm scale, PC-to-Pi
+(Ollama), Grad-CAM/Eigen-CAM (**Eigen-CAM returns 2026-10-29 by the mentor's override: staff
+drawer button only, computed on demand, never on the scan path**), the feature-distance OOD gate, pixels-per-mm scale, PC-to-Pi
 HTTP mode, ~40 `SKIN_*` env vars. Reason: 30–60 s scans, a gate nobody could calibrate,
 and a codebase the students could not read. Do not bring them back into the kiosk path;
 cite them from `246c072` in the paper if needed.
