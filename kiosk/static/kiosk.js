@@ -29,6 +29,7 @@ const S = {
   check: null, outcome: null, viewing: null, // viewing: a saved scan {id, site} shown instead of the live one
   savedAs: null, savedId: null, history: null, thread: [], suggestions: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
+  heat: false,  // the staff heatmap is in the aperture instead of the photo
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
   staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null, web: false,
 };
@@ -630,10 +631,16 @@ function openStaff() {
     const bar = h("i"); bar.style.width = Math.max(1.5, v) + "%"; bar.style.background = fills[k] || "#8C9BB0";
     return h("div", "prob" + (k === p.label ? " flag" : ""), h("span", "n", PROB_NAME[k] || k), h("span", "t", bar), h("span", "v", v.toFixed(1) + "%"));
   });
+  // "Where it looked": the Eigen-CAM heatmap swapped into the aperture while open. Only on
+  // the Pi, only for the photo just scanned, only when the server has a CAM file (health.model.cam).
+  const canHeat = S.health && S.health.model && S.health.model.cam && !S.web && !S.viewing && S.photoUrl;
+  const heat = canHeat ? btn("Where it looked", toggleHeat, "soft") : null;
+  const heatNote = canHeat ? h("p", "tech cam-note", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis.") : null;
   const stages = Object.entries(o.stage_ms || {}).map(([k, v]) => `${k} ${v}`).join(" · ");
   const gate = Object.entries(o.measured || {}).map(([k, v]) => `${k.replace(/_/g, " ")} ${Number(v).toFixed(2)}`).join(" · ");
   $("staff").replaceChildren(
-    h("div", "eyebrow-row", eyebrow(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"), btn("Close ×", closeOverlays, "close")),
+    h("div", "eyebrow-row", eyebrow(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"), heat, btn("Close ×", closeOverlays, "close")),
+    ...[heatNote].filter(Boolean),
     ...[signs.length ? h("div", "", signs) : null].filter(Boolean),  // replaceChildren would print a null as "null"
     h("div", "label", "MODEL CONFIDENCE (CALIBRATED)"),
     h("div", "tech", "bars are for display; the decision is the score below"),
@@ -647,7 +654,15 @@ function openStaff() {
   );
   $("staff").hidden = false;
 }
-function closeOverlays() { $("staff").hidden = true; $("sheet").hidden = true; }
+function toggleHeat(ev) {
+  S.heat = !S.heat;
+  showPhotoUrl(S.heat ? "/cam.jpg?t=" + Date.now() : S.photoUrl);
+  ev.currentTarget.textContent = S.heat ? "Show the photo" : "Where it looked";
+}
+function closeOverlays() {
+  $("staff").hidden = true; $("sheet").hidden = true;
+  if (S.heat) { S.heat = false; showPhotoUrl(S.photoUrl); }
+}
 
 // ---------- settings, keypad, erase, exit ----------
 function renderKeypad(message) {

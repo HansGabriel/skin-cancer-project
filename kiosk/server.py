@@ -43,14 +43,16 @@ import argparse
 import hmac
 import logging
 import threading
+import time
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 from dermascan import config
 from dermascan.answers import BAND_FOR_STATE, get_bank
+from dermascan.cam import get_cam
 from dermascan.classifier import get_classifier
-from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, run_scan
+from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, decode_jpeg, run_scan
 from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
@@ -72,12 +74,22 @@ class LastPhoto:
         self._jpeg: bytes | None = None
         self._checked: CheckedPhoto | None = None  # the "check the photo" result, so /scan does not redo it
         self._outcome: dict | None = None
+        self._cam: bytes | None = None  # the staff heatmap of this photo, built once on request
         self._lock = threading.Lock()
 
     def put(self, jpeg: bytes) -> bytes:
         with self._lock:
-            self._jpeg, self._checked, self._outcome = jpeg, None, None
+            self._jpeg, self._checked, self._outcome, self._cam = jpeg, None, None, None
         return jpeg
+
+    def cam_cached(self, jpeg: bytes) -> bytes | None:
+        with self._lock:
+            return self._cam if self._jpeg is jpeg else None
+
+    def cam_built(self, jpeg: bytes, heat: bytes) -> None:
+        with self._lock:
+            if self._jpeg is jpeg:
+                self._cam = heat
 
     def get(self) -> bytes | None:
         with self._lock:
@@ -103,7 +115,7 @@ class LastPhoto:
 
     def forget(self) -> None:
         with self._lock:
-            self._jpeg, self._checked, self._outcome = None, None, None
+            self._jpeg, self._checked, self._outcome, self._cam = None, None, None, None
 
 
 last_photo = LastPhoto()
@@ -199,7 +211,31 @@ def health():
     except Exception as exc:  # noqa: BLE001
         log.exception("model failed to load")
         return jsonify({**status, "ok": False, "error": f"model: {exc}"}), 500
-    return jsonify({**status, "ok": True, "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta}})
+    heat = not app.config["WEB_DEMO"] and get_cam() is not None
+    return jsonify({**status, "ok": True, "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta, "cam": heat}})
+
+
+@app.get("/cam.jpg")
+def cam_jpg():
+    """Staff heatmap of the last scanned photo (dermascan/cam.py). 404 when there is none to give."""
+    if app.config["WEB_DEMO"]:
+        return _error("scanner", 404)
+    cam_model = get_cam()
+    last = last_photo.last_scan()
+    if cam_model is None or last is None:
+        return _error("no_photo", 404)
+    jpeg, _outcome = last
+    heat = last_photo.cam_cached(jpeg)
+    if heat is None:
+        t = time.perf_counter()
+        try:
+            heat = cam_model.heatmap(decode_jpeg(jpeg, config.MAX_WORK_PX))
+        except Exception:  # noqa: BLE001 - a heatmap failure is a 404, never a crash
+            log.exception("cam failed")
+            return _error("scanner", 404)
+        last_photo.cam_built(jpeg, heat)
+        log.info("cam ms=%d", (time.perf_counter() - t) * 1000)
+    return Response(heat, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/preview.mjpg")

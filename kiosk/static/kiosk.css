@@ -286,3 +286,4 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
   .sites{grid-template-columns:repeat(2,minmax(0,1fr))}
   .keys{grid-template-columns:repeat(3,72px)}
 }
+.cam-note{margin-top:0;padding-top:0}
