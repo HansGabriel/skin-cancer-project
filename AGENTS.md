@@ -29,6 +29,7 @@ If chat instructions conflict with Notion, follow Notion unless the user overrid
 | Model | EfficientNetB0, 3-class softmax head, TFLite, float32 in/out, raw `[0,255]` input. **Deployed: the October 2026 multi-source model** (threshold 0.47) — it flags 121/149 external cancers vs 90/149 for the June model (`fec7993`, restored 2026-10-03, now history in `docs/METRICS.md`); the trade is lower benign specificity (0.59 vs 0.71), accepted by the mentor 2026-10-18 | fast on the Pi CPU; EfficientNet rescales internally — never add `/255` |
 | Decision | flag if `p(pre)+p(mal) >= thresholds.json` (0.47 for the October model; 0.11 was the June model's). The threshold is fitted by `training/calibrate.py` on the exported TFLite with 4-view TTA for 0.90 val sensitivity. **"Read anyway" on `no_spot` / `plain_skin` / `several_marks` (`gate.NOT_A_SPOT_CODES`) gives no verdict** (`verdict.cannot_judge`, `judged: false`); the staff drawer shows the numbers marked unreliable — *mentor's call 2026-10-29 after the 24 Oct Pi session: 8 of 9 forced reads of hair, plain skin and a pimple came out "flagged"*. Framing refusals still answer with the caveat | the guarantee describes the device, not the Keras model; the model has no "not a lesion" class, so on a non-spot its numbers mean nothing |
 | Confidence | temperature-scaled for display only; decision on raw probs | honest numbers, same labels |
+| Heatmap | **Eigen-CAM** (`dermascan/cam.py`), staff drawer button "Where it looked", computed on demand (~1 s), never on the scan path or the web demo. Fifth model file `models/skin_classifier_cam.tflite` + `.json`, exported by `scripts/export_cam_tflite.py` **in the same run as the classifier**; the `.json` holds the classifier's sha256 and `get_cam()` hides the button on a mismatch. Display only — *mentor's override 2026-10-29 of the 2026-10-01 removal* | LiteRT has no gradients, so Grad-CAM is impossible on the Pi; Eigen-CAM needs one forward pass |
 | Kiosk UI | **Flask + one static HTML page** (`kiosk/`) — *changed from Streamlit on 2026-10-01 with the mentor's approval* | Streamlit re-ran everything per tap and took 40 s to boot on the Pi |
 | Kiosk look | the **EPIVUE Interface** design from Claude Design (project `36f54779…`, file `EPIVUE Interface.dc.html`): navy instrument band + white page, sizes in `clamp(…cqh…)`, stacked under 720 px | restored 2026-10-01; match the design file, not memory |
 | Web demo | **Railway**, Docker (`Dockerfile`, `railway.json`, GitHub auto-deploy from `main`), running **the kiosk page in web mode** (`kiosk.server --web`: nothing kept, no Saved, no staff routes) — *mentor's call 2026-10-13, replacing the plain Streamlit page*; `cloud/streamlit_app.py` stays as a Streamlit Community Cloud fallback | the site looks like the Pi; same `dermascan/` core; a real container that does not sleep |
@@ -63,13 +64,13 @@ on 71 same-mole HAM10000 pairs, any limit that kept false "changed" under 15% ca
 ## Repository layout
 
 ```
-dermascan/      config.py scan.py gate.py classifier.py verdict.py signs.py answers.py answers.json   — the core, no UI framework
+dermascan/      config.py scan.py gate.py classifier.py cam.py verdict.py signs.py answers.py answers.json   — the core, no UI framework
 kiosk/          server.py camera.py saved.py static/{index.html,kiosk.css,kiosk.js,fonts/}
 cloud/          streamlit_app.py requirements.txt
-models/         skin_classifier.tflite labels.txt thresholds.json temperature.json  — swap all four together
+models/         skin_classifier.tflite labels.txt thresholds.json temperature.json (+ skin_classifier_cam.tflite/.json)  — swap them together
 training/       train_skin_classifier.ipynb calibrate.py eval.py split_scores.py isic_fetch.py prepare_datasets.py
                 build_external_bench.py external_eval.py external_bench.csv dataset_index.csv splits.csv requirements.txt (*.keras: gitignored)
-scripts/        launch_kiosk.sh update.sh run_dev.sh bench_scan.py gate_report.py
+scripts/        launch_kiosk.sh update.sh run_dev.sh bench_scan.py gate_report.py export_cam_tflite.py
 tests/          pytest, < 1 min, no dataset; tests/fixtures/gate/{refuse,pass}: a few dozen <= 512 px real photos (no faces)
 docs/           HARDWARE_CHECKLIST DEPLOYMENT METRICS PRIVACY HANDOFF
 ```

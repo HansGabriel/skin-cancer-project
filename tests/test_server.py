@@ -363,3 +363,12 @@ def test_web_mode_will_not_start_while_captures_are_kept(monkeypatch, tmp_path) 
     with pytest.raises(SystemExit):
         server.use_web_mode()
     assert server.app.config["WEB_DEMO"] is False
+
+
+def test_heatmap_is_absent_without_a_cam_file(client, monkeypatch) -> None:
+    from dermascan import cam
+
+    monkeypatch.setattr(cam, "_cam", None)
+    monkeypatch.setattr(cam, "_cam_tried", True)  # as if the file were missing
+    assert client.get("/health").get_json()["model"]["cam"] is False
+    assert client.get("/cam.jpg").status_code == 404
