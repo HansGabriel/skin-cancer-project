@@ -14,7 +14,7 @@ there, with dates.
 
 | # | Paper says (page) | The device | Write instead |
 |---|---|---|---|
-| 1 | **Grad-CAM heatmaps** (objectives p3/p36, abstract p25, framework p37, block diagram p42, survey p79) | TensorFlow Lite on the Pi has no gradients, so Grad-CAM is impossible there. The kiosk shows **Eigen-CAM**: the first principal component of EfficientNetB0's last 7×7×1280 feature map, read from the deployed `.tflite` after one forward pass (`dermascan/cam.py`, Muhammad & Yeasin 2020). It is class-agnostic (where the network looked, not "why cancer"), staff-only, built on demand (~1 s), never on the scan path. | "a class-activation heatmap (Eigen-CAM, a gradient-free method suited to TensorFlow Lite on the Raspberry Pi) shown to staff beside the photo" |
+| 1 | **Grad-CAM heatmaps** (objectives p3/p36, abstract p25, framework p37, block diagram p42, survey p79) | TensorFlow Lite on the Pi has no gradients, so Grad-CAM is impossible there. The kiosk shows **Eigen-CAM**: the first principal component of EfficientNetB0's last 7×7×1280 feature map, read from the deployed `.tflite` after one forward pass (`dermascan/cam.py`, Muhammad & Yeasin 2020). It is class-agnostic (where the network looked, not "why cancer"), display only, built once per photo (~1 s) after the photo check has answered, so it never delays a check or a scan. Shown to the visitor on the check screen after a passing photo ("Where it looked", a framing aid) and to staff beside the photo in the drawer. | "a class-activation heatmap (Eigen-CAM, a gradient-free method suited to TensorFlow Lite on the Raspberry Pi) shown after the photo check and, beside the photo, to staff" |
 | 2 | **Gemma 4 chatbot on the device** (title; objective 4; "Recommendations were then given by the integrated Gemma4", p58–60, p67) | The Pi is a 4 GB board; Gemma 4's smallest model (E2B, ~4 GB) needs 8 GB, and the team's own logbook notes the hardware limit (p106). Gemma 4 **drafts the Questions-tab answers at build time on the PC** (`scripts/draft_answers_gemma.py`, Ollama) from the team's approved answers and the verdict timeframes; the kiosk serves them offline with the badge "DRAFTED BY GEMMA 4 · NOT YET REVIEWED BY A DOCTOR". Nothing is generated on the device. | "a question-and-answer tab whose answers were drafted with Gemma 4 on the development PC, checked by the team, and served offline on the device; no text is generated at the kiosk" |
 | 3 | **UV fluorescence imaging** and "multi-modal sensing" (p2, p12, p37) | The hardware is one RGB camera and a white LED ring. | Remove. |
 | 4 | **Mobile application on Railway** (p10, p54) | Railway hosts a web demo: the same kiosk page in web mode (nothing kept, no camera needed). It is a website, not an app, and the Pi does not use it. | "a public web demo of the same interface (Railway), for review; the kiosk itself works offline" |
@@ -52,8 +52,9 @@ there, with dates.
 - **Possible test leakage** (p62–64): ISIC_0028063, ISIC_0029930 and ISIC_0031228 are
   HAM10000 IDs. Unless they were in the held-out split, they are training images. Use
   images from the external bench (`training/external_bench.csv`) for examples.
-- **"Users" vs staff:** the kiosk has a visitor side (plain words, no percentages) and a
-  staff side behind a button (bars, cancer score, A B C D E numbers, heatmap, gate numbers).
+- **"Users" vs staff:** the kiosk has a visitor side (plain words, no percentages, the
+  "Where it looked" heatmap after a passing photo check) and a staff side behind a button
+  (bars, cancer score, A B C D E numbers, heatmap beside the photo, gate numbers).
   The paper's screenshots mix the two; label each as visitor or staff.
 - **Arithmetic / IDs:** "0.5 % benign + 95.0 % malignant" (p60) vs Table 2's 5.0 %;
   "B1.7 %" (p63); Fig. 20's ISIC_0000142 vs the table's ISIC_0000144.
@@ -78,9 +79,10 @@ there, with dates.
 
 ## 4. Figures to redo
 
-- Block diagram (p42): Input → **Photo check (label + outline)** → EfficientNetB0 (TFLite)
-  → Decision (cancer score ≥ limit) → Visitor words / Staff drawer (bars, A B C D E,
-  Eigen-CAM) → Questions (answers drafted with Gemma 4 on the PC, served offline).
+- Block diagram (p42): Input → **Photo check (label + outline, then Eigen-CAM "Where it
+  looked")** → EfficientNetB0 (TFLite) → Decision (cancer score ≥ limit) → Visitor words /
+  Staff drawer (bars, A B C D E, Eigen-CAM) → Questions (answers drafted with Gemma 4 on the
+  PC, served offline).
 - Fig. 10 (p54): the check screen with its chip and outline.
 - Conceptual framework (p37): remove UV imaging; "AI-generated recommendations" →
   "pre-written answers".

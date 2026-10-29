@@ -286,6 +286,17 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 .gate td+td{text-align:right;color:var(--f-ink);font-weight:600;padding-left:12px}
 .gate td:last-child{color:var(--f-muted);font-weight:400;min-width:5.5em}
 .gate tr.miss td+td{color:#E0645A}
+/* "Where it looked" on the check screen: one heatmap circle under the lede, tap to put it in the ring */
+.heat-aside{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(12px,1.8cqw,24px);align-items:center;margin-top:clamp(10px,1.8cqh,16px)}
+.heat-pic{padding:0;border:0;background:var(--chip);border-radius:50%;width:clamp(96px,22cqh,160px);height:clamp(96px,22cqh,160px);box-shadow:0 0 0 2px var(--rule);cursor:pointer}
+.heat-pic.on{box-shadow:0 0 0 3px var(--navy)}
+.heat-pic[disabled]{cursor:default}
+.heat-pic img,.heat-wait{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;box-sizing:border-box}
+.heat-wait{border:2px dashed var(--border)}
+.heat-pic img.in{animation:heat-in .24s ease}
+@keyframes heat-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.heat-pic img.in{animation:none}}
+.heat-line{margin:4px 0 0;color:var(--muted);line-height:1.4;max-width:30ch;font-size:clamp(14px,2.6cqh,17px)}
 /* the photo beside its heatmap, staff drawer */
 .heat-pair{display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.6cqw,20px);margin-top:clamp(10px,1.8cqh,16px)}
 .heat-pair figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:5px}
@@ -312,6 +323,9 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
   .row,.sign,.q,.qa-a{font-size:15px}
   .btn{height:52px;font-size:16px}
   .actions{grid-template-columns:1fr 1fr}
+  .heat-aside{grid-template-columns:auto minmax(0,1fr);gap:14px}
+  .heat-pic{width:112px;height:112px}
+  .heat-line{font-size:14px}
   .sites{grid-template-columns:repeat(2,minmax(0,1fr))}
   .keys{grid-template-columns:repeat(3,72px)}
 }

@@ -29,7 +29,8 @@ const S = {
   check: null, outcome: null, viewing: null, // viewing: a saved scan {id, site} shown instead of the live one
   savedAs: null, savedId: null, history: null, thread: [], suggestions: [], drafters: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
-  heat: false,  // the staff heatmap is in the aperture instead of the photo
+  heat: false,  // the heatmap is in the aperture instead of the photo
+  checkHeat: null, checkHeatUrl: null,  // "Where it looked" for the check screen: null · "loading" · "ready", and its object URL
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
   staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null, web: false,
 };
@@ -145,10 +146,11 @@ function paintInstrument() {
     const hist = currentHistory();
     if (hist && hist.count > 1) $("arcs").querySelector('[data-sign="E"]').style.stroke = HISTORY_ARC;
   }
-  // The photo check's own outline over this visitor's photo: on the check screen, and on
-  // the result (it is what A B C were measured on). Never over a saved scan or the heatmap.
+  // The photo check's own outline over this visitor's photo: on the check screen (also over
+  // the heatmap there: "is the bright area inside the outline?"), and on the result (it is
+  // what A B C were measured on). Never over a saved scan, nor the heatmap in the drawer.
   const c = S.check;
-  const showOutline = c && c.outline && c.outline.length && !S.viewing && !S.heat && hasPhoto
+  const showOutline = c && c.outline && c.outline.length && !S.viewing && (!S.heat || S.screen === "check") && hasPhoto
     && (S.screen === "check" || (S.screen === "result" && o && o.status === "ok" && o.judged !== false));
   toggle(d, "outline", showOutline);
   if (showOutline) {
@@ -254,6 +256,7 @@ const RENDER = {
       h1(c.headline, pass ? "" : "verdict"),
       lede(pass && S.source === "import" ? "Read from the picture you chose — " + c.lede.charAt(0).toLowerCase() + c.lede.slice(1) : c.lede),
       !pass && c.verdict ? h("p", "advice", c.verdict.advice) : null,
+      pass ? heatAside() : null,
       readingsBlock(c.readings),
       pass ? actions("", btn("Check this spot", () => scan(false), "btn primary"), btn("Take another", retake))
            : actions(canForce ? "" : "one", btn("Take another", retake, "btn primary"), canForce ? btn("Check it anyway", () => scan(true)) : null),
@@ -503,12 +506,47 @@ async function usePhoto(blob, onServer, source) {
   if (!("headline" in r.data)) return showOutcome(r.data); // refused before any check (e.g. too large): shown as a result
   S.photoOnServer = !S.web; // the web server keeps nothing: /scan sends the photo again
   S.check = r.data;
+  if (r.data.status === "pass") loadCheckHeat(blob);
   if (S.screen === "check") go("check");
+}
+
+// "Where it looked" for a passing photo (dermascan/cam.py): asked for after the check has
+// answered, so the check is never slower; it fades in when it lands. On the kiosk the server
+// has the photo (GET); on the web it keeps nothing, so the photo goes again (POST). If the
+// visitor moves on before it lands, the answer is dropped.
+async function loadCheckHeat(blob) {
+  if (!(S.health && S.health.model && S.health.model.cam_on_check)) return;
+  S.checkHeat = "loading";
+  let url = null;
+  try {
+    let r;
+    if (S.web) { const f = new FormData(); f.append("image", blob, "photo.jpg"); r = await fetch("/cam.jpg", { method: "POST", body: f }); }
+    else r = await fetch("/cam.jpg?t=" + Date.now(), { cache: "no-store" });
+    if (r.ok) url = URL.createObjectURL(await r.blob());
+  } catch (e) { /* no heatmap: the circle is simply absent */ }
+  if (S.photoBlob !== blob) { if (url) URL.revokeObjectURL(url); return; }
+  S.checkHeat = url ? "ready" : null; S.checkHeatUrl = url;
+  if (S.screen === "check") RENDER.check();
+}
+// The circle under the lede: this photo's heatmap, or a quiet placeholder while it is built.
+// Tapping it puts the heatmap in the ring, under the photo check's outline; tapping again, the photo.
+function heatAside() {
+  if (!S.checkHeat) return null;
+  const ready = S.checkHeat === "ready";
+  const pic = ready ? h("img", "in") : h("span", "heat-wait");
+  if (ready) { pic.src = S.checkHeatUrl; pic.alt = "Heatmap over the photo"; }
+  const b = btn(pic, toggleHeat, "heat-pic" + (S.heat ? " on" : ""));
+  b.disabled = !ready;
+  b.setAttribute("aria-pressed", String(!!S.heat));
+  return h("div", "heat-aside", b,
+    h("div", "", h("p", "label", "Where it looked"),
+      h("p", "heat-line", ready ? "Bright areas pulled the reading. Not on your mark? Take another." : "Looking…")));
 }
 function forgetPhoto() {
   if (S.photoUrl) URL.revokeObjectURL(S.photoUrl);
+  if (S.checkHeatUrl) URL.revokeObjectURL(S.checkHeatUrl);
   if (!S.web && (S.photoBlob || S.outcome)) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
-  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [], heat: false });
+  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [], heat: false, checkHeat: null, checkHeatUrl: null });
   if (!S.viewing) showPhotoUrl(null);
 }
 function retake() { if (S.camera === "off") { forgetPhoto(); go("frame"); pickFile(); } else startCheck(); }
@@ -711,18 +749,19 @@ function openStaff() {
     const bar = h("i"); bar.style.width = Math.max(1.5, v) + "%"; bar.style.background = fills[k] || "#8C9BB0";
     return h("div", "prob" + (k === p.label ? " flag" : ""), h("span", "n", PROB_NAME[k] || k), h("span", "t", bar), h("span", "v", v.toFixed(1) + "%"));
   });
-  // The heatmap (Eigen-CAM, dermascan/cam.py) beside the photo: only on the Pi, only for the
-  // photo just scanned, only when the server can build one (health.model.cam). /cam.jpg is
-  // built on this first request and cached for the photo; tapping either picture puts the
-  // heatmap in the ring, or the photo back.
-  const canHeat = S.health && S.health.model && S.health.model.cam && !S.web && !S.viewing && S.photoUrl;
+  // The heatmap (Eigen-CAM, dermascan/cam.py) beside the photo: only for the photo just
+  // scanned, only when the server can build one (health.model.cam). The check screen's copy
+  // is reused when it has one; otherwise /cam.jpg builds it now and caches it for the photo
+  // (on the web the server keeps nothing, so only the check screen's copy can be shown).
+  // Tapping either picture puts the heatmap in the ring, or the photo back.
+  const canHeat = S.health && S.health.model && S.health.model.cam && (S.checkHeatUrl || !S.web) && !S.viewing && S.photoUrl;
   const pair = canHeat ? h("div", "heat-pair",
     h("figure", "", btn(h("img", "", ), toggleHeat, ""), h("figcaption", "", "PHOTO")),
     h("figure", "", btn(h("img", "", ), toggleHeat, ""), h("figcaption", "", "WHERE IT LOOKED"))) : null;
   if (pair) {
     const [photo, heat] = pair.querySelectorAll("img");
     photo.src = S.photoUrl; photo.alt = "The photo";
-    heat.src = "/cam.jpg?t=" + Date.now(); heat.alt = "Heatmap over the photo";
+    heat.src = S.checkHeatUrl || "/cam.jpg?t=" + Date.now(); heat.alt = "Heatmap over the photo";
   }
   const heatNote = canHeat ? h("p", "tech flush", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis. Tap a picture to put it in the ring.") : null;
   const stages = Object.entries(o.stage_ms || {}).map(([k, v]) => `${k} ${v}`).join(" · ");
@@ -746,8 +785,9 @@ function openStaff() {
 }
 function toggleHeat() {
   S.heat = !S.heat;
-  showPhotoUrl(S.heat ? "/cam.jpg?t=" + Date.now() : S.photoUrl);
-  paintInstrument();  // the gate outline hides under the heatmap and comes back with the photo
+  showPhotoUrl(S.heat ? S.checkHeatUrl || "/cam.jpg?t=" + Date.now() : S.photoUrl);
+  if (S.screen === "check") RENDER.check();  // the circle shows which picture is in the ring
+  paintInstrument();  // in the drawer the gate outline hides under the heatmap and comes back with the photo
 }
 function closeOverlays() {
   $("staff").hidden = true; $("sheet").hidden = true;

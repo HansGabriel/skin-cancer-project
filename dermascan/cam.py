@@ -1,4 +1,4 @@
-"""Eigen-CAM: "where the scanner looked", for the staff drawer only.
+"""Eigen-CAM: "where the scanner looked", on the check screen and in the staff drawer.
 
     photo (RGB, <= 1024 px)
       -> resize to 224, same raw [0, 255] input as the classifier
@@ -20,10 +20,12 @@ classifier. A separate models/skin_classifier_cam.tflite (scripts/export_cam_tfl
 is still used first if one is present and its .json names this classifier's sha256 -
 kept for the day a quantised export fuses the layer away.
 
-Display only. Nothing here feeds the verdict. About a second on a Pi 4, run on
-demand when staff open the drawer, never on the scan path. The interpreter is
-built in a background thread after boot (warm_in_background), so the first
-drawer is not slow and the boot is not slower.
+Display only. Nothing here feeds the verdict. About a second on a Pi 4. The page
+asks for it after the photo check has answered (a passing photo only, config
+CAM_ON_CHECK), and again from the staff drawer, where the same cached heatmap is
+served. It never delays the check or the scan. The interpreter is built in a
+background thread after boot (warm_in_background), so the first heatmap is not
+slow and the boot is not slower.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ from dermascan.classifier import _interpreter_class, to_input_tensor
 
 log = logging.getLogger("dermascan.cam")
 
-# Shown with every heatmap. Staff-facing, but still plain words.
+# Shown with every heatmap in the staff drawer; the visitor's check screen has its own line in kiosk.js.
 CAM_NOTE = "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis."
 
 # The layer the map is read from, by name; by shape when the name is not found

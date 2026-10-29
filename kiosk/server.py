@@ -8,6 +8,7 @@
     POST /scan           scan the uploaded `image` file, or the remembered photo
                          (`force=1` reads a photo the spot check refused)
     POST /forget         drop the remembered photo (the page calls this on "Done")
+    GET  /cam.jpg        "Where it looked" over the last checked or scanned photo (web: POST the photo)
 
     GET  /questions      questions to tap (`state` = the verdict being asked about)
     POST /ask            {question, state, sign_lines} -> a written answer
@@ -75,7 +76,7 @@ class LastPhoto:
         self._jpeg: bytes | None = None
         self._checked: CheckedPhoto | None = None  # the "check the photo" result, so /scan does not redo it
         self._outcome: dict | None = None
-        self._cam: bytes | None = None  # the staff heatmap of this photo, built once on request
+        self._cam: bytes | None = None  # the "Where it looked" heatmap of this photo, built once on request
         self._lock = threading.Lock()
 
     def put(self, jpeg: bytes) -> bytes:
@@ -114,6 +115,11 @@ class LastPhoto:
         with self._lock:
             return (self._jpeg, self._outcome) if self._jpeg and self._outcome else None
 
+    def last_checked_or_scanned(self) -> bytes | None:
+        """The photo the visitor is looking at: checked (/check) or scanned (/scan). None before either."""
+        with self._lock:
+            return self._jpeg if self._jpeg and (self._checked is not None or self._outcome is not None) else None
+
     def forget(self) -> None:
         with self._lock:
             self._jpeg, self._checked, self._outcome, self._cam = None, None, None, None
@@ -127,7 +133,7 @@ settings = {"allow_read_anyway": config.ALLOW_READ_ANYWAY, "show_staff_details":
 # Set by `--web` (use_web_mode). In web mode only these routes answer; anything else,
 # including a route added later, is 404 until it is listed here on purpose.
 app.config["WEB_DEMO"] = False
-WEB_ROUTES = {"index", "health", "check", "scan", "forget", "questions", "ask", "static"}
+WEB_ROUTES = {"index", "health", "check", "scan", "cam_jpg", "forget", "questions", "ask", "static"}
 
 
 def use_web_mode() -> None:
@@ -213,26 +219,32 @@ def health():
         log.exception("model failed to load")
         return jsonify({**status, "ok": False, "error": f"model: {exc}"}), 500
     # get_cam() builds the heatmap interpreter on first call; warm_in_background() has usually done it by now.
-    heat = not app.config["WEB_DEMO"] and get_cam() is not None
+    heat = get_cam() is not None
     return jsonify({
         **status, "ok": True,
-        "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta, "cam": heat},
+        # cam: the server can build "Where it looked"; cam_on_check: the page shows it on the check screen too.
+        "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta,
+                  "cam": heat, "cam_on_check": heat and config.CAM_ON_CHECK},
         # The limit each gate number is held to, so the staff drawer prints value and limit side by side.
         "gate_limits": gate.limits(),
     })
 
 
-@app.get("/cam.jpg")
+@app.route("/cam.jpg", methods=["GET", "POST"])
 def cam_jpg():
-    """Staff heatmap of the last scanned photo (dermascan/cam.py). 404 when there is none to give."""
-    if app.config["WEB_DEMO"]:
-        return _error("scanner", 404)
+    """"Where it looked" (dermascan/cam.py) blended over the photo: the check screen after a
+    passing photo, and the staff drawer. On the kiosk, GET gives the last checked or scanned
+    photo's heatmap, built once per photo. On the web the server keeps nothing, so the page
+    POSTs the photo again and nothing is remembered. 404 when there is none to give."""
     cam_model = get_cam()
-    last = last_photo.last_scan()
-    if cam_model is None or last is None:
+    if app.config["WEB_DEMO"]:
+        upload = request.files.get("image")
+        jpeg = upload.read() if upload is not None else None
+    else:
+        jpeg = last_photo.last_checked_or_scanned() if request.method == "GET" else None
+    if cam_model is None or not jpeg:
         return _error("no_photo", 404)
-    jpeg, _outcome = last
-    heat = last_photo.cam_cached(jpeg)
+    heat = None if app.config["WEB_DEMO"] else last_photo.cam_cached(jpeg)
     if heat is None:
         t = time.perf_counter()
         try:
@@ -240,7 +252,8 @@ def cam_jpg():
         except Exception:  # noqa: BLE001 - a heatmap failure is a 404, never a crash
             log.exception("cam failed")
             return _error("scanner", 404)
-        last_photo.cam_built(jpeg, heat)
+        if not app.config["WEB_DEMO"]:
+            last_photo.cam_built(jpeg, heat)
         log.info("cam ms=%d", (time.perf_counter() - t) * 1000)
     return Response(heat, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
 
@@ -461,7 +474,7 @@ def main() -> None:
         use_web_mode()
     else:
         cam.camera.start()
-        warm_in_background()  # the staff heatmap's interpreter, off the boot path and off the scan path
+    warm_in_background()  # the "Where it looked" interpreter, off the boot path and off the scan path
     log.info(
         "model %s, camera %s, exit %s, http://%s:%d",
         config.MODEL_PATH.name,

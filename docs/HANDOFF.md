@@ -18,9 +18,12 @@ owed, and how to tell whether the overnight retrain may be shipped. Hans pushes 
   "GitHub not reachable"). "Show the update log" in Settings prints git's own words.
   One-time hygiene on the Pi, so a hand `git pull` works too:
   `git remote set-url origin https://github.com/HansGabriel/skin-cancer-project.git`
-- **Heatmap** ("Where it looked", staff drawer): Eigen-CAM read from the deployed
-  classifier itself, no extra model file. Photo and heatmap side by side; tap to put one in
-  the ring. On demand only, never on the scan path.
+- **Heatmap** ("Where it looked"): Eigen-CAM read from the deployed classifier itself, no
+  extra model file. On the check screen after a passing photo, a circle under the headline
+  fills in about a second after the check (tap it to put it in the ring, under the outline);
+  in the staff drawer, photo and heatmap side by side. Built once per photo, after the check
+  has answered, so no check or scan waits for it. If the Pi feels slow, set
+  `CAM_ON_CHECK = False` in `dermascan/config.py` and restart.
 - **Gemma 4**: drafts the Questions-tab answers on the PC (`scripts/draft_answers_gemma.py`,
   needs Ollama there); the Pi serves them offline with a "DRAFTED BY GEMMA 4" badge until a
   doctor signs them. Nothing runs on the Pi. The shipped `answers.json` is still team-written
