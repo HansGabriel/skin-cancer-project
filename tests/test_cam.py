@@ -69,6 +69,19 @@ def test_a_cam_file_from_other_weights_falls_back_to_the_classifier(monkeypatch,
     assert cam.cam_matches_classifier(meta, config.MODEL_PATH)
 
 
+def test_alignment_says_whether_the_heat_sits_on_the_outline() -> None:
+    """The visitor's hint: brightest point inside the (grown) outline = aligned; share of heat under it for staff."""
+    hot = np.zeros((7, 7), np.float32); hot[1, 5] = 1.0  # top right
+    around_it = [[0.6, 0.05], [0.95, 0.05], [0.95, 0.4], [0.6, 0.4]]
+    elsewhere = [[0.05, 0.6], [0.4, 0.6], [0.4, 0.95], [0.05, 0.95]]
+    on = cam.alignment(hot, around_it)
+    off = cam.alignment(hot, elsewhere)
+    assert on["aligned"] is True and on["inside"] > 0.5 and 0.6 <= on["peak"][0] <= 1 and 0 <= on["peak"][1] <= 0.4
+    assert off["aligned"] is False and off["inside"] < 0.2
+    assert cam.alignment(hot, []) is None and cam.alignment(hot, [[0.1, 0.1], [0.2, 0.2]]) is None
+    assert cam.alignment(np.zeros((7, 7), np.float32), around_it)["aligned"] is False  # a flat map is on nothing
+
+
 def test_no_model_at_all_means_no_cam(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(config, "CAM_PATH", tmp_path / "missing.tflite")
     monkeypatch.setattr(config, "MODEL_PATH", tmp_path / "missing_classifier.tflite")

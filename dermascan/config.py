@@ -33,6 +33,10 @@ CAM_JPEG_QUALITY = 85
 # It is one extra forward pass per photo (~1 s on the Pi), fetched by the page after the check
 # answers, so the check itself is never slower. Switch off if the Pi feels busy.
 CAM_ON_CHECK = True
+# "Where it looked" against the photo check's outline (cam.alignment): the heat counts as on
+# the spot when its brightest point falls inside the outline grown by this much of the frame.
+# Half a map cell (the map is 7 x 7); finer would be false precision. GUESSED - check on Pi captures.
+CAM_ALIGN_MARGIN = 0.07
 
 # --- Inference ----------------------------------------------------------------
 NUM_THREADS = 4  # the Pi 4 has four cores

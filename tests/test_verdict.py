@@ -124,7 +124,7 @@ def test_every_check_outcome_has_a_short_plain_label() -> None:
         elif code in FRAMING_CODES:
             assert label.startswith("SPOT · "), code  # a real spot: "Check it anyway" still answers
         elif code == "no_skin":
-            assert label == "NOT SKIN"
+            assert label == "SKIN NOT RECOGNISED"
         else:
             assert label.startswith("CAN'T READ · "), code
     assert set(verdict._REFUSAL_COPY) <= set(verdict.CHECK_LABEL)

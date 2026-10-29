@@ -359,7 +359,7 @@ and a `no_lesion` class for the next retrain.
 No limit moved. What changed in `dermascan/gate.py` / `verdict.py`:
 
 - Every check outcome has a short label on the check screen (`verdict.check_label`):
-  SPOT FOUND · NOT A SPOT · PLAIN SKIN / SEVERAL MARKS / NONE FOUND · NOT SKIN ·
+  SPOT FOUND · NOT A SPOT · PLAIN SKIN / SEVERAL MARKS / NONE FOUND · SKIN NOT RECOGNISED ·
   SPOT · NOT IN THE RING / TOO CLOSE / LOOKS LIKE A SHADOW / EDGE HARD TO FOLLOW ·
   CAN'T READ · BLURRY / DARK / GLARE. The gate's outline is drawn on the photo
   (`gate.outline_polygon`, ≤ 64 points, ~1 ms: the only addition to the check path).
