@@ -1,7 +1,12 @@
-"""Export the Eigen-CAM feature model next to a freshly trained classifier.
+"""Export a separate Eigen-CAM feature model next to a freshly trained classifier.
+
+NOT needed since 2026-10-29: dermascan/cam.py reads the same feature map out of
+models/skin_classifier.tflite itself. Keep this for the day a quantised export
+fuses that layer away; cam.py prefers this file when it is present and its .json
+names the deployed classifier's sha256.
 
 Run on the training PC, in the SAME run that wrote models/skin_classifier.tflite
-(the notebook's export cell calls it, or by hand right after):
+(by hand, right after the notebook's export cell - the notebook does not call it):
 
     venv/bin/python scripts/export_cam_tflite.py
     venv/bin/python scripts/export_cam_tflite.py --keras training/skin_classifier_full.keras --out /tmp/cam
