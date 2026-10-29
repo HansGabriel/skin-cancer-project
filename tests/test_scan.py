@@ -62,6 +62,8 @@ def test_a_forced_read_of_a_badly_framed_spot_keeps_its_verdict(classifier, monk
     out = scan.run_scan(jpeg(with_lesion(textured(SKIN_TONES["light"]))), force=True, classifier=classifier)
     assert out.status == "ok" and out.forced and out.verdict.state != "cannot_judge"
     assert out.to_dict()["judged"] is True and out.to_dict()["caveat"]
+    # The outline is a real mark here, so A B C are measured and shown (since 2026-10-29).
+    assert [s["letter"] for s in out.to_dict()["signs"]] == ["A", "B", "C", "D", "E"]
 
 
 def test_a_hard_refusal_cannot_be_forced(classifier) -> None:

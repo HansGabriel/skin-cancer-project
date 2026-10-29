@@ -22,6 +22,7 @@
     POST /settings       change ALLOW_READ_ANYWAY / SHOW_STAFF_DETAILS until restart
     POST /erase          "End event - erase all": every saved scan, now
     POST /quit           ask scripts/launch_kiosk.sh to shut down
+    POST /update         ask the launcher to run scripts/update.sh;  POST /update/log  its log's tail
 
 Every answer from /capture and /scan that is not a photo has the same shape as a
 scan outcome, so the page renders errors with the same code as results, in words
@@ -48,9 +49,9 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from dermascan import config
+from dermascan import config, gate
 from dermascan.answers import BAND_FOR_STATE, get_bank
-from dermascan.cam import get_cam
+from dermascan.cam import get_cam, warm_in_background
 from dermascan.classifier import get_classifier
 from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, decode_jpeg, run_scan
 from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
@@ -58,6 +59,11 @@ from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
 STATIC = Path(__file__).resolve().parent / "static"
+# Every number gate.check can put in `measured`, in the order the checks run (the drawer's table order).
+GATE_KEYS = (
+    "skin_fraction", "focus", "brightness", "spot_fraction", "spot_contrast", "spot_solidity",
+    "spot_offset", "spot_at_edge", "other_marks", "spot_dominance", "ring_skin", "edge_width",
+)
 
 log = logging.getLogger("dermascan.server")
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="/static")
@@ -211,8 +217,14 @@ def health():
     except Exception as exc:  # noqa: BLE001
         log.exception("model failed to load")
         return jsonify({**status, "ok": False, "error": f"model: {exc}"}), 500
+    # get_cam() builds the heatmap interpreter on first call; warm_in_background() has usually done it by now.
     heat = not app.config["WEB_DEMO"] and get_cam() is not None
-    return jsonify({**status, "ok": True, "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta, "cam": heat}})
+    return jsonify({
+        **status, "ok": True,
+        "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta, "cam": heat},
+        # The limit each gate number is held to, so the staff drawer prints value and limit side by side.
+        "gate_limits": {k: gate.limit_text(k) for k in GATE_KEYS},
+    })
 
 
 @app.get("/cam.jpg")
@@ -303,7 +315,7 @@ def forget():
 @app.get("/questions")
 def questions():
     band = BAND_FOR_STATE.get(request.args.get("state", ""), "general")
-    return jsonify({"suggestions": get_bank().suggestions(band)})
+    return jsonify({"suggestions": get_bank().suggestions(band), "drafters": get_bank().drafters()})
 
 
 @app.post("/ask")
@@ -425,6 +437,18 @@ def update_kiosk():
     return jsonify({"ok": True})
 
 
+@app.post("/update/log")
+def update_log():
+    """The tail of ~/.dermascan/update.log, so staff can read why an update failed without a keyboard."""
+    if not _staff_ok():
+        return jsonify({"ok": False}), 403
+    try:
+        lines = config.UPDATE_LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    return jsonify({"ok": True, "lines": lines[-config.UPDATE_LOG_LINES :]})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="DermaScan kiosk server")
     parser.add_argument("--port", type=int, default=config.KIOSK_PORT)
@@ -442,6 +466,7 @@ def main() -> None:
         use_web_mode()
     else:
         cam.camera.start()
+        warm_in_background()  # the staff heatmap's interpreter, off the boot path and off the scan path
     log.info(
         "model %s, camera %s, exit %s, http://%s:%d",
         config.MODEL_PATH.name,

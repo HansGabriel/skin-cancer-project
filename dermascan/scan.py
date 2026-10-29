@@ -4,12 +4,15 @@
       -> decode, reduce to 1024 px
       -> gate.check          (is this a readable photo of one spot on skin?)
       -> classifier.predict  (only if the gate passed, or the visitor insisted)
-      -> signs.measure       (A B C on the gate's outline; shown, never decides)
+      -> signs.measure       (A B C on the gate's outline; shown, never decides;
+                              skipped when the gate found no spot at all)
       -> verdict             (the words on screen; none when the visitor forced a
                               photo the gate found no spot in - staff still see numbers)
 
 check_photo is the first half alone (decode + gate, no model), for the "check the
 photo" screen: it answers in milliseconds, before the visitor commits to a scan.
+check_result turns it into words, a label ("NOT A SPOT · PLAIN SKIN") and the
+outline the gate drew, as a small polygon the page lays over the photo.
 The kiosk keeps that CheckedPhoto and hands it to run_scan, so the photo is not
 decoded and gated a second time (the Streamlit page and the kiosk's web mode keep
 nothing between requests, so their scans run both).
@@ -180,15 +183,16 @@ def run_scan(
         log.exception("scan status=error reason=model")
         return ScanOutcome("error", verdict.error_verdict("scanner"), stage_ms=ms)
     lap("model")
-    # Signs only on an outline the gate accepted: a "read anyway" photo's outline is
-    # exactly what the gate did not trust.
-    small = report.small if report.small is not None else gate.shrink(rgb)
-    measured_signs = signs.measure(small, report.outline) if refusal is None else None
-    lap("signs")
-
     # A forced read of plain skin, hair or several marks: the numbers go to the staff
     # drawer, the visitor gets "we can't judge" instead of a verdict the model cannot back.
     unjudged = refusal is not None and refusal.code in gate.NOT_A_SPOT_CODES
+    # Signs on every read that gets a verdict, a forced framing read included (the outline
+    # is a real mark there, just off-centre or ragged); none on an outline the gate found
+    # no spot in, where A B C would describe speckle.
+    small = report.small if report.small is not None else gate.shrink(rgb)
+    measured_signs = None if unjudged else signs.measure(small, report.outline)
+    lap("signs")
+
     out = ScanOutcome(
         "ok",
         verdict.cannot_judge() if unjudged else verdict.for_prediction(pred),
@@ -207,19 +211,23 @@ def run_scan(
 def check_result(checked: CheckedPhoto) -> dict:
     """What the "check the photo" screen shows, from a CheckedPhoto.
 
-    {"status": "pass" | "refused" | "error", "eyebrow", "headline", "lede", "readings": [...],
-     "verdict": refusal/error words or None, "refusal": {...} or None, "measured": {...}}
+    {"status": "pass" | "refused" | "error", "eyebrow", "label", "headline", "lede", "readings": [...],
+     "verdict": refusal/error words or None, "refusal": {...} or None, "measured": {...},
+     "outline": [[x, y], ...] in 0-1 of the frame (what the gate picked out; [] when nothing),
+     "aspect": frame width / height, so the page can lay the outline over the photo}
     """
     if checked.report is None:
         v = verdict.error_verdict("not_a_picture")
-        return _check_result("error", v.headline, v.body, [], v, None, {})
+        return _check_result("error", v.headline, v.body, [], v, None, {}, [], 1.0)
     report = checked.report
     r = report.refusal
     readings = verdict.photo_readings(report.measured, r.code if r else None)
+    poly = gate.outline_polygon(report.outline)
+    aspect = round(checked.rgb.shape[1] / checked.rgb.shape[0], 4) if checked.rgb is not None else 1.0
     if r is None:
-        return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured)
+        return _check_result("pass", verdict.PHOTO_OK_HEADLINE, verdict.photo_lede(readings), readings, None, None, report.measured, poly, aspect)
     v = verdict.for_refusal(r)
-    return _check_result("refused", v.headline, v.body, readings, v, r, report.measured)
+    return _check_result("refused", v.headline, v.body, readings, v, r, report.measured, poly, aspect)
 
 
 def run_check(jpeg_bytes: bytes) -> dict:
@@ -227,13 +235,17 @@ def run_check(jpeg_bytes: bytes) -> dict:
     return check_result(check_photo(jpeg_bytes))
 
 
-def _check_result(status, headline, lede, readings, v, refusal, measured) -> dict:
+def _check_result(status, headline, lede, readings, v, refusal, measured, outline, aspect) -> dict:
+    code = refusal.code if refusal else None
     return {
         "status": status, "headline": headline, "lede": lede, "readings": readings,
-        "eyebrow": verdict.check_eyebrow(status, refusal.code if refusal else None),
+        "eyebrow": verdict.check_eyebrow(status, code),
+        "label": verdict.check_label(status, code),
         "verdict": v.to_dict() if v else None,
         "refusal": {"code": refusal.code, "can_override": refusal.can_override} if refusal else None,
         "measured": {k: round(x, 3) for k, x in measured.items()},
+        "outline": outline,
+        "aspect": aspect,
     }
 
 

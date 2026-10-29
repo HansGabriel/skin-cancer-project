@@ -221,6 +221,46 @@ def test_a_face_is_several_marks_not_a_spot() -> None:
     assert report.measured["spot_dominance"] < gate.config.SPOT_MIN_DOMINANCE
 
 
+def test_a_pale_mark_with_company_is_several_marks_too() -> None:
+    """Until 2026-10-29 the light-spot path never counted other marks, so pale marks on
+    deep skin passed this check whatever else was in the frame."""
+    img = textured(SKIN_TONES["deep"], size=600)
+    pale = (230, 200, 190)
+    cv2.circle(img, (300, 300), 60, pale, -1)
+    for centre in ((120, 140), (480, 150), (140, 470), (470, 460)):
+        cv2.circle(img, centre, 42, pale, -1)
+    report = gate.check(through_jpeg(img))
+    assert report.refusal is not None and report.refusal.code == "several_marks", report.measured
+    assert report.measured["other_marks"] >= 2 and report.measured["spot_dominance"] < gate.config.SPOT_MIN_DOMINANCE
+
+
+def test_a_scattered_mark_is_a_ragged_spot_not_plain_skin() -> None:
+    """A dark, contrasting mark that breaks into lobes fails compactness, not contrast: it is a
+    real mark a doctor wants read, so the code is overridable and NOT in NOT_A_SPOT_CODES."""
+    img = _skin_field()
+    cv2.ellipse(img, (300, 300), (95, 95), 0, 60, 300, (70, 52, 60), 40)  # a thick "C": one blob, solidity ~0.5
+    report = gate.check(through_jpeg(img))
+    assert report.refusal is not None and report.refusal.code == "ragged_spot", report.measured
+    assert report.refusal.can_override and "ragged_spot" not in gate.NOT_A_SPOT_CODES
+    assert report.measured["spot_contrast"] >= gate.config.SPOT_MIN_CONTRAST
+    assert report.measured["spot_solidity"] < gate.config.SPOT_MIN_SOLIDITY
+
+
+def test_outline_polygon_is_small_and_inside_the_frame() -> None:
+    report = gate.check(through_jpeg(with_lesion(_skin_field())))
+    poly = gate.outline_polygon(report.outline)
+    assert 8 <= len(poly) <= 64
+    xs, ys = zip(*poly)
+    assert 0.3 < min(xs) and max(xs) < 0.7 and 0.3 < min(ys) and max(ys) < 0.7  # a centred mole
+    assert gate.outline_polygon(None) == [] and gate.outline_polygon(np.zeros((10, 10), bool)) == []
+    assert len(gate.outline_polygon(report.outline, max_points=8)) <= 8
+
+
+def test_every_limit_has_a_short_text_for_the_drawer() -> None:
+    assert gate.limit_text("spot_fraction") == "0.004–0.4" and gate.limit_text("spot_offset") == "≤ 0.25"
+    assert gate.limit_text("ring_skin") == "—" and gate.limit_text("nonsense") == "—"
+
+
 def test_a_mole_with_one_satellite_is_still_one_spot() -> None:
     """Dominance, not a raw count: one mole holding most of the dark area passes."""
     img = with_lesion(_skin_field())

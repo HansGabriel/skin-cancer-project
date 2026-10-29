@@ -27,7 +27,7 @@ const S = {
   screen: "home", camera: "off", source: "camera", stream: null,
   photoBlob: null, photoUrl: null, photoOnServer: false,
   check: null, outcome: null, viewing: null, // viewing: a saved scan {id, site} shown instead of the live one
-  savedAs: null, savedId: null, history: null, thread: [], suggestions: [],
+  savedAs: null, savedId: null, history: null, thread: [], suggestions: [], drafters: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
   heat: false,  // the staff heatmap is in the aperture instead of the photo
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
@@ -145,16 +145,38 @@ function paintInstrument() {
     const hist = currentHistory();
     if (hist && hist.count > 1) $("arcs").querySelector('[data-sign="E"]').style.stroke = HISTORY_ARC;
   }
+  // The photo check's own outline over this visitor's photo: on the check screen, and on
+  // the result (it is what A B C were measured on). Never over a saved scan or the heatmap.
+  const c = S.check;
+  const showOutline = c && c.outline && c.outline.length && !S.viewing && !S.heat && hasPhoto
+    && (S.screen === "check" || (S.screen === "result" && o && o.status === "ok" && o.judged !== false));
+  toggle(d, "outline", showOutline);
+  if (showOutline) {
+    const pts = outlinePoints(c.outline, c.aspect || 1);
+    $("outline-under").setAttribute("points", pts);
+    $("outline-poly").setAttribute("points", pts);
+    $("outline-poly").style.stroke = S.screen === "result" ? (RING[o.verdict.tone] || RING.neutral) : c.status === "pass" ? "" : RING.info;
+  }
   $("ap-rest").textContent = S.screen === "frame" && S.camera === "off"
     ? "No camera here — choose a picture" : "Put the spot inside the ring";
   $("cap-standby").textContent = !S.health || !S.health.ok ? (S.web ? WEB.notReady : "THE SCANNER IS NOT READY — ASK STAFF")
-    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : S.web ? WEB.ready : "READY · ON-DEVICE MODEL";
+    : S.camera === "off" && ["home", "frame"].includes(S.screen) ? "READY · CHOOSE A PICTURE TO TRY IT" : S.web ? WEB.ready : "READY · WORKS OFFLINE";
   document.querySelectorAll(".nav button").forEach((b) => {
     const mine = b.dataset.go === S.screen || (b.dataset.go === "frame" && ["check", "reading", "result"].includes(S.screen) && !S.viewing);
     if (mine) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
 }
 function toggle(d, key, on) { if (on) d[key] = ""; else delete d[key]; }
+
+// The gate's polygon (0-1 of the whole frame) in the aperture's SVG units. The photo
+// circle is inset 10.6% of the aperture (kiosk.css .photo), i.e. 81.95 of the 104-unit
+// viewBox, and the photo is "object-fit: cover": the short side fills it, the long side
+// overflows and is clipped by #photo-clip.
+const PHOTO_SPAN = 81.95;
+function outlinePoints(poly, aspect) {
+  const sx = PHOTO_SPAN * Math.max(1, aspect), sy = PHOTO_SPAN * Math.max(1, 1 / aspect);
+  return poly.map(([x, y]) => `${(50 + (x - 0.5) * sx).toFixed(2)},${(50 + (y - 0.5) * sy).toFixed(2)}`).join(" ");
+}
 
 function showPhotoUrl(url) {
   if (url) $("field").src = url; else $("field").removeAttribute("src");
@@ -223,20 +245,25 @@ const RENDER = {
     }
     const pass = c.status === "pass";
     const canForce = c.refusal && c.refusal.can_override;
+    // The chip is the label: SPOT FOUND, NOT A SPOT · PLAIN SKIN, SPOT · NOT IN THE RING...
+    // The outline in the ring shows what that label is about.
+    const staff = !pass && S.settings.show_staff_details && !S.web && c.measured && Object.keys(c.measured).length
+      ? btn("Numbers for staff →", openStaffCheck, "soft outline") : null;
     setScreen(
-      eyebrow("STEP 2 OF 3 · " + c.eyebrow),
+      eyebrowWithChip("STEP 2 OF 3 · " + c.eyebrow, c.label),
       h1(c.headline, pass ? "" : "verdict"),
       lede(pass && S.source === "import" ? "Read from the picture you chose — " + c.lede.charAt(0).toLowerCase() + c.lede.slice(1) : c.lede),
       !pass && c.verdict ? h("p", "advice", c.verdict.advice) : null,
       readingsBlock(c.readings),
       pass ? actions("", btn("Check this spot", () => scan(false), "btn primary"), btn("Take another", retake))
            : actions(canForce ? "" : "one", btn("Take another", retake, "btn primary"), canForce ? btn("Check it anyway", () => scan(true)) : null),
+      staff ? h("div", "subrow", staff) : null,
     );
   },
 
   reading() {
     // Honest steps: the photo check already ran (/check); the rest is one request.
-    const steps = [["Found the spot and drew its outline", "done"], [S.web ? WEB.model : "Comparing with the on-device model", ""], ["Measuring the warning signs", ""]]
+    const steps = [["Found the spot and drew its outline", "done"], [S.web ? WEB.model : "Comparing it with what the scanner learned", ""], ["Measuring the warning signs", ""]]
       .map(([t, state]) => h("div", "step " + state, h("i"), t));
     setScreen(
       eyebrow("STEP 3 OF 3 · READING"),
@@ -271,12 +298,13 @@ const RENDER = {
       h("p", "advice", v.advice),
       o.caveat ? h("p", "caveat", o.caveat) : null,
       lines.length ? h("div", "saw", h("div", "label", "WHAT THE SCAN SAW"), lines) : null,
-      v.note ? h("div", "notebox", h("div", "label", v.note_label), h("p", "", v.note)) : null,
+      // With three sign lines above it the note no longer fits the 600 px panel: fold it behind its label.
+      v.note ? noteBox(v.note_label, v.note, lines.length > 0) : null,
       ok && judged ? actions((second ? "even" : "one") + (lines.length ? " flush" : ""),
                    S.viewing ? btn("Back to saved", () => go("saved"), "btn compact primary") : btn("Done", finish, "btn compact primary"),
                    second)
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
-      ok ? h("div", "subrow", compare, btn(compare ? "Ask a question" : "Ask a question about this", () => go("questions"), "soft"), staff) : null,
+      ok ? h("div", "subrow", compare, btn(compare ? "Ask about it" : "Ask about your result", () => go("questions"), "soft"), staff) : null,
     );
   },
 
@@ -329,9 +357,12 @@ const RENDER = {
     const v = o && o.verdict;
     const thread = h("div", "thread");
     if (!S.thread.length) {
+      // Answers are written in advance: by the team, or drafted on the PC by Gemma 4
+      // (scripts/draft_answers_gemma.py) and checked by the team. Nothing is generated here.
+      const by = S.drafters && S.drafters.length ? `drafted by ${S.drafters.join(" and ")} and checked by the project team` : "written out by the project team";
       thread.append(h("div", "label", "ASK ANYTHING ABOUT A SKIN CHECK"),
         h("div", "qa-a", "Tap a question below" + (S.camera === "pi" ? "." : ", or type your own.") +
-          " Every answer is written out in advance by the project team, so nothing is made up on the spot."));
+          ` Every answer is ${by} in advance, so nothing is made up on the spot.`));
     }
     S.thread.forEach((qa) => {
       thread.append(h("div", "qa",
@@ -365,20 +396,23 @@ const RENDER = {
       row.addEventListener("click", () => changeSetting(key, !S.settings[key]));
       return row;
     };
-    // The design's wording is "refuse", the server's switch is "read anyway": the same switch, flipped.
-    const on = (key) => (key === "allow_read_anyway" ? !S.settings[key] : !!S.settings[key]);
+    const on = (key) => !!S.settings[key];
     const m = S.health && S.health.model;
     const erase = btn("End event — erase all", eraseAll, "btn compact danger");
+    const logBox = h("pre", "log", "");
+    logBox.hidden = true;
     setScreen(
       eyebrow("SETTINGS · STAFF"),
       h1("Settings"),
       h("div", "mid",
-        t("allow_read_anyway", "Refuse photos that are not clear", "Off: an unclear photo can still be read, with a note. On: it is refused and the visitor takes another."),
-        t("show_staff_details", "Details for staff under each result", "Numbers and timings behind one button. Visitors see them only if they tap it."),
+        t("allow_read_anyway", "Offer “Check it anyway”", "On: a refused photo can still be read. A badly framed spot gets a result with a warning; plain skin or hair gets no result, only numbers for staff."),
+        t("show_staff_details", "Numbers for staff", "A button under each result, and under a refused photo check. Visitors see the numbers only if they tap it."),
         h("div", "fact", h("span", "", "Saved scans, on this kiosk"), h("b", "", `${S.stats.count} scan${S.stats.count === 1 ? "" : "s"} · ${size(S.stats.bytes)}`)),
-        h("div", "fact", h("span", "", "Scanner"), h("b", "", m ? `${m.file} · ${m.tta ? "4 views" : "1 view"}` : "not loaded")),
+        h("div", "fact", h("span", "", "Scanner"), h("b", "", m ? `${m.file} · ${m.tta ? "4 views" : "1 view"}${m.cam ? " · heatmap" : ""}` : "not loaded")),
         h("div", "fact", h("span", "", "Software"), h("b", "", (S.health && S.health.update && S.health.update.version) || "unknown")),
         h("div", "fact", h("span", "", "Last update"), h("b", "", (S.health && S.health.update && S.health.update.last) || "never")),
+        h("div", "fact", h("span", "", "Why it said that"), btn("Show the update log", (e) => showUpdateLog(e, logBox), "linkbtn")),
+        logBox,
         h("div", "fact", h("span", "", "Get the newest version · needs wifi"), btn("Update from GitHub", updateKiosk, "linkbtn")),
         h("div", "fact", h("span", "", "Close the kiosk app"), btn("Exit kiosk", quitKiosk, "linkbtn")),
       ),
@@ -388,6 +422,12 @@ const RENDER = {
 };
 
 function size(bytes) { return bytes < 1e6 ? `${Math.round(bytes / 1e3)} KB` : `${(bytes / 1e6).toFixed(1)} MB`; }
+
+function noteBox(label, text, folded) {
+  if (!folded) return h("div", "notebox", h("div", "label", label), h("p", "", text));
+  const box = h("div", "notebox fold", btn(label, () => box.classList.toggle("open"), "label"), h("p", "", text));
+  return box;
+}
 
 function readingsBlock(readings) {
   const rows = (readings || [{ name: "Light" }, { name: "Focus" }, { name: "Spot in frame" }]).map((r, i, arr) => {
@@ -468,7 +508,7 @@ async function usePhoto(blob, onServer, source) {
 function forgetPhoto() {
   if (S.photoUrl) URL.revokeObjectURL(S.photoUrl);
   if (!S.web && (S.photoBlob || S.outcome)) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
-  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [] });
+  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [], heat: false });
   if (!S.viewing) showPhotoUrl(null);
 }
 function retake() { if (S.camera === "off") { forgetPhoto(); go("frame"); pickFile(); } else startCheck(); }
@@ -597,7 +637,7 @@ function openCompare() {
 function stateForQuestions() { const o = shown(); return o ? o.verdict.state : ""; }
 async function loadSuggestions() {
   const d = await getJSON("/questions?state=" + encodeURIComponent(stateForQuestions()));
-  if (d) { S.suggestions = d.suggestions; if (S.screen === "questions") RENDER.questions(); }
+  if (d) { S.suggestions = d.suggestions; S.drafters = d.drafters || []; if (S.screen === "questions") RENDER.questions(); }
 }
 async function ask(question) {
   const o = shown();
@@ -612,56 +652,105 @@ async function ask(question) {
 }
 
 // ---------- staff readout ----------
+// One line under each sign, so a staff member new to A B C knows what the number is.
+const SIGN_MEANING = {
+  A: "how much the two halves differ when folded (0 = mirror image)",
+  B: "edge length squared over area; a circle is 1.0, a ragged edge is higher",
+  C: "clearly different colours inside the spot",
+  D: "share of the photo the spot covers — no ruler, so not millimetres",
+  E: "change over time: needs an earlier photo of the same spot",
+};
+
+// The gate's numbers as a table: name · value · the limit it had to clear (health.gate_limits).
+// Three decimals, because spot_fraction's limit is 0.004 and two decimals printed it as 0.00.
+function gateTable(measured) {
+  const limits = (S.health && S.health.gate_limits) || {};
+  const keys = Object.keys(limits).filter((k) => k in (measured || {}));
+  if (!keys.length) return null;
+  const rows = keys.map((k) => h("tr", "", h("td", "", k.replace(/_/g, " ")), h("td", "", Number(measured[k]).toFixed(3)), h("td", "", limits[k])));
+  return h("table", "gate", h("tbody", "", rows));
+}
+
+function signRows(o) {
+  const hist = currentHistory();
+  return (o.signs || []).map((s) => {
+    const eHist = s.letter === "E" && hist && hist.count > 1;
+    const value = eHist ? `#${hist.number}` : s.value === null ? "—" : s.letter === "D" ? (s.value * 100).toFixed(1) + "%" : s.letter === "C" ? String(s.value) : s.value.toFixed(2);
+    const pill = eHist ? `HISTORY · ${hist.count} SCANS` : s.tier === null ? (s.letter === "E" ? "NEEDS HISTORY" : "NO SCALE") : PILL[s.tier];
+    const row = h("div", "srow", h("span", "l", s.letter), h("span", "n", SIGN_NAME[s.letter], h("span", "m", SIGN_MEANING[s.letter])), h("span", "v", value), h("span", "p", pill));
+    row.lastChild.style.color = eHist ? HISTORY_ARC : ARC[s.tier];
+    return row;
+  });
+}
+
+function staffHeader(title, extra) {
+  return h("div", "eyebrow-row", eyebrow(title), extra, btn("Close ×", closeOverlays, "close"));
+}
+
+// The numbers behind a refused photo check (no model ran, so no bars): the chip, then the gate table.
+function openStaffCheck() {
+  const c = S.check;
+  if (!c) return;
+  $("staff").replaceChildren(
+    staffHeader("PHOTO CHECK · STAFF ONLY", h("span", "chip", c.label)),
+    h("div", "label", "WHAT THE PHOTO CHECK MEASURED"),
+    h("div", "tech flush", `${c.refusal ? c.refusal.code.replace(/_/g, " ") : "pass"} · each number beside the limit it had to clear`),
+    gateTable(c.measured),
+  );
+  $("staff").hidden = false;
+}
+
 function openStaff() {
   const o = shown();
   if (!o || !o.prediction) return;
   const p = o.prediction;
-  const signs = (o.signs || []).map((s) => {
-    const value = s.letter === "E" && currentHistory() && currentHistory().count > 1 ? `#${currentHistory().number}` : s.value === null ? "—" : s.letter === "D" ? (s.value * 100).toFixed(1) + "%" : s.letter === "C" ? String(s.value) : s.value.toFixed(2);
-    const hist = currentHistory();
-    const eHist = s.letter === "E" && hist && hist.count > 1;
-    const pill = eHist ? `HISTORY · ${hist.count} SCANS` : s.tier === null ? (s.letter === "E" ? "NEEDS HISTORY" : "NO SCALE") : PILL[s.tier];
-    const row = h("div", "srow", h("span", "l", s.letter), h("span", "n", SIGN_NAME[s.letter]), h("span", "v", value), h("span", "p", pill));
-    row.lastChild.style.color = eHist ? HISTORY_ARC : ARC[s.tier];
-    return row;
-  });
+  const signs = signRows(o);
   const fills = { benign: "#8C9BB0", pre_cancerous: "#C79A6B", malignant: "#E0645A" };
   const order = Object.keys(PROB_NAME).filter((k) => k in p.probs_pct);
   const probs = order.map((k) => [k, p.probs_pct[k]]).map(([k, v]) => {
     const bar = h("i"); bar.style.width = Math.max(1.5, v) + "%"; bar.style.background = fills[k] || "#8C9BB0";
     return h("div", "prob" + (k === p.label ? " flag" : ""), h("span", "n", PROB_NAME[k] || k), h("span", "t", bar), h("span", "v", v.toFixed(1) + "%"));
   });
-  // "Where it looked": the Eigen-CAM heatmap swapped into the aperture while open. Only on
-  // the Pi, only for the photo just scanned, only when the server has a CAM file (health.model.cam).
+  // The heatmap (Eigen-CAM, dermascan/cam.py) beside the photo: only on the Pi, only for the
+  // photo just scanned, only when the server can build one (health.model.cam). /cam.jpg is
+  // built on this first request and cached for the photo; tapping either picture puts the
+  // heatmap in the ring, or the photo back.
   const canHeat = S.health && S.health.model && S.health.model.cam && !S.web && !S.viewing && S.photoUrl;
-  const heat = canHeat ? btn("Where it looked", toggleHeat, "soft") : null;
-  const heatNote = canHeat ? h("p", "tech cam-note", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis.") : null;
+  const pair = canHeat ? h("div", "heat-pair",
+    h("figure", "", btn(h("img", "", ), toggleHeat, ""), h("figcaption", "", "PHOTO")),
+    h("figure", "", btn(h("img", "", ), toggleHeat, ""), h("figcaption", "", "WHERE IT LOOKED"))) : null;
+  if (pair) {
+    const [photo, heat] = pair.querySelectorAll("img");
+    photo.src = S.photoUrl; photo.alt = "The photo";
+    heat.src = "/cam.jpg?t=" + Date.now(); heat.alt = "Heatmap over the photo";
+  }
+  const heatNote = canHeat ? h("p", "tech flush", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis. Tap a picture to put it in the ring.") : null;
   const stages = Object.entries(o.stage_ms || {}).map(([k, v]) => `${k} ${v}`).join(" · ");
-  const gate = Object.entries(o.measured || {}).map(([k, v]) => `${k.replace(/_/g, " ")} ${Number(v).toFixed(2)}`).join(" · ");
+  const scale = h("div", "scale", ...[0, 1, 2].map((t) => { const s = h("span", "", h("i"), PILL[t]); s.firstChild.style.background = ARC[t]; return s; }));
   $("staff").replaceChildren(
-    h("div", "eyebrow-row", eyebrow(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"), heat, btn("Close ×", closeOverlays, "close")),
-    ...[heatNote].filter(Boolean),
-    ...[signs.length ? h("div", "", signs) : null].filter(Boolean),  // replaceChildren would print a null as "null"
+    staffHeader(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"),
+    ...[pair, heatNote].filter(Boolean),
+    ...(signs.length ? [h("div", "label", "A B C D E · THE WARNING SIGNS"), scale, h("div", "", signs)] : []),  // replaceChildren would print a null as "null"
     h("div", "label", "MODEL CONFIDENCE (CALIBRATED)"),
-    h("div", "tech", "bars are for display; the decision is the score below"),
+    h("div", "tech flush", "bars are for display; the decision is the score below"),
     ...probs,
     h("div", "tech",
       // Scans saved before October 2026 have no score; show a dash rather than crash the drawer.
       `DECISION: cancer score ${p.cancer_score == null ? "—" : p.cancer_score.toFixed(3)} · limit ${p.threshold == null ? "—" : p.threshold.toFixed(3)} → ${p.flagged ? "flagged for a doctor" : "not flagged"}`,
-      h("br"), `${o.model || "model"} · ${S.health && S.health.model && S.health.model.tta ? "TTA on" : "TTA off"} · top ${p.confidence_pct.toFixed(0)}%${o.forced ? " · photo check overridden" : ""}`,
-      h("br"), `scan ${o.total_ms} ms (${stages})`,
-      gate ? [h("br"), `gate: ${gate}`] : null),
+      h("br"), `${o.model || "model"} · ${S.health && S.health.model && S.health.model.tta ? "4 views averaged" : "1 view"} · top ${p.confidence_pct.toFixed(0)}%${o.forced ? " · photo check overridden" : ""}`,
+      h("br"), `scan ${o.total_ms} ms (${stages})`),
+    ...(gateTable(o.measured) ? [h("div", "label", "PHOTO CHECK · VALUE AND LIMIT"), gateTable(o.measured)] : []),
   );
   $("staff").hidden = false;
 }
-function toggleHeat(ev) {
+function toggleHeat() {
   S.heat = !S.heat;
   showPhotoUrl(S.heat ? "/cam.jpg?t=" + Date.now() : S.photoUrl);
-  ev.currentTarget.textContent = S.heat ? "Show the photo" : "Where it looked";
+  paintInstrument();  // the gate outline hides under the heatmap and comes back with the photo
 }
 function closeOverlays() {
   $("staff").hidden = true; $("sheet").hidden = true;
-  if (S.heat) { S.heat = false; showPhotoUrl(S.photoUrl); }
+  if (S.heat) { S.heat = false; showPhotoUrl(S.photoUrl); paintInstrument(); }
 }
 
 // ---------- settings, keypad, erase, exit ----------
@@ -736,6 +825,12 @@ async function updateKiosk(e) {
   }
   const r = await post("/update", staffForm());
   b.textContent = r.ok ? "Updating… the kiosk restarts by itself in about two minutes. The Pi must be on wifi." : "Could not start the update";
+}
+async function showUpdateLog(e, box) {
+  const r = await post("/update/log", staffForm());
+  box.textContent = r.ok && r.data && r.data.lines.length ? r.data.lines.join("\n") : "No update has run on this kiosk yet.";
+  box.hidden = !box.hidden;
+  e.currentTarget.textContent = box.hidden ? "Show the update log" : "Hide the update log";
 }
 
 // ---------- boot ----------

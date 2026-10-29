@@ -7,15 +7,18 @@ BEFORE the model is asked, and that is this file.
 
     1. skin      Is there skin in the frame at all?      (colour)
     2. readable  Is the photo sharp and lit?             (focus, brightness)
-    3. spot      Is there one distinct mark on it?       (outline, compactness, contrast)
-                 ...and is it in the ring, on its own?   (position, other dark marks)
+    3. spot      Is there one distinct mark on it?       (outline, contrast, compactness)
+                 ...and is it in the ring, on its own?   (position, other marks)
     4. edge      Does the mark have a real edge?         (a mole stops; a shadow fades)
 
 Every check runs on a small copy of the photo. Every threshold lives in
-config.py. A refusal carries a `code` that verdict.py turns into plain words,
+config.py. A refusal carries a `code` that verdict.py turns into plain words
+and a short label ("NOT A SPOT · PLAIN SKIN", "SPOT · NOT IN THE RING"),
 and `can_override`: checks 3 and 4 can be wrong about a faint or unusual mark,
 so the visitor may ask for it to be read anyway; checks 1 and 2 cannot be
-argued with (no skin, or a photo nobody could read).
+argued with (no skin, or a photo nobody could read). The outline the gate drew
+goes back to the page as a polygon (outline_polygon), so a wrong pick is
+visible, not a mystery.
 
 Check 3 asks about position and company since 2026-10-20, when a webcam face
 (one nostril as the "spot") and a palm (its shadowed half) passed everything
@@ -43,12 +46,16 @@ from dermascan import config
 
 RefusalCode = Literal[
     "no_skin", "too_blurry", "too_dark", "too_bright",
-    "no_spot", "fills_frame", "plain_skin", "not_in_ring", "several_marks", "soft_edge",
+    "no_spot", "fills_frame", "plain_skin", "ragged_spot", "not_in_ring", "several_marks", "soft_edge",
 ]
 # Content refusals: the photo holds no single spot to read, so a "read anyway" scan on one
 # gets the model's numbers for staff but no verdict for the visitor (dermascan/scan.py).
-# Framing refusals (not_in_ring, fills_frame, soft_edge) still have a real spot in the shot.
+# Framing refusals (not_in_ring, fills_frame, soft_edge, ragged_spot) still have a real
+# spot in the shot. ragged_spot was split out of plain_skin on 2026-10-29: a scattered or
+# multi-lobed mark fails the compactness check exactly like speckle does, but it is the
+# kind of mark a doctor most wants read, so a forced read of one must still answer.
 NOT_A_SPOT_CODES = frozenset({"no_spot", "plain_skin", "several_marks"})
+FRAMING_CODES = frozenset({"not_in_ring", "fills_frame", "soft_edge", "ragged_spot"})
 
 
 @dataclass(frozen=True)
@@ -257,20 +264,19 @@ def spot_offset(mask: np.ndarray) -> float:
     return float(np.hypot(xs.mean() - (w - 1) / 2.0, ys.mean() - (h - 1) / 2.0) / min(h, w))
 
 
-def other_marks(dark_all: np.ndarray | None, mask: np.ndarray) -> tuple[int, float]:
-    """(how many other dark marks the frame holds, the spot's share of all dark-mark area).
+def other_marks(marks_all: np.ndarray, mask: np.ndarray) -> tuple[int, float]:
+    """(how many other marks the frame holds, the spot's share of all mark area).
 
     One mole on skin: 0 others, dominance 1.0. A mole with a satellite: 1, ~0.9.
     A face: eyes, nostrils and mouth share the dark area, so several others and
     a dominance near 0.5. Marks touching the frame edge (vignette, hair, the
     background) are not counted, nor are specks under SPOT_MIN_FRACTION.
     Counted on the hair-filled binary the outline came from, so hairs crossing a
-    mole are not "other marks". None (the outline came from the light-spot path,
-    where the dark region is just the skin) counts as nothing.
+    mole are not "other marks": the dark binary for a dark spot, the light binary
+    for a pale mark on dark skin (until 2026-10-29 the light path counted nothing,
+    so a pale mark with company always passed this check).
     """
-    if dark_all is None:
-        return 0, 1.0
-    _, kept = _components_clear_of_edge(dark_all & ~mask)
+    _, kept = _components_clear_of_edge(marks_all & ~mask)
     areas = [area for _, area in kept]
     spot_area = float(np.count_nonzero(mask))
     if not areas or spot_area == 0:
@@ -278,16 +284,65 @@ def other_marks(dark_all: np.ndarray | None, mask: np.ndarray) -> tuple[int, flo
     return len(areas), spot_area / (spot_area + sum(areas))
 
 
-def _outline(rgb_small: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-    """(the spot's outline, the dark binary it was cut from - or None on the light-spot path)."""
+def _outline(rgb_small: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(the spot's outline, the binary it was cut from: dark marks, or light ones on the light-spot path)."""
     l_ch = _without_hair(cv2.cvtColor(rgb_small, cv2.COLOR_RGB2LAB)[:, :, 0])
     dark, dark_all = _dark_spot(l_ch, _clean_threshold(255 - l_ch) > 0)
     if _looks_like_a_spot(dark):
         return dark, dark_all
-    light = _otsu_blob(l_ch)
+    light_all = _clean_threshold(l_ch) > 0
+    light = _largest_component(light_all)
     if _looks_like_a_spot(light) and not _touches_border(light):
-        return light, None
+        return light, light_all
     return dark, dark_all
+
+
+def outline_polygon(mask: np.ndarray | None, max_points: int = 64) -> list[list[float]]:
+    """The outline as one polygon, [[x, y], ...] in 0-1 of the frame, for the page to draw.
+
+    The largest outer contour, simplified until it has at most `max_points` corners:
+    a few hundred bytes of JSON, drawn in the browser as an SVG polygon over the
+    photo, so the visitor sees exactly what the gate picked out. [] when there is
+    no outline. About a millisecond; the only thing the 2026-10-29 work added to
+    the check path.
+    """
+    if mask is None or not mask.any():
+        return []
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return []
+    cnt = max(contours, key=cv2.contourArea)
+    eps = 0.5
+    poly = cv2.approxPolyDP(cnt, eps, True)
+    while len(poly) > max_points:
+        eps *= 1.5
+        poly = cv2.approxPolyDP(cnt, eps, True)
+    h, w = mask.shape
+    return [[round(float(x) / w, 4), round(float(y) / h, 4)] for [[x, y]] in poly]
+
+
+def limit_text(key: str) -> str:
+    """The limit a measured number is held to, in a few characters, for the staff drawer.
+
+    "—" for numbers that are logged but have no limit (ring_skin), and for anything
+    this file does not know. Keeps the drawer honest: every value sits next to the
+    line it had to clear, and a guessed limit (config.py says which) is still a limit.
+    """
+    c = config
+    limits = {
+        "skin_fraction": f"≥ {c.SKIN_MIN_FRACTION:g}",
+        "focus": f"≥ {c.FOCUS_MIN:g}",
+        "brightness": f"{c.BRIGHTNESS_MIN:g}–{c.BRIGHTNESS_MAX:g}",
+        "spot_fraction": f"{c.SPOT_MIN_FRACTION:g}–{c.SPOT_MAX_FRACTION:g}",
+        "spot_solidity": f"≥ {c.SPOT_MIN_SOLIDITY:g}",
+        "spot_contrast": f"≥ {c.SPOT_MIN_CONTRAST:g}",
+        "spot_offset": f"≤ {c.SPOT_MAX_OFFSET:g}",
+        "spot_at_edge": "= 0",
+        "other_marks": f"≤ {c.SPOT_MAX_OTHER_MARKS:g}",
+        "spot_dominance": f"≥ {c.SPOT_MIN_DOMINANCE:g}",
+        "edge_width": f"≤ {c.SPOT_MAX_EDGE_WIDTH_PCT:g}",
+    }
+    return limits.get(key, "—")
 
 
 def outline_spot(rgb_small: np.ndarray) -> np.ndarray:
@@ -393,8 +448,10 @@ def check(rgb: np.ndarray) -> GateReport:
         return refuse("no_spot", True)
     if measured["spot_fraction"] > config.SPOT_MAX_FRACTION:
         return refuse("fills_frame", True)
-    if measured["spot_solidity"] < config.SPOT_MIN_SOLIDITY or measured["spot_contrast"] < config.SPOT_MIN_CONTRAST:
+    if measured["spot_contrast"] < config.SPOT_MIN_CONTRAST:
         return refuse("plain_skin", True)
+    if measured["spot_solidity"] < config.SPOT_MIN_SOLIDITY:
+        return refuse("ragged_spot", True)  # a real mark, just not a compact one: a forced read still answers
 
     # 3b. ...in the ring, and on its own?
     _measure_company(measured, skin, mask, dark_all)
@@ -410,12 +467,12 @@ def check(rgb: np.ndarray) -> GateReport:
     return GateReport(None, measured, outline, small)
 
 
-def _measure_company(measured: dict[str, float], skin: np.ndarray, mask: np.ndarray, dark_all: np.ndarray | None) -> None:
+def _measure_company(measured: dict[str, float], skin: np.ndarray, mask: np.ndarray, marks_all: np.ndarray) -> None:
     """Where the spot sits and what else is in the frame. All floats, so the staff
     drawer, the log line and a saved capture's .txt print them without special cases."""
     measured["spot_offset"] = spot_offset(mask)
     measured["spot_at_edge"] = 1.0 if _touches_border(mask) else 0.0
-    count, dominance = other_marks(dark_all, mask)
+    count, dominance = other_marks(marks_all, mask)
     measured["other_marks"] = float(count)
     measured["spot_dominance"] = dominance
     ring = ring_around(mask)

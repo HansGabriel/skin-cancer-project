@@ -71,8 +71,11 @@ BRIGHTNESS_MIN = 12.0
 BRIGHTNESS_MAX = 246.0
 
 # --- Gate 3: is there one spot on the skin? -----------------------------------
+# "GUESSED" marks a limit nobody has measured on a Pi capture yet (scripts/gate_report.py
+# prints the same word). The learned "is this one spot?" check that would replace these
+# waits for the 30 Oct 2026 capture session (docs/METRICS.md, open item 5).
 # The region the gate outlines must be this share of the frame...
-# TO BE MEASURED on Pi cone captures: a webcam face passed at 0.0045 (one nostril).
+# GUESSED — TO BE MEASURED on Pi cone captures: a webcam face passed at 0.0045 (one nostril).
 # 0.01 is the candidate floor once real moles under the cone measure 0.02 or more.
 SPOT_MIN_FRACTION = 0.004  # smaller is noise; "move closer"
 # Set 2026-10-20 because a palm's shadowed half passed at 0.46 under the old 0.75.
@@ -82,12 +85,15 @@ SPOT_MIN_FRACTION = 0.004  # smaller is noise; "move closer"
 # were not framed for the ring, and loosening it lets the palm back in. 0.30 is the
 # target for the cone once Pi captures show what a real spot covers (docs/METRICS.md 5).
 SPOT_MAX_FRACTION = 0.40  # larger is the whole frame; "move back"
-# ...be one compact blob rather than a scatter. Solidity = blob area / area of
-# its convex hull: a mole scores 0.85+, speckle on plain skin scores under 0.4.
-SPOT_MIN_SOLIDITY = 0.6
-# ...and differ from the skin around it by this much (CIE Lab distance; ~2.3 is
+# ...differ from the skin around it by this much (CIE Lab distance; ~2.3 is
 # the smallest difference a person can see, 5 means a real mark, not noise).
+# GUESSED — a rule of thumb; below it the photo is "plain skin" (no verdict even when forced).
 SPOT_MIN_CONTRAST = 5.0
+# ...and be one compact blob rather than a scatter. Solidity = blob area / area of
+# its convex hull: a mole scores 0.85+, speckle on plain skin scores under 0.4.
+# GUESSED — below it the photo is "ragged_spot" since 2026-10-29: a real mark whose edge is
+# hard to follow (scattered or multi-lobed), so "Check it anyway" still answers, with the caveat.
+SPOT_MIN_SOLIDITY = 0.6
 # Hairs thinner than this share of the frame are filled in before the spot is
 # outlined (a morphological close). 3% of 384 px = 11 px: wider than a hair at
 # dermoscope or cone distance, far narrower than any mole worth reading.
@@ -120,8 +126,8 @@ SPOT_MAX_OFFSET = 0.25
 # marks, dominance 0.50; tight face crop 5 / 0.57; a lesion with one satellite
 # 1 / 0.92). Refuse when there are MORE than this many others AND the spot holds
 # less than this share of all the dark-mark area (one satellite is fine).
-SPOT_MAX_OTHER_MARKS = 1  # transferred, not yet measured on this gate's outline
-SPOT_MIN_DOMINANCE = 0.65  # transferred: spot area / (spot + other marks)
+SPOT_MAX_OTHER_MARKS = 1  # GUESSED — transferred, not yet measured on this gate's outline
+SPOT_MIN_DOMINANCE = 0.65  # GUESSED — transferred: spot area / (spot + other marks)
 # `ring_skin` (how much of the skin ring around the spot looks like skin) is
 # measured and logged but has NO limit: deep skin tones sit at the edge of the
 # skin colour box, and refusing on it unmeasured would hurt the people the
@@ -131,8 +137,8 @@ SPOT_MIN_DOMINANCE = 0.65  # transferred: spot area / (spot + other marks)
 # Edge width = (lightness drop across the outline) / (steepness at the outline),
 # as a percentage of the frame diagonal. 267 real HAM10000 lesions through JPEG
 # (2026-10-03) measure median 3.1, max 4.9; a shadow or lighting gradient measures
-# 6-13. 4.0 refused one real lesion in eight. NOT yet measured on Pi captures:
-# switch on SAVE_CAPTURES_DIR and check before trusting it further.
+# 6-13. 4.0 refused one real lesion in eight. GUESSED for the Pi camera (measured on
+# dermoscopy only): switch on SAVE_CAPTURES_DIR and check before trusting it further.
 SPOT_MAX_EDGE_WIDTH_PCT = 5.5
 
 # --- The photo readings on the "check the photo" screen (verdict.photo_readings)
@@ -188,6 +194,8 @@ QUIT_FLAG = Path("/tmp/dermascan_quit")  # scripts/launch_kiosk.sh watches for t
 UPDATE_FLAG = Path("/tmp/dermascan_update")  # "Update from GitHub": the launcher runs scripts/update.sh, then restarts
 VERSION_FILE = Path.home() / ".dermascan" / "version.txt"  # written by launch_kiosk.sh at each start: "hash · date"
 LAST_UPDATE_FILE = Path.home() / ".dermascan" / "last_update.txt"  # one line from scripts/update.sh, shown in Settings
+UPDATE_LOG_FILE = Path.home() / ".dermascan" / "update.log"  # git's and pytest's own words; Settings shows the tail
+UPDATE_LOG_LINES = 20  # lines of it that fit the Settings screen
 WEB_MAX_UPLOAD_MB = 8  # web demo only: a phone photo fits; a bigger upload is refused before it is read
 
 # --- Optional: keep raw captures for later calibration ------------------------

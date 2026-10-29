@@ -46,6 +46,13 @@
             <text x="70.87" y="21.28">A</text><text x="83.76" y="60.97">B</text><text x="50" y="85.5">C</text>
             <text x="16.24" y="60.97">D</text><text x="29.13" y="21.28">E</text>
           </g>
+          <!-- What the photo check picked out: the gate's own outline, clipped to the photo circle.
+               Two strokes, a dark one under a coloured one, so it reads on pale and dark skin alike. -->
+          <clipPath id="photo-clip"><circle cx="50" cy="50" r="40.98"/></clipPath>
+          <g class="outline" clip-path="url(#photo-clip)">
+            <polygon id="outline-under" points=""/>
+            <polygon id="outline-poly" points=""/>
+          </g>
           <circle class="verdict-ring" cx="50" cy="50" r="47.5" fill="none" stroke-width="3"/>
         </svg>
         <div class="ap-rest" id="ap-rest">Put the spot inside the ring</div>
@@ -66,7 +73,7 @@
           </div>
         </div>
         <div class="cap-saved"><div class="cap-title" id="cap-saved-title"></div><div class="dots" id="cap-dots"></div></div>
-        <div class="cap-standby cap-title" id="cap-standby">READY · ON-DEVICE MODEL</div>
+        <div class="cap-standby cap-title" id="cap-standby">READY · WORKS OFFLINE</div>
       </div>
     </div>
   </section>
