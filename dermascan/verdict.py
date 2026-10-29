@@ -148,7 +148,7 @@ def cannot_judge() -> Verdict:
 HEAT_WORDS: dict[str, str] = {
     "loading": "Looking…",
     "on": "Bright area is on your spot.",
-    "off": "Bright area is off your spot. For a steadier reading, retake with the spot centred in the ring.",
+    "off": "Bright area off your spot. For a more accurate reading, retake with the lesion highlighted in the ring.",
     "unknown": "Bright areas are where the scanner looked. Not on your mark? Take another.",
 }
 
