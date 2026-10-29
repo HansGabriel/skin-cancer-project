@@ -18,8 +18,9 @@ Two kinds of verdict:
                       each saying what to point the camera at instead.
 
 Also here: the chip above each verdict (`CHIP`), the "what the scan saw" lines
-for the A B C signs (`sign_lines`), and the three readings on the "check the
-photo" screen (`photo_readings`).
+for the A B C signs (`sign_lines`), and the "check the photo" screen's chip
+(`check_label`: SPOT FOUND / NOT A SPOT · PLAIN SKIN / SPOT · NOT IN THE RING ...)
+and three readings (`photo_readings`).
 """
 
 from __future__ import annotations
@@ -166,34 +167,37 @@ _REFUSAL_COPY: dict[str, tuple[str, str, str]] = {
     ),
     "no_spot": (
         "NO SPOT COULD BE PICKED OUT",
-        "The scanner found skin, but could not pick out a mark on it to read.",
+        "The scanner found skin, but no mark on it to read.",
         "Put the ring over a mole or mark, move a little closer, and take a new photo.",
     ),
     "fills_frame": (
-        "NO EDGE TO READ",
-        "The whole photo is one even tone, so the scanner cannot see where a spot ends.",
-        "Move back so some plain skin shows around the spot, or put the ring over a mole or mark.",
+        "TOO CLOSE TO SEE THE EDGE",
+        "What the scanner outlined fills the photo, so it cannot see where the spot ends.",
+        "Move back until plain skin shows all round the spot, then take a new photo.",
     ),
     "soft_edge": (
         "THAT LOOKS LIKE A SHADOW",
-        "The edge of what the scanner outlined fades away slowly, the way a shadow does, "
-        "rather than stopping the way a mole does.",
-        "Move so the light falls evenly on the skin, then put the ring over the mole or mark itself.",
+        "The outline fades out slowly, the way a shadow does, not the way a mole stops.",
+        "Move so the light falls evenly on the skin, then take a new photo.",
     ),
     "plain_skin": (
         "NO SPOT ON THIS SKIN",
         "The scanner found skin, but no clear mark on it to read.",
         "Put the ring over a mole or mark, or move closer if the spot is small.",
     ),
+    "ragged_spot": (
+        "THE EDGE IS HARD TO FOLLOW",
+        "The scanner found a mark, but its outline breaks up into pieces.",
+        "Move a little closer so the mark fills the ring, then take a new photo.",
+    ),
     "not_in_ring": (
         "PUT THE SPOT IN THE RING",
-        "The mark the scanner found runs to the edge of the photo or sits away from "
-        "the middle, so it cannot see where the spot ends.",
-        "Move so the spot sits in the middle of the ring with plain skin all round it, then take a new photo.",
+        "The mark the scanner found sits away from the middle or runs off the edge.",
+        "Move so the spot sits in the middle of the ring, then take a new photo.",
     ),
     "several_marks": (
         "MORE THAN ONE MARK",
-        "This photo has several dark marks in it, not one spot on skin.",
+        "This photo has several marks in it, not one spot on skin.",
         "Bring the camera close to one mole or mark so it fills the ring, and take a new photo.",
     ),
 }
@@ -203,25 +207,44 @@ _REFUSAL_DEFAULT = (
     "Point the camera at a mole or mark on skin, fill the ring with it, and take a new photo.",
 )
 
-# The line above the refusal headline on the "check the photo" screen. A face, a palm or a
-# desk gets told plainly that it is not a spot on skin; a blurred or badly lit lesion gets
-# told the photo is the problem. Any code this file does not know counts as "not a spot".
-NOT_A_SPOT_EYEBROW = "THIS DOES NOT LOOK LIKE ONE SPOT ON SKIN"
-PHOTO_PROBLEM_EYEBROW = "THIS PHOTO CANNOT BE READ"
-PHOTO_CHECK_EYEBROW = "CHECK THE PHOTO"
-_PHOTO_PROBLEM_CODES = frozenset({"too_blurry", "too_dark", "too_bright"})
+# The chip on the "check the photo" screen: what the gate decided, in two or three words.
+# This is the label the kiosk puts on a photo that is not a lesion. Three families:
+# "NOT A SPOT" (nothing to read, so no verdict even when forced), "SPOT" (a real mark,
+# badly framed: a forced read answers, with the caveat), "CAN'T READ" (the photo itself).
+CHECK_LABEL: dict[str, str] = {
+    "pass": "SPOT FOUND",
+    "no_skin": "NOT SKIN",
+    "too_blurry": "CAN'T READ · BLURRY",
+    "too_dark": "CAN'T READ · DARK",
+    "too_bright": "CAN'T READ · GLARE",
+    "no_spot": "NOT A SPOT · NONE FOUND",
+    "plain_skin": "NOT A SPOT · PLAIN SKIN",
+    "several_marks": "NOT A SPOT · SEVERAL MARKS",
+    "not_in_ring": "SPOT · NOT IN THE RING",
+    "fills_frame": "SPOT · TOO CLOSE",
+    "soft_edge": "SPOT · LOOKS LIKE A SHADOW",
+    "ragged_spot": "SPOT · EDGE HARD TO FOLLOW",
+    "error": "NOT READ",
+}
+_LABEL_DEFAULT = "NOT A SPOT"
 
 
-def refusal_eyebrow(code: str) -> str:
-    """The line above a refusal headline: the photo is the problem, or it is not a spot."""
-    return PHOTO_PROBLEM_EYEBROW if code in _PHOTO_PROBLEM_CODES else NOT_A_SPOT_EYEBROW
-
-
-def check_eyebrow(status: str, refusal_code: str | None) -> str:
-    """The line above the "check the photo" headline for a pass, a refusal, or an error."""
+def check_label(status: str, refusal_code: str | None) -> str:
+    """The chip for a pass, a refusal or an error. A code this file does not know is "NOT A SPOT"."""
     if status == "pass":
-        return PHOTO_CHECK_EYEBROW
-    return refusal_eyebrow(refusal_code) if refusal_code else PHOTO_PROBLEM_EYEBROW
+        return CHECK_LABEL["pass"]
+    if status == "error" or not refusal_code:
+        return CHECK_LABEL["error"]
+    return CHECK_LABEL.get(refusal_code, _LABEL_DEFAULT)
+
+
+# The line above the headline on the "check the photo" screen. One short line for every
+# outcome: the chip (check_label) and the headline carry the reason, so this does not.
+PHOTO_CHECK_EYEBROW = "PHOTO CHECK"
+
+
+def check_eyebrow(status: str, refusal_code: str | None) -> str:  # noqa: ARG001 - same signature as check_label
+    return PHOTO_CHECK_EYEBROW
 
 
 def for_refusal(r: Refusal) -> Verdict:
@@ -340,6 +363,8 @@ def photo_readings(measured: dict[str, float], refusal_code: str | None) -> list
             return 1, "too close"
         if code == "soft_edge":
             return 2, "faint edge"
+        if code == "ragged_spot":
+            return 2, "ragged edge"
         if code == "not_in_ring":
             return 1, "not in ring"
         if code == "several_marks":

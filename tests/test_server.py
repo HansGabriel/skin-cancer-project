@@ -189,7 +189,31 @@ def test_check_reads_the_photo_without_the_model(client, monkeypatch) -> None:
     assert body["status"] == "pass" and [r["name"] for r in body["readings"]] == ["Light", "Focus", "Spot in frame"]
     refused = _upload(client, textured(NEUTRAL["grey desk"]), "/check").get_json()
     assert refused["status"] == "refused" and refused["verdict"]["headline"] == "NO SKIN IN THIS PHOTO"
-    assert body["eyebrow"] == "CHECK THE PHOTO" and refused["eyebrow"] == "THIS DOES NOT LOOK LIKE ONE SPOT ON SKIN"
+    assert body["eyebrow"] == refused["eyebrow"] == "PHOTO CHECK"
+    assert body["label"] == "SPOT FOUND" and refused["label"] == "NOT SKIN"
+    # The outline the gate drew comes back as a small polygon in 0-1 of the frame.
+    assert 3 <= len(body["outline"]) <= 64 and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in body["outline"])
+    assert body["aspect"] == 1.0 and refused["outline"] == []  # the desk never reached the spot check
+
+
+def test_heatmap_comes_from_the_deployed_model_on_demand(client) -> None:
+    """health says the heatmap is on; /cam.jpg is 404 until a scan, then a JPEG, built once per photo."""
+    assert client.get("/health").get_json()["model"]["cam"] is True
+    assert client.get("/cam.jpg").status_code == 404
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])))
+    r = client.get("/cam.jpg")
+    assert r.status_code == 200 and r.mimetype == "image/jpeg" and r.data[:2] == b"\xff\xd8"
+    assert client.get("/cam.jpg").data == r.data  # cached for this photo
+
+
+def test_update_log_is_staff_only_and_tails_the_file(client, monkeypatch, tmp_path) -> None:
+    log = tmp_path / "update.log"
+    log.write_text("\n".join(f"line {i}" for i in range(30)) + "\n")
+    monkeypatch.setattr(server.config, "UPDATE_LOG_FILE", log)
+    body = client.post("/update/log").get_json()
+    assert body["ok"] and body["lines"][-1] == "line 29" and len(body["lines"]) == server.config.UPDATE_LOG_LINES
+    monkeypatch.setattr(server.config, "UPDATE_LOG_FILE", tmp_path / "none.log")
+    assert client.post("/update/log").get_json()["lines"] == []
 
 
 def test_check_then_scan_uses_the_same_photo(client) -> None:

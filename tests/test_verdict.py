@@ -108,14 +108,25 @@ def test_photo_readings_cover_every_refusal() -> None:
     assert "SAFE" not in " ".join(verdict.CHIP.values())
 
 
-def test_refusal_eyebrow_says_not_a_spot_unless_the_photo_itself_is_the_problem() -> None:
-    photo_problem = {"too_blurry", "too_dark", "too_bright"}
-    for code in list(verdict._REFUSAL_COPY) + ["something_new"]:
-        want = verdict.PHOTO_PROBLEM_EYEBROW if code in photo_problem else verdict.NOT_A_SPOT_EYEBROW
-        assert verdict.refusal_eyebrow(code) == want, code
-    assert verdict.check_eyebrow("pass", None) == verdict.PHOTO_CHECK_EYEBROW
-    assert verdict.check_eyebrow("error", None) == verdict.PHOTO_PROBLEM_EYEBROW
-    assert verdict.check_eyebrow("refused", "no_skin") == verdict.NOT_A_SPOT_EYEBROW
-    for text in (verdict.NOT_A_SPOT_EYEBROW, verdict.PHOTO_PROBLEM_EYEBROW, verdict.PHOTO_CHECK_EYEBROW):
-        _plain(text)
-        assert text.isupper()
+def test_every_check_outcome_has_a_short_plain_label() -> None:
+    """The chip on the check screen: NOT A SPOT · ..., SPOT · ..., CAN'T READ · ..., or SPOT FOUND."""
+    from dermascan.gate import FRAMING_CODES, NOT_A_SPOT_CODES
+
+    assert verdict.check_label("pass", None) == "SPOT FOUND"
+    assert verdict.check_label("error", None) == verdict.check_label("refused", None) == "NOT READ"
+    assert verdict.check_label("refused", "something_new") == "NOT A SPOT"
+    for code in verdict._REFUSAL_COPY:
+        label = verdict.check_label("refused", code)
+        _plain(label)
+        assert label.isupper() and len(label) <= 28, label
+        if code in NOT_A_SPOT_CODES:
+            assert label.startswith("NOT A SPOT · "), code
+        elif code in FRAMING_CODES:
+            assert label.startswith("SPOT · "), code  # a real spot: "Check it anyway" still answers
+        elif code == "no_skin":
+            assert label == "NOT SKIN"
+        else:
+            assert label.startswith("CAN'T READ · "), code
+    assert set(verdict._REFUSAL_COPY) <= set(verdict.CHECK_LABEL)
+    assert verdict.check_eyebrow("pass", None) == verdict.check_eyebrow("refused", "no_skin") == verdict.PHOTO_CHECK_EYEBROW
+    _plain(verdict.PHOTO_CHECK_EYEBROW)

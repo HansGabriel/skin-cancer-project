@@ -1,5 +1,10 @@
 # Real photos for the gate
 
+**Both folders are empty as of 29 October 2026** (only `.gitkeep`), so
+`tests/test_gate_real.py` runs no cases and every gate limit is still a guess
+(`dermascan/config.py`, the lines marked `GUESSED`). The 30 October Pi capture session
+is meant to fill them: a few dozen refuse/pass photos from the cone, per the rules below.
+
 Small real JPEGs the photo gate (`dermascan/gate.py`) must get right. The synthetic
 frames in `tests/conftest.py` catch regressions in the maths; these catch the cases
 that only real cameras produce. `tests/test_gate_real.py` runs every file here
