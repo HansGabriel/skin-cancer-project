@@ -182,11 +182,15 @@ def _build() -> Cam | None:
     """The separate CAM file when it belongs to this classifier, else the classifier itself."""
     if config.CAM_PATH.is_file():
         if cam_matches_classifier():
-            return Cam.from_cam_file()
-        log.warning("%s does not belong to %s (sha mismatch): reading the map from the classifier instead", config.CAM_PATH.name, config.MODEL_PATH.name)
+            try:
+                return Cam.from_cam_file()
+            except Exception:  # noqa: BLE001 - a broken CAM file is not the end: the classifier can still give the map
+                log.exception("%s could not be opened: reading the map from the classifier instead", config.CAM_PATH.name)
+        else:
+            log.warning("%s does not belong to %s (sha mismatch): reading the map from the classifier instead", config.CAM_PATH.name, config.MODEL_PATH.name)
     cam = Cam.from_classifier()
-    # One pass on a blank frame: a delegate that fused the layer away gives an unreadable
-    # or all-zero tensor here, and the drawer must not offer a heatmap it cannot draw.
+    # One pass on a blank frame: a runtime that cannot hand the tensor back raises here,
+    # or hands back the wrong shape, and the drawer must not offer a heatmap it cannot draw.
     probe = cam.attention(np.full((config.INPUT_SIZE, config.INPUT_SIZE, 3), 128, np.uint8))
     if probe.shape != FEATURE_MAP_HW:
         raise ValueError(f"feature map came back as {probe.shape}")
@@ -216,5 +220,10 @@ def get_cam() -> Cam | None:
 
 
 def warm_in_background() -> None:
-    """Build the Cam on a thread, so neither the boot nor the first staff tap waits for it."""
+    """Build the Cam on a thread, so the first staff tap does not wait for it.
+
+    A /health that lands while the build holds the lock waits for it (one to a few
+    seconds on a Pi 4, once); the launcher's start-up poll is the usual caller then,
+    and it waits up to 30 s anyway.
+    """
     threading.Thread(target=get_cam, name="cam-warm", daemon=True).start()

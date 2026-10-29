@@ -128,5 +128,4 @@ def test_every_check_outcome_has_a_short_plain_label() -> None:
         else:
             assert label.startswith("CAN'T READ · "), code
     assert set(verdict._REFUSAL_COPY) <= set(verdict.CHECK_LABEL)
-    assert verdict.check_eyebrow("pass", None) == verdict.check_eyebrow("refused", "no_skin") == verdict.PHOTO_CHECK_EYEBROW
     _plain(verdict.PHOTO_CHECK_EYEBROW)

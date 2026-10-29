@@ -59,11 +59,6 @@ from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
 STATIC = Path(__file__).resolve().parent / "static"
-# Every number gate.check can put in `measured`, in the order the checks run (the drawer's table order).
-GATE_KEYS = (
-    "skin_fraction", "focus", "brightness", "spot_fraction", "spot_contrast", "spot_solidity",
-    "spot_offset", "spot_at_edge", "other_marks", "spot_dominance", "ring_skin", "edge_width",
-)
 
 log = logging.getLogger("dermascan.server")
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="/static")
@@ -223,7 +218,7 @@ def health():
         **status, "ok": True,
         "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta, "cam": heat},
         # The limit each gate number is held to, so the staff drawer prints value and limit side by side.
-        "gate_limits": {k: gate.limit_text(k) for k in GATE_KEYS},
+        "gate_limits": gate.limits(),
     })
 
 

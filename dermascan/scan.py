@@ -239,7 +239,7 @@ def _check_result(status, headline, lede, readings, v, refusal, measured, outlin
     code = refusal.code if refusal else None
     return {
         "status": status, "headline": headline, "lede": lede, "readings": readings,
-        "eyebrow": verdict.check_eyebrow(status, code),
+        "eyebrow": verdict.PHOTO_CHECK_EYEBROW,
         "label": verdict.check_label(status, code),
         "verdict": v.to_dict() if v else None,
         "refusal": {"code": refusal.code, "can_override": refusal.can_override} if refusal else None,

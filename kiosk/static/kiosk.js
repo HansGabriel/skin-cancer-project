@@ -726,6 +726,7 @@ function openStaff() {
   }
   const heatNote = canHeat ? h("p", "tech flush", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis. Tap a picture to put it in the ring.") : null;
   const stages = Object.entries(o.stage_ms || {}).map(([k, v]) => `${k} ${v}`).join(" · ");
+  const gateRows = gateTable(o.measured);
   const scale = h("div", "scale", ...[0, 1, 2].map((t) => { const s = h("span", "", h("i"), PILL[t]); s.firstChild.style.background = ARC[t]; return s; }));
   $("staff").replaceChildren(
     staffHeader(o.judged === false ? "CLINICAL READOUT · PHOTO CHECK FAILED — NUMBERS UNRELIABLE" : "CLINICAL READOUT · STAFF ONLY"),
@@ -739,7 +740,7 @@ function openStaff() {
       `DECISION: cancer score ${p.cancer_score == null ? "—" : p.cancer_score.toFixed(3)} · limit ${p.threshold == null ? "—" : p.threshold.toFixed(3)} → ${p.flagged ? "flagged for a doctor" : "not flagged"}`,
       h("br"), `${o.model || "model"} · ${S.health && S.health.model && S.health.model.tta ? "4 views averaged" : "1 view"} · top ${p.confidence_pct.toFixed(0)}%${o.forced ? " · photo check overridden" : ""}`,
       h("br"), `scan ${o.total_ms} ms (${stages})`),
-    ...(gateTable(o.measured) ? [h("div", "label", "PHOTO CHECK · VALUE AND LIMIT"), gateTable(o.measured)] : []),
+    ...(gateRows ? [h("div", "label", "PHOTO CHECK · VALUE AND LIMIT"), gateRows] : []),
   );
   $("staff").hidden = false;
 }
@@ -828,7 +829,8 @@ async function updateKiosk(e) {
 }
 async function showUpdateLog(e, box) {
   const r = await post("/update/log", staffForm());
-  box.textContent = r.ok && r.data && r.data.lines.length ? r.data.lines.join("\n") : "No update has run on this kiosk yet.";
+  if (!r.ok) { if (r.status === 403) S.staffCode = null; e.currentTarget.textContent = "Could not read the log"; return; }
+  box.textContent = r.data.lines.length ? r.data.lines.join("\n") : "No update has run on this kiosk yet.";
   box.hidden = !box.hidden;
   e.currentTarget.textContent = box.hidden ? "Show the update log" : "Hide the update log";
 }
