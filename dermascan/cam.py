@@ -90,7 +90,12 @@ def overlay_jpg(rgb: np.ndarray, cam01: np.ndarray, alpha: float = config.CAM_AL
     return enc.tobytes()
 
 
-def alignment(cam01: np.ndarray, outline: list[list[float]], margin: float = config.CAM_ALIGN_MARGIN, grid: int = 112) -> dict | None:
+# Both the map and the outline are laid on this many cells per side to compare them: 16 x the
+# map's 7, fine enough for a polygon of a few dozen corners, cheap enough to be nothing.
+ALIGN_GRID = 112
+
+
+def alignment(cam01: np.ndarray, outline: list[list[float]], margin: float = config.CAM_ALIGN_MARGIN, grid: int = ALIGN_GRID) -> dict | None:
     """Does the heat sit on the spot the photo check outlined?
 
     `outline` is the check's polygon in 0-1 of the frame (gate.outline_polygon); the map is
@@ -110,8 +115,7 @@ def alignment(cam01: np.ndarray, outline: list[list[float]], margin: float = con
     total = float(cam.sum())
     iy, ix = np.unravel_index(int(cam.argmax()), cam.shape)
     inside = float(cam[mask == 1].sum() / total) if total > 0 else 0.0
-    return {"aligned": bool(total > 0 and mask[iy, ix]), "inside": round(inside, 3),
-            "peak": [round(ix / (grid - 1), 3), round(iy / (grid - 1), 3)]}
+    return {"aligned": bool(total > 0 and mask[iy, ix]), "inside": round(inside, 3)}
 
 
 def sha256_of(path: Path) -> str:

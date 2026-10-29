@@ -143,6 +143,16 @@ def cannot_judge() -> Verdict:
     )
 
 
+# Beside the "Where it looked" circle (check screen and result). The heatmap is class-agnostic:
+# it shows where the scanner looked, never why. "off" is its one nudge - retake, not a verdict.
+HEAT_WORDS: dict[str, str] = {
+    "loading": "Looking…",
+    "on": "Bright area is on your spot.",
+    "off": "Bright area is off your spot. For a steadier reading, retake with the spot centred in the ring.",
+    "unknown": "Bright areas are where the scanner looked. Not on your mark? Take another.",
+}
+
+
 # headline, body, advice - one per gate refusal code.
 _REFUSAL_COPY: dict[str, tuple[str, str, str]] = {
     "no_skin": (
