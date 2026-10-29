@@ -323,7 +323,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
   .row,.sign,.q,.qa-a{font-size:15px}
   .btn{height:52px;font-size:16px}
   .actions{grid-template-columns:1fr 1fr}
-  .heat-aside{grid-template-columns:auto minmax(0,1fr);gap:14px}
+  .heat-aside{gap:14px}
   .heat-pic{width:112px;height:112px}
   .heat-line{font-size:14px}
   .sites{grid-template-columns:repeat(2,minmax(0,1fr))}
