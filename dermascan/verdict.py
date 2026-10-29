@@ -243,10 +243,6 @@ def check_label(status: str, refusal_code: str | None) -> str:
 PHOTO_CHECK_EYEBROW = "PHOTO CHECK"
 
 
-def check_eyebrow(status: str, refusal_code: str | None) -> str:  # noqa: ARG001 - same signature as check_label
-    return PHOTO_CHECK_EYEBROW
-
-
 def for_refusal(r: Refusal) -> Verdict:
     headline, body, advice = _REFUSAL_COPY.get(r.code, _REFUSAL_DEFAULT)
     return Verdict(

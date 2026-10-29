@@ -16,7 +16,7 @@ words. The approved answer is the source; the timeframes come from
 dermascan/verdict.py (ACTION); the rules are the ones tests/test_answers.py
 enforces. Every draft is checked before it is kept:
 
-    - no clinical or model jargon (the same word list as the tests)
+    - no clinical or model jargon (the tests' word list, plus lesion / dermoscopy / biopsy)
     - no digits and no percentages
     - every timeframe of the approved answer is still there, word for word
     - at most MAX_WORDS words, and not shorter than a third of the original
@@ -48,7 +48,7 @@ from dermascan.answers import ANSWERS_PATH  # noqa: E402
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 DEFAULT_MODEL = "gemma4:e4b"
-MAX_WORDS = 70
+MAX_WORDS = 60
 JARGON = ("malignant", "benign", "softmax", "inconclusive", "pre_cancerous", "classifier", "model", "tflite", "lesion", "dermoscopy", "biopsy")
 REASSURANCE = ("safe", "harmless", "nothing to worry", "no need to worry", "don't worry", "do not worry")
 

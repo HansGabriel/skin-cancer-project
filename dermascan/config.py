@@ -141,6 +141,10 @@ SPOT_MIN_DOMINANCE = 0.65  # GUESSED — transferred: spot area / (spot + other 
 # dermoscopy only): switch on SAVE_CAPTURES_DIR and check before trusting it further.
 SPOT_MAX_EDGE_WIDTH_PCT = 5.5
 
+# The gate's outline goes to the page as a polygon with at most this many corners:
+# a few hundred bytes of JSON, and still the mole's shape at aperture size.
+OUTLINE_MAX_POINTS = 64
+
 # --- The photo readings on the "check the photo" screen (verdict.photo_readings)
 # Display only: the gate's limits above still decide. These split a passing photo
 # into "good" and "could be better" so the visitor sees why a retake might help.

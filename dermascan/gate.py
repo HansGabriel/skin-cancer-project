@@ -162,10 +162,6 @@ def _clean_threshold(gray: np.ndarray, valid: np.ndarray | None = None) -> np.nd
     return cv2.morphologyEx(th, cv2.MORPH_OPEN, k, iterations=1)
 
 
-def _otsu_blob(gray: np.ndarray) -> np.ndarray:
-    return _largest_component(_clean_threshold(gray))
-
-
 def _components_clear_of_edge(binary: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """(label image, [(label, area)] for every blob that keeps clear of the frame edge
     and is at least SPOT_MIN_FRACTION of it). Edge-touching blobs are a vignette, hair
@@ -297,7 +293,7 @@ def _outline(rgb_small: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return dark, dark_all
 
 
-def outline_polygon(mask: np.ndarray | None, max_points: int = 64) -> list[list[float]]:
+def outline_polygon(mask: np.ndarray | None, max_points: int = config.OUTLINE_MAX_POINTS) -> list[list[float]]:
     """The outline as one polygon, [[x, y], ...] in 0-1 of the frame, for the page to draw.
 
     The largest outer contour, simplified until it has at most `max_points` corners:
@@ -312,7 +308,7 @@ def outline_polygon(mask: np.ndarray | None, max_points: int = 64) -> list[list[
     if not contours:
         return []
     cnt = max(contours, key=cv2.contourArea)
-    eps = 0.5
+    eps = 0.5  # px of allowed deviation on the 384 px copy; raised by half each pass until the polygon is small enough
     poly = cv2.approxPolyDP(cnt, eps, True)
     while len(poly) > max_points:
         eps *= 1.5
@@ -321,28 +317,32 @@ def outline_polygon(mask: np.ndarray | None, max_points: int = 64) -> list[list[
     return [[round(float(x) / w, 4), round(float(y) / h, 4)] for [[x, y]] in poly]
 
 
-def limit_text(key: str) -> str:
-    """The limit a measured number is held to, in a few characters, for the staff drawer.
+def limits() -> dict[str, str]:
+    """Every number `check` can put in `measured`, in check order, with the limit it is
+    held to in a few characters - for the staff drawer, which prints value beside limit.
 
-    "—" for numbers that are logged but have no limit (ring_skin), and for anything
-    this file does not know. Keeps the drawer honest: every value sits next to the
-    line it had to clear, and a guessed limit (config.py says which) is still a limit.
+    "—" for numbers that are logged but have no limit (ring_skin). A guessed limit
+    (config.py says which) is still a limit.
     """
-    c = config
-    limits = {
-        "skin_fraction": f"≥ {c.SKIN_MIN_FRACTION:g}",
-        "focus": f"≥ {c.FOCUS_MIN:g}",
-        "brightness": f"{c.BRIGHTNESS_MIN:g}–{c.BRIGHTNESS_MAX:g}",
-        "spot_fraction": f"{c.SPOT_MIN_FRACTION:g}–{c.SPOT_MAX_FRACTION:g}",
-        "spot_solidity": f"≥ {c.SPOT_MIN_SOLIDITY:g}",
-        "spot_contrast": f"≥ {c.SPOT_MIN_CONTRAST:g}",
-        "spot_offset": f"≤ {c.SPOT_MAX_OFFSET:g}",
+    return {
+        "skin_fraction": f"≥ {config.SKIN_MIN_FRACTION:g}",
+        "focus": f"≥ {config.FOCUS_MIN:g}",
+        "brightness": f"{config.BRIGHTNESS_MIN:g}–{config.BRIGHTNESS_MAX:g}",
+        "spot_fraction": f"{config.SPOT_MIN_FRACTION:g}–{config.SPOT_MAX_FRACTION:g}",
+        "spot_contrast": f"≥ {config.SPOT_MIN_CONTRAST:g}",
+        "spot_solidity": f"≥ {config.SPOT_MIN_SOLIDITY:g}",
+        "spot_offset": f"≤ {config.SPOT_MAX_OFFSET:g}",
         "spot_at_edge": "= 0",
-        "other_marks": f"≤ {c.SPOT_MAX_OTHER_MARKS:g}",
-        "spot_dominance": f"≥ {c.SPOT_MIN_DOMINANCE:g}",
-        "edge_width": f"≤ {c.SPOT_MAX_EDGE_WIDTH_PCT:g}",
+        "other_marks": f"≤ {config.SPOT_MAX_OTHER_MARKS:g}",
+        "spot_dominance": f"≥ {config.SPOT_MIN_DOMINANCE:g}",
+        "ring_skin": "—",
+        "edge_width": f"≤ {config.SPOT_MAX_EDGE_WIDTH_PCT:g}",
     }
-    return limits.get(key, "—")
+
+
+def limit_text(key: str) -> str:
+    """One number's limit, or "—" for one this file does not know."""
+    return limits().get(key, "—")
 
 
 def outline_spot(rgb_small: np.ndarray) -> np.ndarray:
@@ -439,7 +439,7 @@ def check(rgb: np.ndarray) -> GateReport:
         return refuse("too_bright", False)
 
     # 3. Is there one spot on it?
-    mask, dark_all = _outline(small)
+    mask, marks_all = _outline(small)
     outline = mask
     measured["spot_fraction"] = float(mask.mean())
     measured["spot_solidity"] = solidity(mask)
@@ -454,7 +454,7 @@ def check(rgb: np.ndarray) -> GateReport:
         return refuse("ragged_spot", True)  # a real mark, just not a compact one: a forced read still answers
 
     # 3b. ...in the ring, and on its own?
-    _measure_company(measured, skin, mask, dark_all)
+    _measure_company(measured, skin, mask, marks_all)
     if measured["spot_at_edge"] or measured["spot_offset"] > config.SPOT_MAX_OFFSET:
         return refuse("not_in_ring", True)
     if measured["other_marks"] > config.SPOT_MAX_OTHER_MARKS and measured["spot_dominance"] < config.SPOT_MIN_DOMINANCE:
@@ -490,10 +490,10 @@ def measure_everything(rgb: np.ndarray) -> dict[str, float]:
     measured: dict[str, float] = {"skin_fraction": float(skin.mean())}
     measured["focus"] = focus_score(rgb)
     measured["brightness"] = brightness(small)
-    mask, dark_all = _outline(small)
+    mask, marks_all = _outline(small)
     measured["spot_fraction"] = float(mask.mean())
     measured["spot_solidity"] = solidity(mask)
     measured["spot_contrast"] = spot_contrast(small, mask)
-    _measure_company(measured, skin, mask, dark_all)
+    _measure_company(measured, skin, mask, marks_all)
     measured["edge_width"] = edge_width(small, mask)
     return measured
