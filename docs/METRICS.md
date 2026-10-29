@@ -353,3 +353,24 @@ the staff drawer keeps the numbers under a "numbers unreliable" line. Framing re
 Still no Pi capture measured. First capture session: 30 October 2026 (`SAVE_CAPTURES_DIR`
 on for the event, plus ~50 deliberate non-lesion frames at the end), to seed a Pi bench
 and a `no_lesion` class for the next retrain.
+
+## Photo check labels, outline and two gate fixes (29 Oct 2026, `feat/epivue-align`)
+
+No limit moved. What changed in `dermascan/gate.py` / `verdict.py`:
+
+- Every check outcome has a short label on the check screen (`verdict.check_label`):
+  SPOT FOUND · NOT A SPOT · PLAIN SKIN / SEVERAL MARKS / NONE FOUND · NOT SKIN ·
+  SPOT · NOT IN THE RING / TOO CLOSE / LOOKS LIKE A SHADOW / EDGE HARD TO FOLLOW ·
+  CAN'T READ · BLURRY / DARK / GLARE. The gate's outline is drawn on the photo
+  (`gate.outline_polygon`, ≤ 64 points, ~1 ms: the only addition to the check path).
+- `ragged_spot` split out of `plain_skin`: low **contrast** is still "plain skin" (no verdict
+  when forced); low **solidity** with real contrast is now a framing refusal, so a forced
+  read of a scattered or multi-lobed mark answers, with the caveat and with A B C measured.
+  On the synthetic suite a thick "C" (solidity 0.50) is `ragged_spot`; bare skin stays
+  `plain_skin`. A four-lobed mark still reads as `several_marks` (dominance 0.23) — a known
+  weak spot for the capture session.
+- The light-spot path (a pale mark on dark skin) never counted other marks, so such a mark
+  passed "several marks" whatever else was in the frame. It now counts on the light binary.
+- Signs are measured on every judged read, forced framing reads included.
+- Still zero real photos in `tests/fixtures/gate/`; the limits marked GUESSED in `config.py`
+  wait for the 30 Oct captures.
