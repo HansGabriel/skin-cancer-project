@@ -22,12 +22,17 @@ MODEL_PATH = MODELS_DIR / "skin_classifier.tflite"
 LABELS_PATH = MODELS_DIR / "labels.txt"  # one label per line, same order as the model output
 THRESHOLDS_PATH = MODELS_DIR / "thresholds.json"  # screen_cancer_threshold + class indexes
 TEMPERATURE_PATH = MODELS_DIR / "temperature.json"  # T for honest displayed confidence
-# Optional fifth file, staff heatmap only (dermascan/cam.py). Exported from the same run as
-# the classifier by scripts/export_cam_tflite.py; absent or mismatched -> no heatmap button.
+# The "Where it looked" heatmap (dermascan/cam.py) is read from the classifier itself. An
+# optional fifth file from scripts/export_cam_tflite.py is used first when its .json names this
+# classifier's sha256; absent or mismatched, the map comes from skin_classifier.tflite.
 CAM_PATH = MODELS_DIR / "skin_classifier_cam.tflite"
 CAM_META_PATH = MODELS_DIR / "skin_classifier_cam.json"  # which classifier (sha256) it belongs to
 CAM_ALPHA = 0.5  # half photo, half heat: the spot stays visible under the colours
 CAM_JPEG_QUALITY = 85
+# The check screen shows "Where it looked" after a passing photo (mentor's call 2026-10-29).
+# It is one extra forward pass per photo (~1 s on the Pi), fetched by the page after the check
+# answers, so the check itself is never slower. Switch off if the Pi feels busy.
+CAM_ON_CHECK = True
 
 # --- Inference ----------------------------------------------------------------
 NUM_THREADS = 4  # the Pi 4 has four cores

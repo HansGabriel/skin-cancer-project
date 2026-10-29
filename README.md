@@ -51,6 +51,7 @@ tap "Take the photo"        kiosk/camera.py      1024 px centre crop, JPEG, ~0.1
 "Check the photo" screen    scan.check_photo     decode + gate only: light, focus, spot (~70 ms)
    decode + shrink          ~20 ms
    gate                     dermascan/gate.py    ~50 ms   refuses walls, blur, plain skin, shadows
+   "Where it looked"        dermascan/cam.py     ~1 s     passing photo only, fetched after the check answers (cam ms= in the log)
 tap "Check this spot"       scan.run_scan        reuses the check above (decode=0 gate=0 in the log)
    model (4 views)          dermascan/classifier.py       ~0.6 s on a Pi 4
    signs                    dermascan/signs.py   ~10 ms   A B C on the gate's outline

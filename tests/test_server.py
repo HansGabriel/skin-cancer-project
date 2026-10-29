@@ -197,13 +197,32 @@ def test_check_reads_the_photo_without_the_model(client, monkeypatch) -> None:
 
 
 def test_heatmap_comes_from_the_deployed_model_on_demand(client) -> None:
-    """health says the heatmap is on; /cam.jpg is 404 until a scan, then a JPEG, built once per photo."""
-    assert client.get("/health").get_json()["model"]["cam"] is True
+    """health says the heatmap is on; /cam.jpg is 404 until a check or scan, then a JPEG, built once per photo."""
+    model = client.get("/health").get_json()["model"]
+    assert model["cam"] is True and model["cam_on_check"] is True
     assert client.get("/cam.jpg").status_code == 404
     _upload(client, with_lesion(textured(SKIN_TONES["light"])))
     r = client.get("/cam.jpg")
     assert r.status_code == 200 and r.mimetype == "image/jpeg" and r.data[:2] == b"\xff\xd8"
     assert client.get("/cam.jpg").data == r.data  # cached for this photo
+    client.post("/forget")
+    assert client.get("/cam.jpg").status_code == 404
+
+
+def test_heatmap_is_ready_after_the_check_and_kept_for_the_scan(client) -> None:
+    """The check screen asks for the heatmap before "Check this spot": one build per photo."""
+    _upload(client, with_lesion(textured(SKIN_TONES["light"])), "/check")
+    r = client.get("/cam.jpg")
+    assert r.status_code == 200 and r.data[:2] == b"\xff\xd8"
+    assert client.post("/scan").get_json()["status"] == "ok"  # the remembered photo, the check reused
+    assert client.get("/cam.jpg").data == r.data  # same photo, same cached heatmap
+    assert client.post("/cam.jpg").status_code == 404  # the kiosk takes no posted photo here
+
+
+def test_check_screen_heatmap_can_be_switched_off(client, monkeypatch) -> None:
+    monkeypatch.setattr(server.config, "CAM_ON_CHECK", False)
+    model = client.get("/health").get_json()["model"]
+    assert model["cam"] is True and model["cam_on_check"] is False  # the drawer keeps it; the page hides the circle
 
 
 def test_update_log_is_staff_only_and_tails_the_file(client, monkeypatch, tmp_path) -> None:
@@ -344,6 +363,15 @@ def test_web_mode_remembers_no_photo(web) -> None:
     assert server.last_photo.get() is None
 
 
+def test_web_mode_heatmap_takes_the_posted_photo_and_keeps_nothing(web) -> None:
+    assert web.get("/health").get_json()["model"]["cam_on_check"] is True
+    assert web.get("/cam.jpg").status_code == 404  # nothing remembered to draw over
+    r = _upload(web, with_lesion(textured(SKIN_TONES["light"])), "/cam.jpg")
+    assert r.status_code == 200 and r.mimetype == "image/jpeg" and r.data[:2] == b"\xff\xd8"
+    assert server.last_photo.get() is None
+    assert web.post("/cam.jpg").status_code == 404
+
+
 def test_web_mode_switches_off_saving_staff_and_camera(web) -> None:
     for path in ["/saved", "/saved/1", "/saved/1.jpg", "/preview.mjpg"]:
         assert web.get(path).status_code == 404, path
@@ -394,5 +422,6 @@ def test_heatmap_is_absent_without_a_cam_file(client, monkeypatch) -> None:
 
     monkeypatch.setattr(cam, "_cam", None)
     monkeypatch.setattr(cam, "_cam_tried", True)  # as if the file were missing
-    assert client.get("/health").get_json()["model"]["cam"] is False
+    model = client.get("/health").get_json()["model"]
+    assert model["cam"] is False and model["cam_on_check"] is False
     assert client.get("/cam.jpg").status_code == 404
