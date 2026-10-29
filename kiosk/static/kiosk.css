@@ -288,7 +288,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 .gate tr.miss td+td{color:#E0645A}
 /* "Where it looked" on the check screen: one heatmap circle under the lede, tap to put it in the ring */
 .heat-aside{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(12px,1.8cqw,24px);align-items:center;margin-top:clamp(10px,1.8cqh,16px)}
-.heat-pic{padding:0;border:0;background:var(--chip);border-radius:50%;width:clamp(96px,22cqh,160px);height:clamp(96px,22cqh,160px);box-shadow:0 0 0 2px var(--rule);cursor:pointer}
+.heat-pic{padding:0;border:0;background:var(--chip);border-radius:50%;width:clamp(110px,26cqh,180px);height:clamp(110px,26cqh,180px);box-shadow:0 0 0 2px var(--rule);cursor:pointer;flex:0 0 auto}
 .heat-pic.on{box-shadow:0 0 0 3px var(--navy)}
 .heat-pic[disabled]{cursor:default}
 .heat-pic img,.heat-wait{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;box-sizing:border-box}
@@ -302,8 +302,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 /* the result's smaller row, in the instrument band under the A B C D E legend (index.html #cap-heat) */
 .cap-heat{display:none}
 .app[data-screen="result"] .cap-heat{display:block}
-.heat-aside.compact{margin:clamp(8px,1.6cqh,16px) auto 0;max-width:min(94%,440px);gap:clamp(10px,1.2cqw,16px);text-align:left}
-.heat-aside.compact .heat-pic{width:clamp(44px,8.5cqh,64px);height:clamp(44px,8.5cqh,64px);background:var(--navy-deep);box-shadow:0 0 0 2px rgba(232,238,246,.14)}
+.heat-aside.compact{margin:clamp(8px,1.6cqh,16px) auto 0;max-width:min(94%,460px);gap:clamp(12px,1.4cqw,18px);align-items:center;text-align:left}
+.heat-aside.compact .heat-pic{width:clamp(60px,12cqh,88px);height:clamp(60px,12cqh,88px);background:var(--navy-deep);box-shadow:0 0 0 2px rgba(232,238,246,.14)}
 .heat-aside.compact .heat-pic.on{box-shadow:0 0 0 3px var(--reticle)}
 .heat-aside.compact .heat-wait{border-color:rgba(232,238,246,.3)}
 .heat-aside.compact .heat-line{margin:0;max-width:none;line-height:1.35;color:var(--f-body);font-size:clamp(12px,2.1cqh,14px)}
