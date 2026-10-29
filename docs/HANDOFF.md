@@ -21,7 +21,7 @@ owed, and how to tell whether the overnight retrain may be shipped. Hans pushes 
 - **Heatmap** ("Where it looked"): Eigen-CAM read from the deployed classifier itself, no
   extra model file. On the check screen after a passing photo, a circle under the headline
   fills in about a second after the check (tap it to put it in the ring, under the outline),
-  and a smaller row on the result; the words say whether the bright area is on the outlined
+  and a small row under the ring on the result; the words say whether the bright area is on the outlined
   spot ("off your spot → take another"). In the staff drawer, photo and heatmap side by side
   with the share of heat on the spot. Built once per photo, after the check
   has answered, so no check or scan waits for it. If the Pi feels slow, set

@@ -108,6 +108,17 @@ def test_photo_readings_cover_every_refusal() -> None:
     assert "SAFE" not in " ".join(verdict.CHIP.values())
 
 
+def test_heat_words_are_plain_and_never_a_verdict() -> None:
+    """The lines beside the heatmap circle: plain, class-agnostic, the only nudge is to retake."""
+    assert set(verdict.HEAT_WORDS) == {"loading", "on", "off", "unknown"}
+    for text in verdict.HEAT_WORDS.values():
+        _plain(text)
+        assert len(text) <= 110, text  # two lines beside the result's small circle at 1024 x 600
+        for word in ("cancer", "safe", "normal", "why"):
+            assert word not in text.lower(), text
+    assert "retake" in verdict.HEAT_WORDS["off"].lower()
+
+
 def test_every_check_outcome_has_a_short_plain_label() -> None:
     """The chip on the check screen: NOT A SPOT · ..., SPOT · ..., CAN'T READ · ..., or SPOT FOUND."""
     from dermascan.gate import FRAMING_CODES, NOT_A_SPOT_CODES

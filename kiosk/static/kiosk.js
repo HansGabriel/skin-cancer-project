@@ -30,7 +30,7 @@ const S = {
   savedAs: null, savedId: null, history: null, thread: [], suggestions: [], drafters: [],
   spots: [], sites: [], filter: null, stats: { count: 0, bytes: 0 },
   heat: false,  // the heatmap is in the aperture instead of the photo
-  heatState: null, heatUrl: null, heatAligned: null, heatInside: null,  // "Where it looked": null · "loading" · "ready"; its object URL; on the outlined spot? (true/false/null = no outline); share of heat on it
+  heatState: null, heatUrl: null, heatAligned: null, heatInside: null, heatFaded: false,  // "Where it looked": null · "loading" · "ready"; its object URL; on the outlined spot? (true/false/null = no outline); share of heat on it; fade played
   health: null, settings: { allow_read_anyway: true, show_staff_details: true },
   staffCode: null, code: "", eraseArmedAt: 0, scanAbort: null, web: false,
 };
@@ -300,7 +300,6 @@ const RENDER = {
       lede(v.body, "tight"),
       h("p", "advice", v.advice),
       o.caveat ? h("p", "caveat", o.caveat) : null,
-      ok && judged && !S.viewing ? heatAside(true) : null,
       lines.length ? h("div", "saw", h("div", "label", "WHAT THE SCAN SAW"), lines) : null,
       // With three sign lines above it the note no longer fits the 600 px panel: fold it behind its label.
       v.note ? noteBox(v.note_label, v.note, lines.length > 0) : null,
@@ -310,6 +309,9 @@ const RENDER = {
          : actions("even", btn("Take another photo", retake, "btn compact primary"), btn("Back to start", finish, "btn compact")),
       ok ? h("div", "subrow", compare, btn(compare ? "Ask about it" : "Ask about your result", () => go("questions"), "soft"), staff) : null,
     );
+    // "Where it looked" sits under the ring on the result: the page band is full on a forced
+    // read (caveat, three sign lines, the note), the instrument band has the room.
+    $("cap-heat").replaceChildren(...[ok && judged && !S.viewing ? heatAside(true) : null].filter(Boolean));
   },
 
   saved() {
@@ -535,34 +537,32 @@ async function loadHeat(blob) {
   S.heatState = url ? "ready" : null; S.heatUrl = url; S.heatAligned = aligned; S.heatInside = inside;
   if (S.screen === "check" || S.screen === "result") RENDER[S.screen]();
 }
-// The words beside the circle. The "off your spot" line is the one nudge the heatmap gives:
-// retake, never a different verdict.
-const HEAT_WORDS = {
-  loading: "Looking…",
-  on: "Bright area is on your spot.",
-  off: "Bright area is off your spot. For a more reliable reading, take another photo with the spot centred in the ring.",
-  unknown: "Bright areas pulled the reading. Not on your mark? Take another.",
-};
-// The circle beside its words: this photo's heatmap, or a quiet placeholder while it is built.
-// Tapping it puts the heatmap in the ring, under the photo check's outline; tapping again, the
-// photo. `compact` is the result screen's smaller row.
+// The heatmap's address: the copy fetched for this photo, else the server's (kiosk only).
+function heatSrc() { return S.heatUrl || "/cam.jpg?t=" + Date.now(); }
+// The circle beside its words (health.heat_words, from dermascan/verdict.py): this photo's
+// heatmap, or a quiet placeholder while it is built. Tapping it puts the heatmap in the ring,
+// under the photo check's outline; tapping again, the photo. `compact` is the result's smaller
+// row. The fade plays once per photo, not on every re-render.
 function heatAside(compact) {
-  if (!S.heatState) return null;
+  if (!S.heatState || !S.health.heat_words) return null;
   const ready = S.heatState === "ready";
-  const pic = ready ? h("img", "in") : h("span", "heat-wait");
-  if (ready) { pic.src = S.heatUrl; pic.alt = "Heatmap over the photo"; }
+  const pic = ready ? h("img", S.heatFaded ? "" : "in") : h("span", "heat-wait");
+  if (ready) { pic.src = S.heatUrl; pic.alt = "Heatmap over the photo"; S.heatFaded = true; }
   const b = btn(pic, toggleHeat, "heat-pic" + (S.heat ? " on" : ""));
   b.disabled = !ready;
   b.setAttribute("aria-pressed", String(!!S.heat));
   const state = !ready ? "loading" : S.heatAligned === true ? "on" : S.heatAligned === false ? "off" : "unknown";
-  return h("div", "heat-aside" + (compact ? " compact" : ""), b,
-    h("div", "", h("p", "label", "Where it looked"), h("p", "heat-line" + (state === "off" ? " off" : ""), HEAT_WORDS[state])));
+  const words = S.health.heat_words[state];
+  // The result's row has no room for a label line of its own: the label leads the sentence.
+  const text = compact ? h("p", "heat-line" + (state === "off" ? " off" : ""), h("b", "", "Where it looked · "), words)
+                       : h("div", "", h("p", "label", "Where it looked"), h("p", "heat-line" + (state === "off" ? " off" : ""), words));
+  return h("div", "heat-aside" + (compact ? " compact" : ""), b, text);
 }
 function forgetPhoto() {
   if (S.photoUrl) URL.revokeObjectURL(S.photoUrl);
   if (S.heatUrl) URL.revokeObjectURL(S.heatUrl);
   if (!S.web && (S.photoBlob || S.outcome)) fetch("/forget", { method: "POST" }).catch(() => {}); // the server drops its copy too
-  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [], heat: false, heatState: null, heatUrl: null, heatAligned: null, heatInside: null });
+  Object.assign(S, { photoUrl: null, photoBlob: null, photoOnServer: false, outcome: null, check: null, savedAs: null, thread: [], heat: false, heatState: null, heatUrl: null, heatAligned: null, heatInside: null, heatFaded: false });
   if (!S.viewing) showPhotoUrl(null);
 }
 function retake() { if (S.camera === "off") { forgetPhoto(); go("frame"); pickFile(); } else startCheck(); }
@@ -779,7 +779,7 @@ function openStaff() {
   if (pair) {
     const [photo, heat] = pair.querySelectorAll("img");
     photo.src = S.photoUrl; photo.alt = "The photo";
-    heat.src = S.heatUrl || "/cam.jpg?t=" + Date.now(); heat.alt = "Heatmap over the photo";
+    heat.src = heatSrc(); heat.alt = "Heatmap over the photo";
   }
   const onSpot = S.heatInside == null ? "" : ` Heat on the outlined spot: ${Math.round(S.heatInside * 100)}% (${S.heatAligned ? "brightest point inside" : "brightest point outside"}).`;
   const heatNote = canHeat ? h("p", "tech flush", "Bright areas are where the scanner looked. Not an outline of the spot, not a diagnosis." + onSpot + " Tap a picture to put it in the ring.") : null;
@@ -804,13 +804,16 @@ function openStaff() {
 }
 function toggleHeat() {
   S.heat = !S.heat;
-  showPhotoUrl(S.heat ? S.heatUrl || "/cam.jpg?t=" + Date.now() : S.photoUrl);
+  showPhotoUrl(S.heat ? heatSrc() : S.photoUrl);
   if (S.screen === "check" || S.screen === "result") RENDER[S.screen]();  // the circle shows which picture is in the ring
   paintInstrument();
 }
 function closeOverlays() {
   $("staff").hidden = true; $("sheet").hidden = true;
-  if (S.heat) { S.heat = false; showPhotoUrl(S.photoUrl); paintInstrument(); }
+  if (S.heat) {
+    S.heat = false; showPhotoUrl(S.photoUrl); paintInstrument();
+    if (S.screen === "check" || S.screen === "result") RENDER[S.screen]();  // the circle follows the ring
+  }
 }
 
 // ---------- settings, keypad, erase, exit ----------
