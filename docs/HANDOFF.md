@@ -7,10 +7,25 @@ owed, and how to tell whether the overnight retrain may be shipped. Hans pushes 
 ## What is on `main` now
 
 - Photo gate refuses a face, a palm or a desk before the model runs (`not_in_ring`,
-  `several_marks`, `fills_frame`), and the check screen says so in one line:
-  **THIS DOES NOT LOOK LIKE ONE SPOT ON SKIN** (`dermascan/verdict.py`).
+  `several_marks`, `fills_frame`), and the check screen labels the photo with a chip —
+  **NOT A SPOT · PLAIN SKIN**, **SPOT · NOT IN THE RING**, **SPOT FOUND** … — and draws
+  the gate's outline on it (`dermascan/verdict.py`, `check_label`). "Numbers for staff"
+  under a refused check opens the gate's numbers beside their limits.
 - **Update from GitHub** in Settings: fetch → fast-forward `main` → `pip install` only if
   `requirements.txt` changed → `pytest` → restart; a failure rolls back. Needs wifi.
+  Since 29 Oct it fetches `https://github.com/HansGabriel/skin-cancer-project.git` by name
+  (the Pi's `origin` is SSH and has no key the launcher can use — that was the false
+  "GitHub not reachable"). "Show the update log" in Settings prints git's own words.
+  One-time hygiene on the Pi, so a hand `git pull` works too:
+  `git remote set-url origin https://github.com/HansGabriel/skin-cancer-project.git`
+- **Heatmap** ("Where it looked", staff drawer): Eigen-CAM read from the deployed
+  classifier itself, no extra model file. Photo and heatmap side by side; tap to put one in
+  the ring. On demand only, never on the scan path.
+- **Gemma 4**: drafts the Questions-tab answers on the PC (`scripts/draft_answers_gemma.py`,
+  needs Ollama there); the Pi serves them offline with a "DRAFTED BY GEMMA 4" badge until a
+  doctor signs them. Nothing runs on the Pi. The shipped `answers.json` is still team-written
+  until Hans runs the script.
+- `docs/PAPER_ALIGNMENT.md`: what the paper must say differently, page by page.
 - Gate cost measured (`docs/METRICS.md`, open item 5): the limits stay 0.40 / 0.25 and must
   be set from cone captures, not from the bench.
 
