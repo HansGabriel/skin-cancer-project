@@ -59,6 +59,9 @@ class Entry:
     reviewed_by: str | None = None
     reviewed_date: str | None = None
     web_answer: str | None = None  # the web demo's words, where `answer` is only true on the kiosk
+    # Who drafted the words: "Gemma 4 e4b, 2026-11-02" when scripts/draft_answers_gemma.py wrote
+    # them on the PC, None when the team did. The badge says so until a doctor signs them off.
+    drafted_by: str | None = None
 
     @property
     def reviewed(self) -> bool:
@@ -67,6 +70,7 @@ class Entry:
 
 # Under every answer, so a visitor knows who wrote it.
 BADGE_UNREVIEWED = "WRITTEN BY THE PROJECT TEAM · NOT YET REVIEWED BY A DOCTOR"
+BADGE_DRAFTED = "DRAFTED BY {who} · NOT YET REVIEWED BY A DOCTOR"
 BADGE_REVIEWED = "REVIEWED BY {name}"
 
 
@@ -77,9 +81,15 @@ class Answer:
     entry_id: str | None  # None means the fallback
     reviewed_by: str | None
     suggestions: list[str]
+    drafted_by: str | None = None
 
     def to_dict(self) -> dict:
-        badge = BADGE_REVIEWED.format(name=self.reviewed_by.upper()) if self.reviewed_by else BADGE_UNREVIEWED
+        if self.reviewed_by:
+            badge = BADGE_REVIEWED.format(name=self.reviewed_by.upper())
+        elif self.drafted_by:
+            badge = BADGE_DRAFTED.format(who=self.drafted_by.split(",")[0].upper())  # the model, not the date
+        else:
+            badge = BADGE_UNREVIEWED
         return dict(self.__dict__, reviewed=bool(self.reviewed_by), badge=badge)
 
 
@@ -101,7 +111,7 @@ class AnswerBank:
                 raise ValueError(f"answers.json: {e['id']} needs questions and an answer")
             self.entries.append(Entry(
                 e["id"], e["band"], tuple(e["questions"]), e["answer"], bool(e.get("about_spot")),
-                e.get("reviewed_by"), e.get("reviewed_date"), e.get("web_answer"),
+                e.get("reviewed_by"), e.get("reviewed_date"), e.get("web_answer"), e.get("drafted_by"),
             ))
         if len({e.id for e in self.entries}) != len(self.entries):
             raise ValueError("answers.json: two entries share an id")
@@ -160,7 +170,11 @@ class AnswerBank:
         text = entry.web_answer if web and entry.web_answer else entry.answer
         if entry.about_spot and sign_lines:
             text += " On your photo: " + "; ".join(line[0].lower() + line[1:] for line in sign_lines) + "."
-        return Answer(question, text, entry.id, entry.reviewed_by if entry.reviewed else None, self.suggestions(band, exclude=entry.id))
+        return Answer(question, text, entry.id, entry.reviewed_by if entry.reviewed else None, self.suggestions(band, exclude=entry.id), entry.drafted_by)
+
+    def drafters(self) -> list[str]:
+        """Who drafted any of the answers (model names, no dates), for the Questions tab's intro line."""
+        return sorted({e.drafted_by.split(",")[0] for e in self.entries if e.drafted_by})
 
 
 @lru_cache(maxsize=1)

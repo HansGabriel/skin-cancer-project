@@ -67,6 +67,22 @@ def test_unreviewed_answers_say_so(bank) -> None:
     assert a.reviewed_by is None and a.to_dict()["reviewed"] is False
 
 
+def test_a_drafted_answer_names_its_drafter_until_a_doctor_signs_it(tmp_path) -> None:
+    """scripts/draft_answers_gemma.py sets drafted_by; the badge says so, and the drafter shows in the intro."""
+    raw = json.loads(answers.ANSWERS_PATH.read_text())
+    raw["entries"][0]["drafted_by"] = "Gemma 4 e4b, 2026-11-02"
+    raw["entries"][1].update(drafted_by="Gemma 4 e4b, 2026-11-02", reviewed_by="Dr Example", reviewed_date="2026-11-03")
+    path = tmp_path / "answers.json"
+    path.write_text(json.dumps(raw))
+    bank = answers.AnswerBank(path)
+    drafted = bank.ask(raw["entries"][0]["questions"][0], "low_concern").to_dict()
+    assert drafted["badge"] == "DRAFTED BY GEMMA 4 E4B · NOT YET REVIEWED BY A DOCTOR" and drafted["reviewed"] is False
+    signed = bank.ask(raw["entries"][1]["questions"][0], "low_concern").to_dict()
+    assert signed["badge"] == "REVIEWED BY DR EXAMPLE" and signed["reviewed"] is True
+    assert bank.drafters() == ["Gemma 4 e4b"]
+    assert answers.AnswerBank().drafters() == []  # the shipped file: team-written until the script runs
+
+
 def test_suggestions_put_the_results_own_questions_first(bank) -> None:
     s = bank.suggestions("urgent")
     assert s[0] == "What does see a doctor soon mean?" and len(s) == answers.config.SUGGESTED_QUESTIONS
