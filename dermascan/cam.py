@@ -90,6 +90,30 @@ def overlay_jpg(rgb: np.ndarray, cam01: np.ndarray, alpha: float = config.CAM_AL
     return enc.tobytes()
 
 
+def alignment(cam01: np.ndarray, outline: list[list[float]], margin: float = config.CAM_ALIGN_MARGIN, grid: int = 112) -> dict | None:
+    """Does the heat sit on the spot the photo check outlined?
+
+    `outline` is the check's polygon in 0-1 of the frame (gate.outline_polygon); the map is
+    stretched over the same frame. The spot counts as "aligned" when the brightest point of
+    the map falls inside the outline grown by `margin` of the frame. `inside` is the share of
+    all heat under that grown outline, for the staff drawer. None when there is no outline.
+    A hint for the visitor ("retake with the spot centred"), never part of the decision.
+    """
+    if not outline or len(outline) < 3:
+        return None
+    cam = np.clip(cv2.resize(cam01.astype(np.float32), (grid, grid), interpolation=cv2.INTER_CUBIC), 0, 1)
+    mask = np.zeros((grid, grid), np.uint8)
+    cv2.fillPoly(mask, [np.round(np.asarray(outline, np.float32) * (grid - 1)).astype(np.int32)], 1)
+    k = int(round(margin * grid))
+    if k > 0:
+        mask = cv2.dilate(mask, np.ones((2 * k + 1, 2 * k + 1), np.uint8))
+    total = float(cam.sum())
+    iy, ix = np.unravel_index(int(cam.argmax()), cam.shape)
+    inside = float(cam[mask == 1].sum() / total) if total > 0 else 0.0
+    return {"aligned": bool(total > 0 and mask[iy, ix]), "inside": round(inside, 3),
+            "peak": [round(ix / (grid - 1), 3), round(iy / (grid - 1), 3)]}
+
+
 def sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -170,9 +194,14 @@ class Cam:
             feat = dequantise(self._it.get_tensor(self._out["index"]), self._out)[0]
         return eigencam_map(feat)
 
+    def render(self, rgb: np.ndarray) -> tuple[bytes, np.ndarray]:
+        """The overlay JPEG for one photo, and the (7, 7) map it was drawn from."""
+        cam01 = self.attention(rgb)
+        return overlay_jpg(rgb, cam01), cam01
+
     def heatmap(self, rgb: np.ndarray) -> bytes:
         """The overlay JPEG for one photo."""
-        return overlay_jpg(rgb, self.attention(rgb))
+        return self.render(rgb)[0]
 
 
 _cam: Cam | None = None

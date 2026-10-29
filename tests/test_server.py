@@ -188,9 +188,9 @@ def test_check_reads_the_photo_without_the_model(client, monkeypatch) -> None:
     body = _upload(client, with_lesion(textured(SKIN_TONES["light"])), "/check").get_json()
     assert body["status"] == "pass" and [r["name"] for r in body["readings"]] == ["Light", "Focus", "Spot in frame"]
     refused = _upload(client, textured(NEUTRAL["grey desk"]), "/check").get_json()
-    assert refused["status"] == "refused" and refused["verdict"]["headline"] == "NO SKIN IN THIS PHOTO"
+    assert refused["status"] == "refused" and refused["verdict"]["headline"] == "NO SKIN RECOGNISED"
     assert body["eyebrow"] == refused["eyebrow"] == "PHOTO CHECK"
-    assert body["label"] == "SPOT FOUND" and refused["label"] == "NOT SKIN"
+    assert body["label"] == "SPOT FOUND" and refused["label"] == "SKIN NOT RECOGNISED"
     # The outline the gate drew comes back as a small polygon in 0-1 of the frame.
     assert 3 <= len(body["outline"]) <= 64 and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in body["outline"])
     assert body["aspect"] == 1.0 and refused["outline"] == []  # the desk never reached the spot check
@@ -217,6 +217,9 @@ def test_heatmap_is_ready_after_the_check_and_kept_for_the_scan(client) -> None:
     assert client.post("/scan").get_json()["status"] == "ok"  # the remembered photo, the check reused
     assert client.get("/cam.jpg").data == r.data  # same photo, same cached heatmap
     assert client.post("/cam.jpg").status_code == 404  # the kiosk takes no posted photo here
+    # The check drew an outline around the lesion, so the heat is judged against it.
+    assert r.headers["X-Cam-Aligned"] in ("0", "1") and 0 <= float(r.headers["X-Cam-Inside"]) <= 1
+    assert client.get("/cam.jpg").headers["X-Cam-Aligned"] == r.headers["X-Cam-Aligned"]  # cached with the JPEG
 
 
 def test_check_screen_heatmap_can_be_switched_off(client, monkeypatch) -> None:
@@ -368,6 +371,7 @@ def test_web_mode_heatmap_takes_the_posted_photo_and_keeps_nothing(web) -> None:
     assert web.get("/cam.jpg").status_code == 404  # nothing remembered to draw over
     r = _upload(web, with_lesion(textured(SKIN_TONES["light"])), "/cam.jpg")
     assert r.status_code == 200 and r.mimetype == "image/jpeg" and r.data[:2] == b"\xff\xd8"
+    assert r.headers["X-Cam-Aligned"] in ("0", "1")  # the outline is drawn again from the posted photo
     assert server.last_photo.get() is None
     assert web.post("/cam.jpg").status_code == 404
 

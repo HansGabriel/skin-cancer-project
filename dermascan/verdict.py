@@ -146,9 +146,9 @@ def cannot_judge() -> Verdict:
 # headline, body, advice - one per gate refusal code.
 _REFUSAL_COPY: dict[str, tuple[str, str, str]] = {
     "no_skin": (
-        "NO SKIN IN THIS PHOTO",
-        "The scanner could not find skin in this photo.",
-        "Point the camera at a mole or mark on skin, fill the ring with it, and take a new photo.",
+        "NO SKIN RECOGNISED",
+        "The scanner did not recognise skin here. Glare, shadow or an odd tint can hide it.",
+        "Fill the ring with the skin around one mole or mark, in even light, and take a new photo.",
     ),
     "too_blurry": (
         "TOO BLURRY TO READ",
@@ -213,7 +213,7 @@ _REFUSAL_DEFAULT = (
 # badly framed: a forced read answers, with the caveat), "CAN'T READ" (the photo itself).
 CHECK_LABEL: dict[str, str] = {
     "pass": "SPOT FOUND",
-    "no_skin": "NOT SKIN",
+    "no_skin": "SKIN NOT RECOGNISED",
     "too_blurry": "CAN'T READ · BLURRY",
     "too_dark": "CAN'T READ · DARK",
     "too_bright": "CAN'T READ · GLARE",
@@ -352,7 +352,7 @@ def photo_readings(measured: dict[str, float], refusal_code: str | None) -> list
 
     def spot() -> tuple[int | None, str]:
         if code == "no_skin":
-            return 0, "no skin"
+            return 0, "not seen"
         if code in ("no_spot", "plain_skin"):
             return 1, "not found"
         if code == "fills_frame":

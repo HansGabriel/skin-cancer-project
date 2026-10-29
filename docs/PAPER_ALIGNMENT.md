@@ -29,7 +29,7 @@ there, with dates.
 
 - **A photo check exists and the paper never mentions it** (no gate anywhere). Before the
   model runs, the kiosk checks skin / focus / light / one spot in the ring, and labels the
-  photo: *SPOT FOUND*, *NOT A SPOT · PLAIN SKIN*, *NOT A SPOT · SEVERAL MARKS*, *NOT SKIN*,
+  photo: *SPOT FOUND*, *NOT A SPOT · PLAIN SKIN*, *NOT A SPOT · SEVERAL MARKS*, *SKIN NOT RECOGNISED*,
   *SPOT · NOT IN THE RING*, *CAN'T READ · BLURRY* … It draws its outline on the photo so the
   visitor sees what it picked out. On "NOT A SPOT" the model's numbers are withheld from the
   visitor (the model has no "not a lesion" class, so they would mean nothing). This is a
