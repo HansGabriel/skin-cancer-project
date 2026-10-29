@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EPIVUE — Student Guide</title>
+<!--
+  Source of docs/EPIVUE_Student_Guide.pdf. Edit this file, then rebuild the PDF:
+    python -m http.server 8090            (from the repo root, in one terminal)
+    chrome --headless=new --no-pdf-header-footer --print-to-pdf=EPIVUE_Student_Guide.pdf \
+           http://127.0.0.1:8090/docs/student-guide/guide.html
+  Every number here comes from docs/METRICS.md, training/dataset_index.csv or the code
+  (dermascan/). When the model changes, update the numbers from there, not from memory.
+-->
+<style>
+@font-face{font-family:'Archivo';font-weight:400;src:url(../../kiosk/static/fonts/archivo-400.woff2) format('woff2')}
+@font-face{font-family:'Archivo';font-weight:600;src:url(../../kiosk/static/fonts/archivo-600.woff2) format('woff2')}
+@font-face{font-family:'Archivo';font-weight:700;src:url(../../kiosk/static/fonts/archivo-700.woff2) format('woff2')}
+@font-face{font-family:'Source Serif 4';font-weight:400;src:url(../../kiosk/static/fonts/sourceserif-400.woff2) format('woff2')}
+@page{size:A4;margin:18mm 17mm 18mm 17mm}
+:root{--ink:#131A22;--muted:#5B6675;--rule:#DDE3EC;--chip:#F1F4F8;--navy:#16233A;--cyan:#3DDBD9;--brown:#8A5A2B;--red:#C0392B}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Archivo',sans-serif;color:var(--ink);font-size:10.5pt;line-height:1.5}
+h1,h2,h3{font-weight:700;letter-spacing:-.01em;line-height:1.15}
+h2{font-size:17pt;margin:0 0 6pt;padding-top:2pt;color:var(--navy)}
+h2 .n{display:inline-block;min-width:22pt;color:var(--cyan);-webkit-text-stroke:.3pt var(--navy)}
+h3{font-size:12pt;margin:14pt 0 4pt}
+p{margin:0 0 7pt}
+.lead{font-family:'Source Serif 4',serif;font-size:12pt;line-height:1.5;color:var(--ink)}
+section{break-before:page}
+section.keep{break-before:auto;margin-top:18pt}
+table{width:100%;border-collapse:collapse;margin:6pt 0 10pt;font-size:9.6pt;break-inside:avoid}
+th,td{text-align:left;padding:4pt 6pt;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:8.6pt;letter-spacing:.04em;border-bottom:1.5px solid var(--navy)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.hi td{background:#EEF9F9;font-weight:600}
+.box{border-radius:6pt;padding:9pt 11pt;margin:8pt 0 10pt;break-inside:avoid}
+.box.say{background:#EEF9F9;border-left:4pt solid var(--cyan)}
+.box.warn{background:#FBF3EA;border-left:4pt solid var(--brown)}
+.box.navy{background:var(--navy);color:#E8EEF6}
+.box .t{font-weight:700;font-size:9pt;letter-spacing:.08em;margin-bottom:3pt}
+.box.say .t{color:#0E7C7B}.box.warn .t{color:var(--brown)}.box.navy .t{color:var(--cyan)}
+.flow{display:flex;flex-wrap:wrap;gap:4pt;align-items:center;margin:8pt 0 12pt;font-size:9pt;break-inside:avoid}
+.flow span{background:var(--chip);border:1px solid var(--rule);border-radius:5pt;padding:5pt 7pt;font-weight:600}
+.flow span.k{background:var(--navy);color:#fff;border-color:var(--navy)}
+.flow i{font-style:normal;color:var(--muted)}
+figure{margin:8pt 0 12pt;break-inside:avoid}
+figure img{width:100%;border:1px solid var(--rule);border-radius:4pt;display:block}
+figcaption{font-size:8.8pt;color:var(--muted);margin-top:4pt}
+code{font-family:ui-monospace,Consolas,monospace;font-size:9pt;background:var(--chip);padding:0 3pt;border-radius:3pt}
+ul,ol{margin:0 0 8pt;padding-left:16pt}li{margin-bottom:2pt}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12pt}
+.small{font-size:9pt;color:var(--muted)}
+.big{font-size:22pt;font-weight:700;color:var(--navy);line-height:1}
+.stat{background:var(--chip);border-radius:6pt;padding:8pt 10pt}
+.stat .l{font-size:8.6pt;color:var(--muted);margin-top:3pt}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7pt;margin:8pt 0 12pt;break-inside:avoid}
+/* cover */
+.cover{height:257mm;display:flex;flex-direction:column;justify-content:space-between;background:var(--navy);color:#E8EEF6;margin:-18mm -17mm 0;padding:26mm 22mm 20mm}
+.cover .brand{font-weight:700;letter-spacing:.3em;font-size:12pt}.cover .brand b{color:var(--cyan)}
+.cover h1{font-size:40pt;margin:0 0 10pt;color:#fff}
+.cover .sub{font-family:'Source Serif 4',serif;font-size:15pt;line-height:1.4;color:#C9D4E3;max-width:120mm}
+.cover .ring{width:70mm;height:70mm;border-radius:50%;border:3mm solid var(--cyan);box-shadow:0 0 0 4mm #0B1220,0 0 0 4.6mm #2A3A55;margin:10mm 0;position:relative}
+.cover .ring::after{content:"";position:absolute;inset:24mm;border-radius:50%;background:#4A3C42;box-shadow:0 0 0 1.4mm var(--cyan)}
+.cover .meta{font-size:9.5pt;color:#9FB0C4;line-height:1.6}
+.toc{columns:2;column-gap:14pt;font-size:10pt;margin:6pt 0 0;padding-left:14pt}
+.toc li{break-inside:avoid}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brand">● E.P.I.V.U.E.</div>
+  <div>
+    <h1>Student Guide</h1>
+    <div class="sub">How the skin-check kiosk works, what it was trained on, how good it is, and how to explain it honestly.</div>
+    <div class="ring"></div>
+  </div>
+  <div class="meta">
+    For Maria Beatriz, Kumar, Tyeisha and Cristine Eve · prepared with Hans (mentor)<br>
+    Numbers as of 30 October 2026 · deployed model: the October 2026 multi-source model<br>
+    Screening aid for learning only — not a diagnosis
+  </div>
+</div>
+
+<section>
+<h2>Contents</h2>
+<ol class="toc">
+  <li>What EPIVUE is, in one page</li>
+  <li>The hardware</li>
+  <li>The journey of one photo</li>
+  <li>The training data</li>
+  <li>The model (EfficientNetB0)</li>
+  <li>How the scanner decides</li>
+  <li>How good is it? (the metrics)</li>
+  <li>The photo check (the "gate")</li>
+  <li>A B C D E — the warning signs</li>
+  <li>The heatmap (Eigen-CAM)</li>
+  <li>Where Gemma 4 fits</li>
+  <li>Privacy, offline and the website</li>
+  <li>What it cannot do — say this out loud</li>
+  <li>Numbers to remember</li>
+  <li>Glossary</li>
+</ol>
+
+<section class="keep">
+<h2><span class="n">1</span>What EPIVUE is</h2>
+<p class="lead">EPIVUE is a small kiosk that photographs one spot on someone's skin and says, in plain words, whether it would be wise to show that spot to a doctor.</p>
+<p>It runs on a Raspberry Pi with a camera and a touch screen. It works with <b>no internet</b>, so it can be used at a barangay health event. It does <b>not</b> diagnose. It is a <b>screening aid</b>: its job is to help people decide to get a spot checked, especially when they would not have gone otherwise.</p>
+<div class="box say"><div class="t">HOW TO SAY IT</div>"EPIVUE is an offline screening aid. It looks at one skin spot, checks the photo is usable, and tells you in plain words whether to get it checked by a doctor. It never says a spot is safe."</div>
+<p>The screen has two sides:</p>
+<ul>
+  <li><b>The visitor side</b> — plain words, no percentages, no medical jargon, never a green "safe".</li>
+  <li><b>The staff side</b> ("Details for staff →") — the numbers: model scores, the decision line, A B C values, the heatmap, the photo-check measurements.</li>
+</ul>
+</section>
+
+<section class="keep">
+<h2><span class="n">2</span>The hardware</h2>
+<table>
+<tr><th>Part</th><th>What it does</th></tr>
+<tr><td>Raspberry Pi 4 Model B (4 GB)</td><td>The computer. Runs the scanner, the screen and the model — all on its own CPU, no graphics card.</td></tr>
+<tr><td>Pi Camera Module 2</td><td>Takes the photo of the spot. Plain pixels go to the model (no filters — filters made accuracy worse).</td></tr>
+<tr><td>7" touch screen, 1024 × 600</td><td>The kiosk screen. Navy panel on the left (the ring and the photo), white panel on the right (the words and buttons).</td></tr>
+<tr><td>Official USB-C power supply, 5.1 V 3 A</td><td>Steady power. A weak supply makes the Pi slow down or restart.</td></tr>
+<tr><td>A PC with an RTX 4060 graphics card</td><td><b>Training only.</b> The model was taught on the PC (about 1 h 40 min), then copied to the Pi.</td></tr>
+</table>
+</section>
+</section>
+
+<section>
+<h2><span class="n">3</span>The journey of one photo</h2>
+<p>Everything happens in a few steps. Each step has a job, and some steps can stop the photo early.</p>
+<div class="flow">
+  <span>Take photo</span><i>→</i><span>Photo check<br><small>~70 ms</small></span><i>→</i><span>Heatmap<br><small>~1 s, shown on screen</small></span><i>→</i><span class="k">"Check this spot"</span><i>→</i><span>Model, 4 views<br><small>~0.6 s</small></span><i>→</i><span>A B C<br><small>~10 ms</small></span><i>→</i><span>Words on screen</span>
+</div>
+<ol>
+  <li><b>Take the photo.</b> The visitor puts the spot inside the ring on screen.</li>
+  <li><b>Photo check.</b> Is there skin? Is it sharp and lit? Is there one spot, inside the ring? If not, the scanner says why (e.g. "TOO BLURRY TO READ") and asks for a new photo. The model is never asked about a bad photo.</li>
+  <li><b>Heatmap ("Where it looked").</b> If the photo passed, a small coloured circle appears showing where the model's attention went, and whether that is on the spot.</li>
+  <li><b>The model reads the spot.</b> It looks at the photo four times (as-is, mirrored, upside down, turned around) and averages the answers.</li>
+  <li><b>A B C are measured</b> on the outline the photo check drew.</li>
+  <li><b>The words.</b> One of a few fixed messages, like "NOTHING STOOD OUT" or "SEE A DOCTOR SOON".</li>
+</ol>
+<figure><img src="img/check-screen.png" alt="The check screen with the heatmap circle">
+<figcaption>The check screen at the Pi's real size. Left: the photo in the ring with the photo check's outline (cyan). Right: "SPOT FOUND", the heatmap circle ("Bright area is on your spot") and the three photo readings. (Test photo, not a real person.)</figcaption></figure>
+</section>
+
+<section>
+<h2><span class="n">4</span>The training data</h2>
+<p class="lead">A model only knows what it was shown. EPIVUE's model was shown <b>48,481 photos</b> of skin spots whose diagnosis was already confirmed by doctors.</p>
+<div class="stats">
+  <div class="stat"><div class="big">48,481</div><div class="l">training photos in total</div></div>
+  <div class="stat"><div class="big">9</div><div class="l">collections, from 5 countries' hospitals and studies</div></div>
+  <div class="stat"><div class="big">3</div><div class="l">labels: benign, pre-cancerous, malignant</div></div>
+  <div class="stat"><div class="big">7,387</div><div class="l">ordinary close-up photos (the rest are dermoscopy)</div></div>
+</div>
+
+<h3>Where the photos come from</h3>
+<table>
+<tr><th>Collection</th><th>What kind of photos</th><th class="num">Photos</th></tr>
+<tr><td>BCN20000</td><td>Dermoscopy, Hospital Clínic, Barcelona (Spain)</td><td class="num">17,188</td></tr>
+<tr><td>MILK10k</td><td>Dermoscopy <b>and</b> ordinary close-ups of the same spots</td><td class="num">10,178</td></tr>
+<tr><td>HAM10000</td><td>Dermoscopy, Vienna (Austria) and Queensland (Australia)</td><td class="num">10,015</td></tr>
+<tr><td>MSK-1 to MSK-5</td><td>Dermoscopy, Memorial Sloan Kettering, New York (USA)</td><td class="num">8,802</td></tr>
+<tr><td>PAD-UFES-20</td><td>Smartphone close-ups, Brazil — the closest thing to the Pi camera</td><td class="num">2,298</td></tr>
+</table>
+<p class="small">All come from the ISIC Archive (International Skin Imaging Collaboration). <b>Dermoscopy</b> = a photo taken through a special magnifying lens that a skin doctor presses on the skin. <b>Close-up</b> = an ordinary camera photo, like the Pi's.</p>
+
+<h3>The three labels</h3>
+<table>
+<tr><th>Label</th><th>What is in it (examples)</th><th class="num">Photos</th></tr>
+<tr><td>benign</td><td>Ordinary moles (nevi), seborrheic keratosis, other harmless spots</td><td class="num">23,898</td></tr>
+<tr><td>pre-cancerous</td><td>Actinic keratosis (sun damage that can turn into cancer), squamous cell carcinoma <i>in situ</i></td><td class="num">3,191</td></tr>
+<tr><td>malignant</td><td>Melanoma, basal cell carcinoma, squamous cell carcinoma</td><td class="num">21,392</td></tr>
+</table>
+
+<h3>Train, check, test — and why we split by spot</h3>
+<table>
+<tr><th>Part</th><th>Used for</th><th class="num">Photos</th></tr>
+<tr><td>Training (70 %)</td><td>The model learns from these.</td><td class="num">33,847</td></tr>
+<tr><td>Validation (15 %)</td><td>Used while training to pick the best version and set the decision limit.</td><td class="num">7,346</td></tr>
+<tr><td>Test (15 %)</td><td>Never seen during training. Used once, at the end, to measure.</td><td class="num">7,288</td></tr>
+</table>
+<div class="box warn"><div class="t">WHY "BY SPOT" MATTERS</div>Many spots were photographed several times. If one photo of a mole is in training and another photo of the <i>same mole</i> is in the test, the test is too easy — the model has already seen that mole. An early version of this project made that mistake and 40 % of test spots had leaked. Now every photo of one spot stays on the same side (we split by <code>lesion_id</code>).</div>
+
+<h3>The external benchmark (the fair exam)</h3>
+<p>On top of the test split, there is a frozen set of <b>602 photos</b> from places the model was <b>never</b> trained on (including the 2016 ISIC challenge set and the 99 photos the team collected in October). It is used to compare models fairly and is never trained on. A new model is only allowed onto the Pi after it is measured on this set.</p>
+</section>
+
+<section>
+<h2><span class="n">5</span>The model: EfficientNetB0</h2>
+<p class="lead">The "brain" of EPIVUE is a convolutional neural network (CNN) called <b>EfficientNetB0</b>, made by Google researchers in 2019.</p>
+<h3>What a CNN does, simply</h3>
+<p>A CNN looks at a picture in layers. The first layers find tiny things — edges, dots, colour changes. Middle layers combine those into textures and shapes. The last layers combine those into "patterns that look like a melanoma" or "patterns that look like an ordinary mole". At the end it gives three numbers that add up to 100 %: how much the photo looks benign, pre-cancerous or malignant.</p>
+<h3>EPIVUE's model, layer by layer</h3>
+<table>
+<tr><th>Step</th><th>Size</th><th>What happens</th></tr>
+<tr><td>Input</td><td>224 × 224 pixels, 3 colours</td><td>The photo is shrunk to a small square. Raw colour values 0–255 go in (the model scales them itself).</td></tr>
+<tr><td>EfficientNetB0 body</td><td>~4 million weights</td><td>The layers that find edges → textures → shapes. Starts from a version pre-trained on ImageNet (1.2 million everyday photos), then re-trained on skin.</td></tr>
+<tr><td>Last feature map</td><td>7 × 7 × 1280</td><td>A 7-by-7 grid over the photo; each square has 1,280 "pattern detectors". <b>The heatmap is read from here.</b></td></tr>
+<tr><td>Average pooling</td><td>1280 numbers</td><td>Averages the grid into one list.</td></tr>
+<tr><td>Dropout 0.3 → Dense 128 → Dropout 0.3</td><td>128</td><td>A small extra layer. Dropout switches off random parts during training so the model does not just memorise.</td></tr>
+<tr><td>Output (softmax)</td><td>3 numbers</td><td>benign · pre-cancerous · malignant, adding to 100 %.</td></tr>
+</table>
+<p>On the Pi the model is a <b>TensorFlow Lite</b> file, <code>models/skin_classifier.tflite</code>, only <b>5.1 MB</b>. TensorFlow Lite is a small version of TensorFlow made for phones and small computers.</p>
+<h3>How it was trained</h3>
+<ul>
+  <li><b>Transfer learning.</b> Phase 1 (20 rounds): the pre-trained body is frozen and only the new top layers learn. Phase 2: the whole network is fine-tuned, stopping early when it stops improving.</li>
+  <li><b>Balanced sampling.</b> Pre-cancerous photos are rare (3,191), so they are shown more often so the model does not ignore them.</li>
+  <li><b>Focal loss.</b> A way of scoring mistakes that pays more attention to hard examples.</li>
+  <li><b>Camera-style augmentation.</b> Photos are randomly rotated, flipped, blurred a little, made brighter or darker — so the model copes with real camera photos, not only perfect hospital ones.</li>
+  <li>About <b>1 hour 40 minutes</b> on the RTX 4060.</li>
+</ul>
+<div class="box say"><div class="t">WHY EFFICIENTNETB0?</div>It is small and fast enough to run on the Pi's CPU in under a second, while still being accurate. The training notebook can also build the bigger EfficientNetB2, but it is slower on the Pi, so B0 is what ships.</div>
+</section>
+
+<section>
+<h2><span class="n">6</span>How the scanner decides</h2>
+<p class="lead">The model gives three numbers. The decision uses only one rule.</p>
+<div class="box navy"><div class="t">THE RULE</div><span style="font-size:13pt">cancer score = p(pre-cancerous) + p(malignant)<br>If the cancer score is <b>0.47 or more</b> → "flagged": the screen tells the person to get it checked.</span></div>
+<p><b>Why 0.47?</b> It was chosen so that, on the validation photos, the scanner flags <b>90 % of the real cancers</b>. A lower limit catches more cancers but sends more harmless spots to the doctor; a higher limit does the opposite. For a screening tool, missing a cancer is worse than an extra visit, so the limit leans toward catching cancers.</p>
+<h3>The messages a visitor can see</h3>
+<table>
+<tr><th>Message</th><th>When</th></tr>
+<tr><td><b>NOTHING STOOD OUT</b> (low concern)</td><td>Not flagged, and the model is reasonably sure (top score ≥ 45 %).</td></tr>
+<tr><td><b>NOT SURE</b></td><td>Not flagged, but the model is unsure. Advice: better photo, or a health worker.</td></tr>
+<tr><td><b>GET THIS CHECKED</b></td><td>Flagged, the strongest guess is pre-cancerous.</td></tr>
+<tr><td><b>BETTER TO GET CHECKED</b></td><td>Flagged, but the model is unsure.</td></tr>
+<tr><td><b>SEE A DOCTOR SOON</b> (urgent)</td><td>Flagged, and the strongest guess is malignant.</td></tr>
+<tr><td><b>WE CAN'T JUDGE THIS PHOTO</b></td><td>"Check it anyway" was pressed on a photo with no spot (plain skin, hair, several marks). The model's numbers would mean nothing, so no answer is given.</td></tr>
+</table>
+<div class="box warn"><div class="t">DON'T JUDGE BY THE TALLEST BAR</div>The staff drawer shows three bars. They are "temperature-scaled" to look honest, but <b>the device never decides by them</b>. In October the team scored 100 photos by the tallest bar and got 43 right; scored by the real rule (cancer score ≥ the limit), the same photos gave <b>74 of 100</b> flagged. The drawer now prints the real decision line: <code>DECISION: cancer score 0.62 · limit 0.47 → flagged</code>.</div>
+</section>
+
+<section>
+<h2><span class="n">7</span>How good is it? (the metrics)</h2>
+<h3>First, what the words mean</h3>
+<table>
+<tr><th>Metric</th><th>Plain meaning</th><th>Example</th></tr>
+<tr><td><b>Sensitivity</b></td><td>Of all the real cancers, how many did it flag?</td><td>0.81 = it flagged 81 of every 100 cancers.</td></tr>
+<tr><td><b>Specificity</b></td><td>Of all the harmless spots, how many did it correctly leave alone?</td><td>0.59 = it left 59 of every 100 harmless spots alone; the other 41 were sent to get checked.</td></tr>
+<tr><td><b>Accuracy</b></td><td>How often the single label was right.</td><td>Not the best measure here — see below.</td></tr>
+<tr><td><b>ROC-AUC</b></td><td>How well it ranks cancers above harmless spots, from 0.5 (coin toss) to 1.0 (perfect).</td><td>0.89 = good on its own test; 0.75 = fair on the hard external set.</td></tr>
+</table>
+<p><b>Why not just accuracy?</b> If 9 of 10 spots are harmless, a "scanner" that always says "harmless" is 90 % accurate and useless. For screening, sensitivity (catching cancers) matters most.</p>
+
+<h3>Results on its own test split (7,288 photos)</h3>
+<table>
+<tr><th>Measure (at the 0.47 limit)</th><th class="num">Value</th></tr>
+<tr class="hi"><td>Cancer sensitivity (pre-cancerous + malignant flagged)</td><td class="num">0.907</td></tr>
+<tr><td>Benign specificity</td><td class="num">0.633</td></tr>
+<tr><td>ROC-AUC (cancer vs harmless)</td><td class="num">0.894</td></tr>
+<tr><td>3-label accuracy</td><td class="num">0.684</td></tr>
+<tr><td>Recall per label: benign / pre-cancerous / malignant</td><td class="num">0.69 / 0.57 / 0.73</td></tr>
+</table>
+
+<h3>Results on the external benchmark (602 photos it never trained on)</h3>
+<table>
+<tr><th></th><th class="num">June model (old)</th><th class="num">October model (on the Pi now)</th></tr>
+<tr><td>ROC-AUC</td><td class="num">0.712</td><td class="num"><b>0.754</b></td></tr>
+<tr class="hi"><td>Cancers flagged</td><td class="num">90 / 149 (0.60)</td><td class="num">121 / 149 (0.81)</td></tr>
+<tr><td>Harmless spots left alone (specificity)</td><td class="num"><b>0.71</b></td><td class="num">0.59</td></tr>
+<tr><td>Ordinary close-up photos: cancers flagged</td><td class="num">7 / 31</td><td class="num"><b>28 / 31</b></td></tr>
+<tr><td>The team's 96 malignant photos: flagged</td><td class="num">72</td><td class="num">75</td></tr>
+</table>
+<div class="box say"><div class="t">HOW TO EXPLAIN THE TRADE</div>"The June model was trained on one hospital's dermoscopy photos and missed most cancers in ordinary camera photos — the kind the Pi takes. The October model was trained on nine collections. It catches far more cancers (81 % vs 60 % on photos it had never seen), but sends more harmless spots for a check (about 4 in 10 instead of 3 in 10). Our mentor accepted that trade on 18 October because the device's job is to catch cancers."</div>
+<p class="small">Speed: the photo check takes about 70 ms; the model about 0.6 s on a Pi 4 (estimate — the Pi's own timing will be recorded from the 30 October session); the heatmap about 0.5 s on the PC, about 1 s expected on the Pi.</p>
+</section>
+
+<section>
+<h2><span class="n">8</span>The photo check (the "gate")</h2>
+<p class="lead">The model has no answer for "this is not a skin spot". Shown a wall, it would still pick benign, pre-cancerous or malignant. So a photo check runs <b>before</b> the model.</p>
+<table>
+<tr><th>Check</th><th>Question</th><th>Label if it fails</th><th>"Check it anyway"?</th></tr>
+<tr><td>1. Skin</td><td>Is enough of the photo skin-coloured?</td><td>SKIN NOT RECOGNISED</td><td>No</td></tr>
+<tr><td>2. Readable</td><td>Sharp enough? Light enough, not glaring?</td><td>CAN'T READ · BLURRY / DARK / GLARE</td><td>No</td></tr>
+<tr><td>3. Spot</td><td>One distinct mark, inside the ring, on its own?</td><td>NOT A SPOT · NONE FOUND / PLAIN SKIN / SEVERAL MARKS · SPOT · NOT IN THE RING / TOO CLOSE</td><td>Yes</td></tr>
+<tr><td>4. Edge</td><td>Does the mark have a real edge (a mole stops; a shadow fades)?</td><td>SPOT · LOOKS LIKE A SHADOW / EDGE HARD TO FOLLOW</td><td>Yes</td></tr>
+</table>
+<p>When the photo passes, the label is <b>SPOT FOUND</b> and the outline the check drew is shown on the photo, so everyone can see which mark is being read.</p>
+<div class="box warn"><div class="t">BE HONEST ABOUT THIS</div>Several limits in the photo check are marked <b>GUESSED</b> in the code: they were set on test photos, not on real Pi captures. The 30 October session is the first time real Pi photos are collected to measure them. A palm in dim webcam light, for example, can come out as "SKIN NOT RECOGNISED".</div>
+</section>
+
+<section>
+<h2><span class="n">9</span>A B C D E — the warning signs</h2>
+<p class="lead">Doctors check moles with the "ABCDE" rule. EPIVUE measures three of the five on the outline the photo check drew. <b>These signs never change the verdict</b> — the model decides; the signs help a person see what to look at.</p>
+<table>
+<tr><th>Letter</th><th>Doctors look at…</th><th>How EPIVUE measures it</th><th>Normal / borderline / stands out</th></tr>
+<tr><td><b>A</b> Asymmetry</td><td>Are the two halves different?</td><td>Turns the outline level, folds it along both axes, and measures how much does not line up (0 = mirror image).</td><td>below 0.15 / 0.15–0.30 / above 0.30</td></tr>
+<tr><td><b>B</b> Border</td><td>Is the edge ragged or blurred?</td><td>Compares the edge length to the area: perimeter² ÷ (4π × area). A perfect circle scores 1.0; a ragged edge scores higher.</td><td>below 1.8 / 1.8–2.5 / above 2.5</td></tr>
+<tr><td><b>C</b> Colour</td><td>Several colours inside?</td><td>Groups the colours inside the spot (k-means in the Lab colour space); groups too close together are merged.</td><td>1 colour / 2 / 3 or more</td></tr>
+<tr><td><b>D</b> Diameter</td><td>Bigger than 6 mm?</td><td><b>Not measured.</b> Millimetres need a known scale; this camera has none. Shown as "no scale".</td><td>—</td></tr>
+<tr><td><b>E</b> Evolving</td><td>Has it changed over time?</td><td><b>Not measured automatically.</b> Save scans of one spot into a group; "Compare" shows the first and latest photo side by side for a <b>person</b> to judge.</td><td>Teal "History" arc when a spot has 2+ saves</td></tr>
+</table>
+<p>On screen, the five letters are arcs around the ring, coloured by tier (grey = normal, tan = borderline, red = stands out, blue = not measured), and the result lists them in words ("Edges are slightly uneven").</p>
+<div class="box warn"><div class="t">WHY E IS NOT AUTOMATIC</div>We tested 71 pairs of photos of the <i>same unchanged</i> mole. Two photos of one mole differed more (lighting, zoom) than a simulated 35 % darkening. Any automatic "changed" rule either cried wolf or missed real changes — so a person judges.</div>
+<figure><img src="img/result-screen.png" alt="The result screen with A B C D E arcs and the heatmap row">
+<figcaption>A result screen. Left: A B C D E arcs around the ring, the legend, and the heatmap row ("Bright area off your spot…"). Right: the verdict, the forced-read caveat, and "What the scan saw".</figcaption></figure>
+</section>
+
+<section>
+<h2><span class="n">10</span>The heatmap (Eigen-CAM)</h2>
+<p class="lead">The heatmap shows <b>where the model looked</b> in the photo. Red/yellow = where its attention was strongest; blue = little attention.</p>
+<h3>Why it is called Eigen-CAM, not Grad-CAM</h3>
+<p>Many papers use <b>Grad-CAM</b>, which needs "gradients" (a calculation done while training). TensorFlow Lite on the Pi <b>cannot</b> calculate gradients, so Grad-CAM is impossible there. EPIVUE uses <b>Eigen-CAM</b> (Muhammad &amp; Yeasin, 2020), which needs only one normal forward pass. <b>Please write "Eigen-CAM" in the paper and slides.</b></p>
+<h3>How it works, in four steps</h3>
+<ol>
+  <li>The photo goes through the model once.</li>
+  <li>The 7 × 7 × 1280 feature map is read out (section 5).</li>
+  <li>Eigen-CAM finds the single strongest pattern across those 1,280 detectors (the "first principal component") and gives each of the 49 squares a score from 0 to 1.</li>
+  <li>That 7 × 7 grid is stretched over the photo and coloured (blue → red), half photo, half colour.</li>
+</ol>
+<h3>"On your spot" or "off your spot"</h3>
+<p>EPIVUE checks whether the <b>brightest point</b> of the heatmap falls inside the outline the photo check drew (with a small margin). The visitor sees:</p>
+<ul>
+  <li><b>"Bright area is on your spot."</b></li>
+  <li><b>"Bright area off your spot. For a more accurate reading, retake with the lesion highlighted in the ring."</b> (in brown)</li>
+</ul>
+<p>Staff see the percentage of all the heat that sits on the spot. It appears on the check screen after a passing photo, and as a smaller row under the ring on the result. Tap the circle to put the heatmap in the big ring, with the outline on top.</p>
+<div class="box warn"><div class="t">WHAT THE HEATMAP IS NOT</div>
+<ul style="margin:0">
+<li>It is <b>not</b> an outline of the spot and <b>not</b> a diagnosis.</li>
+<li>It shows <b>where</b> the model looked, not <b>why</b> it decided (it is "class-agnostic").</li>
+<li>It is coarse: only 7 × 7 squares stretched over the photo.</li>
+<li>It never changes the verdict. "Off your spot" only suggests a retake.</li>
+</ul></div>
+</section>
+
+<section>
+<h2><span class="n">11</span>Where Gemma 4 fits</h2>
+<p><b>Gemma 4 does not run on the Pi.</b> The Pi has 4 GB of memory; the smallest Gemma 4 needs about 8 GB. An earlier chatbot on the Pi made scans take 30–60 seconds, so it was removed on 1 October.</p>
+<p>Instead, Gemma 4 helps <b>at build time on the PC</b>: the script <code>scripts/draft_answers_gemma.py</code> rewords the team's approved Questions-tab answers into plainer words (keeping every timeframe). The Pi then serves those answers offline, with the badge <b>"DRAFTED BY GEMMA 4 · NOT YET REVIEWED BY A DOCTOR"</b> until a health professional signs them off. The Questions tab itself matches your question to a written answer (TF-IDF search); <b>nothing is generated at the kiosk.</b></p>
+<div class="box warn"><div class="t">CURRENT STATE (30 OCT)</div>The drafting script has not been run yet, so the answers on the kiosk are the team's own wording. When it is run, the badge appears.</div>
+<div class="box say"><div class="t">HOW TO SAY IT</div>"Gemma 4 drafted the plain-language answers on our development PC. The team checked them, and the device serves them offline. No text is generated on the device, so it cannot make things up in front of a patient."</div>
+
+<section class="keep">
+<h2><span class="n">12</span>Privacy, offline and the website</h2>
+<ul>
+  <li><b>Offline.</b> The scan never uses the internet. No accounts, no names, no tracking.</li>
+  <li><b>Saved scans</b> stay on the Pi's memory card (<code>~/.dermascan/saved/</code>) until staff press "End event", which empties them.</li>
+  <li>The only internet use is staff-only "Update from GitHub" in Settings, with the kiosk stopped.</li>
+</ul>
+<h3>The website (Railway web demo)</h3>
+<p>The same screens run as a website so people can try it from home. Differences, on purpose:</p>
+<table>
+<tr><th>Feature</th><th>Pi kiosk</th><th>Website</th></tr>
+<tr><td>Photo check, A B C D, heatmap, verdict, Questions, staff details</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Camera</td><td>Pi camera</td><td>Your webcam or a picture you choose</td></tr>
+<tr><td>Saved, Compare, E (evolving)</td><td>Yes</td><td>No — the website keeps nothing</td></tr>
+<tr><td>Settings (staff code, update, End event)</td><td>Yes</td><td>No</td></tr>
+</table>
+</section>
+</section>
+
+<section>
+<h2><span class="n">13</span>What it cannot do — say this out loud</h2>
+<ul>
+  <li><b>It is not a diagnosis.</b> Only a doctor (often with a biopsy) can diagnose skin cancer.</li>
+  <li><b>It will be wrong sometimes.</b> On photos it had never seen, it missed about 1 in 5 cancers and sent about 4 in 10 harmless spots for a check.</li>
+  <li><b>It was trained mostly on dermoscopy</b> (85 % of photos) and mostly on photos from hospitals in Europe, the USA and Australia, where most patients have lighter skin. How well it works on darker skin and on the Pi's own camera has <b>not</b> yet been measured.</li>
+  <li><b>It only knows three labels.</b> It has no "not a spot" answer — that is why the photo check exists, and why non-spots give no verdict.</li>
+  <li><b>D and E are not measured</b> automatically.</li>
+  <li><b>Some photo-check limits are guesses</b> until the Pi photos from 30 October are measured.</li>
+  <li><b>The heatmap shows where, not why.</b></li>
+</ul>
+<div class="box say"><div class="t">IF SOMEONE ASKS "SO IS IT ACCURATE?"</div>"On photos from hospitals it had never seen, it flagged 81 % of cancers. That is good for a screening aid, but it means it should always send people to a doctor when unsure, and never tell anyone a spot is safe. That's how we designed the wording."</div>
+</section>
+
+<section class="keep">
+<h2><span class="n">14</span>Numbers to remember</h2>
+<table>
+<tr><th>What</th><th>Number</th></tr>
+<tr><td>Training photos / collections</td><td>48,481 photos · 9 collections</td></tr>
+<tr><td>Split</td><td>70 / 15 / 15 %, by spot (lesion), not by photo</td></tr>
+<tr><td>Model</td><td>EfficientNetB0 · 224 × 224 input · 3 labels · 5.1 MB TensorFlow Lite</td></tr>
+<tr><td>Decision</td><td>flag if p(pre-cancerous) + p(malignant) ≥ <b>0.47</b> (set for 90 % sensitivity on validation)</td></tr>
+<tr><td>Views averaged</td><td>4 (as-is, mirrored, upside down, rotated 180°)</td></tr>
+<tr><td>Test split</td><td>sensitivity 0.907 · specificity 0.633 · AUC 0.894</td></tr>
+<tr><td>External benchmark (602 photos)</td><td>121 / 149 cancers flagged (0.81) · specificity 0.59 · AUC 0.754</td></tr>
+<tr><td>Heatmap</td><td>Eigen-CAM · 7 × 7 grid from the 7 × 7 × 1280 feature map · ~1 s on the Pi</td></tr>
+<tr><td>A / B / C tiers</td><td>A 0.15 / 0.30 · B 1.8 / 2.5 · C 1 / 2 / 3+ colours</td></tr>
+</table>
+</section>
+</section>
+
+<section>
+<h2><span class="n">15</span>Glossary</h2>
+<table>
+<tr><th>Word</th><th>Meaning</th></tr>
+<tr><td>Benign</td><td>Harmless; not cancer.</td></tr>
+<tr><td>Pre-cancerous</td><td>Not cancer yet, but can become cancer (e.g. actinic keratosis).</td></tr>
+<tr><td>Malignant</td><td>Cancer (e.g. melanoma, basal cell carcinoma).</td></tr>
+<tr><td>Lesion</td><td>Any spot or mark on the skin that looks different from the skin around it.</td></tr>
+<tr><td>Dermoscopy</td><td>Photos through a skin doctor's magnifying lens, with even light and no glare.</td></tr>
+<tr><td>CNN</td><td>Convolutional neural network: a computer model that learns to recognise patterns in pictures.</td></tr>
+<tr><td>Transfer learning</td><td>Starting from a model already trained on everyday photos, then re-training it on a new task.</td></tr>
+<tr><td>Feature map</td><td>The grid of "pattern detectors" inside a CNN. EPIVUE's last one is 7 × 7 × 1280.</td></tr>
+<tr><td>Softmax</td><td>The last step that turns the model's raw scores into percentages adding to 100 %.</td></tr>
+<tr><td>Threshold / limit</td><td>The cut-off (0.47) above which a spot is flagged.</td></tr>
+<tr><td>Sensitivity / specificity</td><td>Share of cancers caught / share of harmless spots correctly left alone.</td></tr>
+<tr><td>ROC-AUC</td><td>One number for how well the model ranks cancers above harmless spots (0.5 coin toss, 1.0 perfect).</td></tr>
+<tr><td>Temperature scaling</td><td>Softening the displayed percentages so they are not over-confident. Display only.</td></tr>
+<tr><td>Test-time augmentation (TTA)</td><td>Reading the photo in 4 orientations and averaging, for a steadier answer.</td></tr>
+<tr><td>Eigen-CAM</td><td>A heatmap method that needs one forward pass; shows where the model looked.</td></tr>
+<tr><td>Gate / photo check</td><td>The checks that run before the model to refuse unusable photos.</td></tr>
+<tr><td>TensorFlow Lite</td><td>A small version of TensorFlow for phones and small computers like the Pi.</td></tr>
+<tr><td>Data leakage</td><td>When test photos (or the same spot) were also seen in training, making results look better than they are.</td></tr>
+</table>
+<p class="small">Sources for every number: <code>docs/METRICS.md</code>, <code>training/dataset_index.csv</code>, <code>training/splits.csv</code>, <code>models/thresholds.json</code>, <code>dermascan/config.py</code>, <code>dermascan/signs.py</code>, <code>dermascan/cam.py</code>. What the paper must say differently: <code>docs/PAPER_ALIGNMENT.md</code>. References: Tan &amp; Le 2019 (EfficientNet); Tschandl et al. 2018 (HAM10000); Muhammad &amp; Yeasin 2020 (Eigen-CAM); Cassidy et al. 2022 (split leakage in ISIC data).</p>
+</section>
+
+</body>
+</html>
