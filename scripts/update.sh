@@ -6,25 +6,35 @@
 # Steps, each one stopping with a plain message if it cannot go on:
 #   1. the Pi must be on branch main            -> "refused: ... ask Hans"
 #   2. no local edits                           -> "refused: ... ask Hans"
-#   3. fetch from GitHub (needs wifi)           -> "failed: GitHub not reachable"
-#   4. nothing new?                             -> "already up to date"
-#   5. fast-forward only, never a merge commit  -> "failed: history diverged"
-#   6. pip install only if requirements.txt changed; a failure puts the old code back
+#   3. is there internet?                       -> "failed: no internet"
+#   4. fetch from GitHub                        -> "failed: could not fetch"
+#   5. nothing new?                             -> "already up to date"
+#   6. fast-forward only, never a merge commit  -> "failed: history diverged"
+#   7. pip install only if requirements.txt changed; a failure puts the old code back
 #      (packages already upgraded stay upgraded; the log says which)
-#   7. pytest -q -x; a failure puts the old code back
-#   8. "updated OLD -> NEW"
+#   8. pytest -q -x; a failure puts the old code back
+#   9. "updated OLD -> NEW"
+#
+# The fetch goes to the public HTTPS address by name, not to whatever `origin` is
+# set to: on the Pi `origin` is git@github.com (SSH), which wants a key and a
+# terminal to ask on, and the launcher has neither. That fetch failed and the old
+# message blamed the wifi (29 Oct 2026). Every git prompt is switched off, so a
+# bad fetch fails in words instead of hanging the launcher.
 #
 # The outcome is one line in ~/.dermascan/last_update.txt, which the Settings
 # screen shows. This script always exits 0 so the launcher relaunches the kiosk
 # whatever happened. The paths must match dermascan/config.py (LAST_UPDATE_FILE).
 #
-#   bash scripts/update.sh [PROJECT_DIR] [STATE_DIR]     (both default to the usual places)
+#   bash scripts/update.sh [PROJECT_DIR] [STATE_DIR] [REPO_URL]   (all default to the usual places)
 set -u
 
 PROJECT_DIR="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 STATE_DIR="${2:-$HOME/.dermascan}"
+REPO_URL="${3:-https://github.com/HansGabriel/skin-cancer-project.git}"
 RESULT="$STATE_DIR/last_update.txt"
 LOG="$STATE_DIR/update.log"
+export GIT_TERMINAL_PROMPT=0   # never wait for a username or password nobody can type
+TIMEOUT=""; command -v timeout >/dev/null && TIMEOUT="timeout 90"
 
 mkdir -p "$STATE_DIR"
 cd "$PROJECT_DIR" || { echo "$(date '+%Y-%m-%d %H:%M') · failed: $PROJECT_DIR is missing" >"$RESULT"; exit 0; }
@@ -39,16 +49,21 @@ finish() {  # finish "<message>": record it, print it, leave
 BRANCH="$(git branch --show-current 2>/dev/null)"
 [ "$BRANCH" = "main" ] || finish "refused: the Pi is on branch '${BRANCH:-?}', not main — ask Hans"
 
-DIRTY="$(git diff --name-only HEAD | head -3 | paste -sd' ')"
+DIRTY="$(git diff --name-only HEAD | head -3 | paste -sd' ' -)"   # the "-" keeps BSD paste (a Mac) happy too
 [ -z "$DIRTY" ] || finish "refused: local edits in $DIRTY — ask Hans"
 
-git fetch origin main >>"$LOG" 2>&1 || finish "failed: GitHub not reachable — is the Pi on wifi?"
+# Internet first, so "no wifi" and "GitHub said no" are two different messages.
+case "$REPO_URL" in
+  http*) curl -sSfI --max-time 8 -o /dev/null "$REPO_URL" >>"$LOG" 2>&1 || finish "failed: no internet — is the Pi on wifi?" ;;
+esac
+echo "--- $(date) · fetch $REPO_URL" >>"$LOG"
+$TIMEOUT git fetch "$REPO_URL" main >>"$LOG" 2>&1 || finish "failed: could not fetch from GitHub — see update.log, ask Hans"
 
 OLD="$(git rev-parse --short HEAD)"
-NEW="$(git rev-parse --short origin/main)"
+NEW="$(git rev-parse --short FETCH_HEAD)"
 [ "$OLD" != "$NEW" ] || finish "already up to date ($OLD)"
 
-git merge --ff-only origin/main >>"$LOG" 2>&1 || finish "failed: history diverged from GitHub — ask Hans"
+git merge --ff-only FETCH_HEAD >>"$LOG" 2>&1 || finish "failed: history diverged from GitHub — ask Hans"
 
 rollback() { git reset --hard "$OLD" >>"$LOG" 2>&1; }
 

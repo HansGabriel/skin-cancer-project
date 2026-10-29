@@ -33,8 +33,10 @@ def repos(tmp_path: Path):
     return origin, work, clone
 
 
-def _update(clone: Path, state: Path) -> str:
-    out = subprocess.run(["bash", str(SCRIPT), str(clone), str(state)], capture_output=True, text=True, check=True)
+def _update(clone: Path, state: Path, repo_url: str | None = None) -> str:
+    """Run the script against `repo_url` (default: the clone's own bare origin) and return its message."""
+    url = repo_url or _git(clone, "remote", "get-url", "origin")
+    out = subprocess.run(["bash", str(SCRIPT), str(clone), str(state), url], capture_output=True, text=True, check=True)
     line = (state / "last_update.txt").read_text().strip()
     assert out.stdout.strip() == line
     return line.split(" · ", 1)[1]
@@ -51,6 +53,16 @@ def test_already_up_to_date_then_fast_forward(repos, tmp_path) -> None:
     assert msg.startswith("updated ") and _git(clone, "rev-parse", "HEAD") == _git(work, "rev-parse", "HEAD")
 
 
+def test_fetch_goes_to_the_named_url_not_to_origin(repos, tmp_path) -> None:
+    """The Pi's origin is SSH and cannot be used from the launcher; the script fetches the URL it is given."""
+    origin, work, clone = repos
+    state = tmp_path / "state"
+    _git(clone, "remote", "set-url", "origin", "git@github.com:nobody/nowhere.git")
+    (work / "README.md").write_text("two\n")
+    _git(work, "commit", "-qam", "two"), _git(work, "push", "-q", "origin", "main")
+    assert _update(clone, state, str(origin)).startswith("updated ")
+
+
 def test_refuses_local_edits_and_other_branches(repos, tmp_path) -> None:
     _, _, clone = repos
     state = tmp_path / "state"
@@ -62,7 +74,18 @@ def test_refuses_local_edits_and_other_branches(repos, tmp_path) -> None:
     assert _update(clone, state).startswith("refused: the Pi is on branch 'feat/x'")
 
 
-def test_no_remote_is_a_plain_failure(repos, tmp_path) -> None:
+def test_no_remote_is_a_fetch_failure_not_a_wifi_one(repos, tmp_path) -> None:
     origin, _, clone = repos
+    url = str(origin)
     shutil.rmtree(origin)
-    assert _update(clone, tmp_path / "state").startswith("failed: GitHub not reachable")
+    msg = _update(clone, tmp_path / "state", url)
+    assert msg.startswith("failed: could not fetch from GitHub") and "wifi" not in msg
+
+
+def test_no_internet_is_named_as_such(repos, tmp_path) -> None:
+    """An HTTPS address that does not answer means no network, and says so before any git runs."""
+    _, _, clone = repos
+    state = tmp_path / "state"
+    msg = _update(clone, state, "http://127.0.0.1:9/skin-cancer-project.git")
+    assert msg.startswith("failed: no internet")
+    assert "fetch" not in (state / "update.log").read_text()
