@@ -299,9 +299,16 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 .heat-line{margin:4px 0 0;color:var(--muted);line-height:1.4;max-width:30ch;font-size:clamp(14px,2.6cqh,17px)}
 .heat-line.off{color:var(--brown)}
 /* the result's smaller row: the verdict and the sign lines keep the room */
-.heat-aside.compact{margin-top:clamp(8px,1.3cqh,12px);gap:clamp(10px,1.2cqw,16px)}
-.heat-aside.compact .heat-pic{width:clamp(56px,11cqh,80px);height:clamp(56px,11cqh,80px)}
-.heat-aside.compact .heat-line{margin-top:2px;max-width:46ch;font-size:clamp(13px,2.3cqh,15px)}
+/* the result's smaller row, in the instrument band under the A B C D E legend (index.html #cap-heat) */
+.cap-heat{display:none}
+.app[data-screen="result"] .cap-heat{display:block}
+.heat-aside.compact{margin:clamp(8px,1.6cqh,16px) auto 0;max-width:min(94%,440px);gap:clamp(10px,1.2cqw,16px);text-align:left}
+.heat-aside.compact .heat-pic{width:clamp(44px,8.5cqh,64px);height:clamp(44px,8.5cqh,64px);background:var(--navy-deep);box-shadow:0 0 0 2px rgba(232,238,246,.14)}
+.heat-aside.compact .heat-pic.on{box-shadow:0 0 0 3px var(--reticle)}
+.heat-aside.compact .heat-wait{border-color:rgba(232,238,246,.3)}
+.heat-aside.compact .heat-line{margin:0;max-width:none;line-height:1.35;color:var(--f-body);font-size:clamp(12px,2.1cqh,14px)}
+.heat-aside.compact .heat-line b{font-weight:600;letter-spacing:.08em;color:var(--f-muted);font-size:.86em}
+.heat-aside.compact .heat-line.off{color:#E8B98A}
 /* the photo beside its heatmap, staff drawer */
 .heat-pair{display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.6cqw,20px);margin-top:clamp(10px,1.8cqh,16px)}
 .heat-pair figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:5px}

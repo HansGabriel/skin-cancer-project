@@ -55,7 +55,7 @@ from dermascan.answers import BAND_FOR_STATE, get_bank
 from dermascan.cam import alignment, get_cam, warm_in_background
 from dermascan.classifier import get_classifier
 from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, decode_jpeg, run_scan
-from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
+from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, HEAT_WORDS, SIGN_LINE_TEXTS, error_verdict
 from kiosk import camera as cam
 from kiosk.saved import SITES, saved
 
@@ -126,6 +126,9 @@ class LastPhoto:
 
 
 last_photo = LastPhoto()
+# One heatmap build at a time: the check screen's request and a quick staff drawer can both
+# miss the cache for the same photo; the second waits, then finds it built.
+_cam_build_lock = threading.Lock()
 
 # What staff changed in Settings. Back to config.py's values on every restart.
 settings = {"allow_read_anyway": config.ALLOW_READ_ANYWAY, "show_staff_details": config.SHOW_STAFF_DETAILS}
@@ -222,9 +225,10 @@ def health():
     heat = get_cam() is not None
     return jsonify({
         **status, "ok": True,
-        # cam: the server can build "Where it looked"; cam_on_check: the page shows it on the check screen too.
+        # cam: the server can build "Where it looked"; cam_on_check: the visitor screens show it too.
         "model": {"file": clf.model_path.name, "labels": clf.labels, "tta": clf.use_tta,
                   "cam": heat, "cam_on_check": heat and config.CAM_ON_CHECK},
+        "heat_words": HEAT_WORDS,
         # The limit each gate number is held to, so the staff drawer prints value and limit side by side.
         "gate_limits": gate.limits(),
     })
@@ -249,25 +253,26 @@ def cam_jpg():
     else:
         jpeg = last_photo.last_checked_or_scanned() if request.method == "GET" else None
         checked = last_photo.last_check(jpeg) if jpeg else None
-    if cam_model is None or not jpeg:
+    if cam_model is None or not jpeg or (checked is not None and checked.rgb is None):  # not a picture: nothing to draw on
         return _error("no_photo", 404)
-    cached = None if web else last_photo.cam_cached(jpeg)
-    if cached is None:
-        t = time.perf_counter()
-        try:
-            rgb = checked.rgb if checked is not None and checked.rgb is not None else decode_jpeg(jpeg, config.MAX_WORK_PX)
-            heat, cam01 = cam_model.render(rgb)
-        except Exception:  # noqa: BLE001 - a heatmap failure is a 404, never a crash
-            log.exception("cam failed")
-            return _error("scanner", 404)
-        outline = gate.outline_polygon(checked.report.outline) if checked is not None and checked.report is not None else []
-        align = alignment(cam01, outline)
-        if not web:
-            last_photo.cam_built(jpeg, heat, align)
-        log.info("cam ms=%d aligned=%s inside=%s", (time.perf_counter() - t) * 1000,
-                 "-" if align is None else int(align["aligned"]), "-" if align is None else align["inside"])
-    else:
-        heat, align = cached
+    with _cam_build_lock:
+        cached = None if web else last_photo.cam_cached(jpeg)
+        if cached is None:
+            t = time.perf_counter()
+            try:
+                rgb = checked.rgb if checked is not None else decode_jpeg(jpeg, config.MAX_WORK_PX)
+                heat, cam01 = cam_model.render(rgb)
+            except Exception:  # noqa: BLE001 - a heatmap failure is a 404, never a crash
+                log.exception("cam failed")
+                return _error("scanner", 404)
+            outline = gate.outline_polygon(checked.report.outline) if checked is not None and checked.report is not None else []
+            align = alignment(cam01, outline)
+            if not web:
+                last_photo.cam_built(jpeg, heat, align)
+            log.info("cam ms=%d aligned=%s inside=%s", (time.perf_counter() - t) * 1000,
+                     "-" if align is None else int(align["aligned"]), "-" if align is None else align["inside"])
+        else:
+            heat, align = cached
     headers = {"Cache-Control": "no-store"}
     if align is not None:
         headers["X-Cam-Aligned"] = "1" if align["aligned"] else "0"
