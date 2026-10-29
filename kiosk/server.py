@@ -52,7 +52,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 
 from dermascan import config, gate
 from dermascan.answers import BAND_FOR_STATE, get_bank
-from dermascan.cam import get_cam, warm_in_background
+from dermascan.cam import alignment, get_cam, warm_in_background
 from dermascan.classifier import get_classifier
 from dermascan.scan import CheckedPhoto, ScanOutcome, check_photo, check_result, decode_jpeg, run_scan
 from dermascan.verdict import ERROR_ADVICE_WEB, EVOLVING_COMPARE, SIGN_LINE_TEXTS, error_verdict
@@ -76,7 +76,7 @@ class LastPhoto:
         self._jpeg: bytes | None = None
         self._checked: CheckedPhoto | None = None  # the "check the photo" result, so /scan does not redo it
         self._outcome: dict | None = None
-        self._cam: bytes | None = None  # the "Where it looked" heatmap of this photo, built once on request
+        self._cam: tuple[bytes, dict | None] | None = None  # "Where it looked" (JPEG, alignment), built once on request
         self._lock = threading.Lock()
 
     def put(self, jpeg: bytes) -> bytes:
@@ -84,14 +84,14 @@ class LastPhoto:
             self._jpeg, self._checked, self._outcome, self._cam = jpeg, None, None, None
         return jpeg
 
-    def cam_cached(self, jpeg: bytes) -> bytes | None:
+    def cam_cached(self, jpeg: bytes) -> tuple[bytes, dict | None] | None:
         with self._lock:
             return self._cam if self._jpeg is jpeg else None
 
-    def cam_built(self, jpeg: bytes, heat: bytes) -> None:
+    def cam_built(self, jpeg: bytes, heat: bytes, align: dict | None) -> None:
         with self._lock:
             if self._jpeg is jpeg:
-                self._cam = heat
+                self._cam = (heat, align)
 
     def get(self) -> bytes | None:
         with self._lock:
@@ -233,29 +233,46 @@ def health():
 @app.route("/cam.jpg", methods=["GET", "POST"])
 def cam_jpg():
     """"Where it looked" (dermascan/cam.py) blended over the photo: the check screen after a
-    passing photo, and the staff drawer. On the kiosk, GET gives the last checked or scanned
-    photo's heatmap, built once per photo. On the web the server keeps nothing, so the page
-    POSTs the photo again and nothing is remembered. 404 when there is none to give."""
+    passing photo, the result, and the staff drawer. On the kiosk, GET gives the last checked
+    or scanned photo's heatmap, built once per photo. On the web the server keeps nothing, so
+    the page POSTs the photo again and nothing is remembered. 404 when there is none to give.
+
+    Two headers say whether the heat sits on the spot the check outlined (cam.alignment):
+    X-Cam-Aligned 1|0 and X-Cam-Inside 0-1 (absent when the check drew no outline).
+    """
     cam_model = get_cam()
-    if app.config["WEB_DEMO"]:
+    web = app.config["WEB_DEMO"]
+    if web:
         upload = request.files.get("image")
         jpeg = upload.read() if upload is not None else None
+        checked = check_photo(jpeg) if jpeg else None  # nothing was kept, so the outline is drawn again (~50 ms)
     else:
         jpeg = last_photo.last_checked_or_scanned() if request.method == "GET" else None
+        checked = last_photo.last_check(jpeg) if jpeg else None
     if cam_model is None or not jpeg:
         return _error("no_photo", 404)
-    heat = None if app.config["WEB_DEMO"] else last_photo.cam_cached(jpeg)
-    if heat is None:
+    cached = None if web else last_photo.cam_cached(jpeg)
+    if cached is None:
         t = time.perf_counter()
         try:
-            heat = cam_model.heatmap(decode_jpeg(jpeg, config.MAX_WORK_PX))
+            rgb = checked.rgb if checked is not None and checked.rgb is not None else decode_jpeg(jpeg, config.MAX_WORK_PX)
+            heat, cam01 = cam_model.render(rgb)
         except Exception:  # noqa: BLE001 - a heatmap failure is a 404, never a crash
             log.exception("cam failed")
             return _error("scanner", 404)
-        if not app.config["WEB_DEMO"]:
-            last_photo.cam_built(jpeg, heat)
-        log.info("cam ms=%d", (time.perf_counter() - t) * 1000)
-    return Response(heat, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+        outline = gate.outline_polygon(checked.report.outline) if checked is not None and checked.report is not None else []
+        align = alignment(cam01, outline)
+        if not web:
+            last_photo.cam_built(jpeg, heat, align)
+        log.info("cam ms=%d aligned=%s inside=%s", (time.perf_counter() - t) * 1000,
+                 "-" if align is None else int(align["aligned"]), "-" if align is None else align["inside"])
+    else:
+        heat, align = cached
+    headers = {"Cache-Control": "no-store"}
+    if align is not None:
+        headers["X-Cam-Aligned"] = "1" if align["aligned"] else "0"
+        headers["X-Cam-Inside"] = f"{align['inside']:.2f}"
+    return Response(heat, mimetype="image/jpeg", headers=headers)
 
 
 @app.get("/preview.mjpg")

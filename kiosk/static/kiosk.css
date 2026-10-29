@@ -297,6 +297,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--reticle);outlin
 @keyframes heat-in{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.heat-pic img.in{animation:none}}
 .heat-line{margin:4px 0 0;color:var(--muted);line-height:1.4;max-width:30ch;font-size:clamp(14px,2.6cqh,17px)}
+.heat-line.off{color:var(--brown)}
+/* the result's smaller row: the verdict and the sign lines keep the room */
+.heat-aside.compact{margin-top:clamp(8px,1.3cqh,12px);gap:clamp(10px,1.2cqw,16px)}
+.heat-aside.compact .heat-pic{width:clamp(56px,11cqh,80px);height:clamp(56px,11cqh,80px)}
+.heat-aside.compact .heat-line{margin-top:2px;max-width:46ch;font-size:clamp(13px,2.3cqh,15px)}
 /* the photo beside its heatmap, staff drawer */
 .heat-pair{display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.6cqw,20px);margin-top:clamp(10px,1.8cqh,16px)}
 .heat-pair figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:5px}
